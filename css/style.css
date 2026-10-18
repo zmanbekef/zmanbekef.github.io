@@ -217,3 +217,11 @@ input,select,textarea{font-size:16px}
 .me-stat{background:rgba(0,0,0,.22);border-radius:14px;padding:8px 4px;text-align:center}
 .me-stat b{display:block;font-size:17px}.me-stat span{font-size:11px;color:var(--muted)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* קבוצות */
+.grp{background:rgba(0,0,0,.18);border:1px solid var(--line);border-radius:18px;padding:12px;margin-bottom:12px}
+.grp-h{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
+.grp-h b{font-size:16px}
+.codes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.codes .code-box:only-child{grid-column:1/-1}
+.code-box .chip{display:inline-block;margin-top:2px}
+a.chip{color:#fff}

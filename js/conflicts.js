@@ -59,8 +59,9 @@ export function detect(ctx) {
   // "מישהו מאיתנו צריך…" — האם יש לפחות מבוגר אחד פנוי?
   for (const it of live.filter(x => owner(x) === 'any')) {
     const probe = { ...it, dur: it.dur || 15 };
-    const blockers = adults.map(p => T.find(x => x.id !== it.id && owner(x) === p && overlap(probe, x)));
-    if (adults.length && blockers.every(Boolean) && !blockers.every(x => ok(it, x))) add('nobody', it, blockers[0], { blockers });
+    const ad = typeof adults === 'function' ? adults(it) : adults;
+    const blockers = ad.map(p => T.find(x => x.id !== it.id && owner(x) === p && overlap(probe, x)));
+    if (ad.length && blockers.every(Boolean) && !blockers.every(x => ok(it, x))) add('nobody', it, blockers[0], { blockers });
   }
 
   // זמן נסיעה בין שני מקומות שונים של אותו אדם

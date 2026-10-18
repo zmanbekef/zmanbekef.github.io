@@ -1,4 +1,4 @@
-// סנכרון בין הטלפונים של בני הבית דרך Supabase — אותו חשבון ואותה משפחה כמו "כסף בכיף".
+// סנכרון בין הטלפונים דרך Supabase — אותו חשבון כמו "כסף בכיף", עם קבוצות משלנו (משפחה / שותפים / צוות / קשר פרטי).
 // הנתונים נשמרים קודם כל במכשיר (עובד גם בלי אינטרנט), ונשלחים לענן ברקע.
 import * as db from './db.js';
 
@@ -10,9 +10,12 @@ const CONFIG = {
 const LOCAL_ONLY = ['askedKey']; // "כבר שאלתי" — שייך לטלפון הזה בלבד
 
 let sb = null, hh = null, me = null, channel = null, flushing = false, cb = {};
-export const household = () => hh;
+let groups = [], profile = null;
+export const household = () => hh;          // המשפחה של "כסף בכיף" (רק בשביל ייבוא)
 export const user = () => me;
-export const isParent = () => !hh || hh.role !== 'child';
+export const myGroups = () => groups;
+export const myProfile = () => profile;
+export const isParent = () => !groups.length || groups.some(g => g.myRole !== 'child');
 
 let loading;
 function loadLib() {
@@ -36,6 +39,9 @@ const HEB_ERR = {
   'User already registered': 'המייל הזה כבר רשום — נסה "כניסה"',
   'Password should be at least 6 characters': 'הסיסמה צריכה להיות לפחות 6 תווים',
   'bad code': 'הקוד לא נמצא. בדוק שהעתקת נכון',
+  'pair full': 'הקישור הזה כבר בשימוש של מישהו אחר',
+  'last admin': 'חייב להישאר לפחות מנהל אחד בקבוצה',
+  'not admin': 'רק מנהל הקבוצה יכול לעשות את זה',
   'Email not confirmed': 'צריך לאשר את המייל שנשלח אליך, ואז להיכנס',
 };
 const nice = e => {
@@ -62,13 +68,13 @@ export async function signUp(email, password) {
   await currentUser();
 }
 export async function signOut() {
-  stop(); hh = null; me = null;
-  for (const k of ['household', 'outbox', 'lastSync', 'people', 'top3']) await db.setKV(k, null);
+  stop(); hh = null; me = null; groups = []; profile = null;
+  for (const k of ['household', 'outbox', 'lastSync2', 'people', 'top3', 'groups', 'profile', 'migratedGroups']) await db.setKV(k, null);
   await db.clear('items'); await db.clear('msgs'); await db.clear('log');
   await (await client()).auth.signOut();
 }
 
-// ---------- משפחה ----------
+// ---------- המשפחה של "כסף בכיף" (בשביל ייבוא לקבוצה) ----------
 export async function loadHousehold() {
   const { data, error } = await (await client()).rpc('my_household');
   if (error) throw new Error(nice(error));
@@ -76,18 +82,6 @@ export async function loadHousehold() {
   await db.setKV('household', hh);
   return hh;
 }
-export async function createHousehold(name) {
-  const { error } = await (await client()).rpc('create_household', { hname: name });
-  if (error) throw new Error(nice(error));
-  return loadHousehold();
-}
-export async function joinHousehold(code) {
-  const { error } = await (await client()).rpc('join_household', { code });
-  if (error) throw new Error(nice(error));
-  return loadHousehold();
-}
-
-// בני הבית (שם + אייקון) — אותה רשימה כמו בכסף בכיף
 export async function loadPeople() {
   if (!hh) return db.getKV('people', []);
   try {
@@ -98,17 +92,56 @@ export async function loadPeople() {
     return people;
   } catch { return db.getKV('people', []); }
 }
-// מוסיף/מעדכן אדם אחד בלי לדרוס שינויים שנעשו בטלפון אחר
-export async function savePerson(p) {
-  const fresh = await loadPeople();
-  const list = fresh.filter(x => x.id !== p.id).concat(p);
-  const { error } = await (await client()).from('kv').upsert({ household_id: hh.id, key: 'people', value: list });
+
+// ---------- פרופיל: שם מלא ואייקון ----------
+export async function loadProfile() {
+  try {
+    const { data, error } = await (await client()).from('zman_profiles').select('*').eq('user_id', me.id).maybeSingle();
+    if (error) throw error;
+    profile = data || null; await db.setKV('profile', profile);
+  } catch { profile = await db.getKV('profile', null); }
+  return profile;
+}
+export async function saveProfile(full_name, emoji) {
+  const { error } = await (await client()).from('zman_profiles').upsert({ user_id: me.id, full_name, emoji, updated_at: new Date().toISOString() });
   if (error) throw new Error(nice(error));
-  await db.setKV('people', list);
-  return list;
+  profile = { user_id: me.id, full_name, emoji }; await db.setKV('profile', profile);
+  return profile;
 }
 
-// דברים משותפים (רכב, עגלה…) — משותף לכל המשפחה
+// ---------- קבוצות ----------
+export async function loadGroups() {
+  try {
+    const c = await client();
+    const { data: gs, error } = await c.from('zman_groups').select('*').order('created_at');
+    if (error) throw error;
+    const ids = (gs || []).map(g => g.id);
+    const { data: ms } = ids.length ? await c.from('zman_members').select('*').in('group_id', ids).order('joined_at') : { data: [] };
+    const uids = [...new Set((ms || []).map(m => m.user_id).filter(Boolean))];
+    const { data: ps } = uids.length ? await c.from('zman_profiles').select('*').in('user_id', uids) : { data: [] };
+    groups = (gs || []).map(g => {
+      const members = (ms || []).filter(m => m.group_id === g.id).map(m => ({ ...m, profile: (ps || []).find(p => p.user_id === m.user_id) || null }));
+      return { ...g, members, myRole: members.find(m => m.user_id === me.id)?.role || 'member' };
+    });
+    await db.setKV('groups', groups);
+  } catch (e) { console.warn('groups', e); groups = await db.getKV('groups', []) || []; }
+  return groups;
+}
+const rpc = async (fn, args) => {
+  const { data, error } = await (await client()).rpc(fn, args);
+  if (error) throw new Error(nice(error));
+  return data;
+};
+export const createGroup = async (name, kind, nick, emo) => { const g = await rpc('zman_create_group', { gname: name, gkind: kind, nick, emo }); await loadGroups(); return g; };
+export const joinGroup = async (code, nick, emo) => { const g = await rpc('zman_join_group', { jcode: code, nick, emo }); await loadGroups(); return g; };
+export const setNickname = async (g, nick, emo) => { await rpc('zman_set_nickname', { g, nick, emo }); await loadGroups(); };
+export const addName = async (g, nick, emo) => { const m = await rpc('zman_add_name', { g, nick, emo }); await loadGroups(); return m; };
+export const setRole = async (mid, role) => { await rpc('zman_set_role', { mid, new_role: role }); await loadGroups(); };
+export const removeMember = async mid => { await rpc('zman_remove_member', { mid }); await loadGroups(); };
+export const renameGroup = async (g, name) => { const { error } = await (await client()).from('zman_groups').update({ name }).eq('id', g); if (error) throw new Error(nice(error)); await loadGroups(); };
+export const importHousehold = async h => { const g = await rpc('zman_import_household', { h }); await loadGroups(); return g; };
+
+// דברים משותפים (רכב, עגלה…) — נשמר אצל המשפחה של כסף בכיף אם יש, אחרת רק בטלפון
 export async function loadRes() {
   if (!hh || !me) return null;
   try {
@@ -125,7 +158,7 @@ export async function saveRes(list) {
 
 // ---------- תור שליחה (עובד גם כשאין רשת) ----------
 export async function queue(it) {
-  if (!hh) return;
+  if (!me) return;
   const box = (await db.getKV('outbox', [])).filter(o => o.id !== it.id);
   box.push({ id: it.id, at: Date.now() });
   await db.setKV('outbox', box);
@@ -133,10 +166,10 @@ export async function queue(it) {
 }
 const rowOf = it => {
   const data = { ...it }; LOCAL_ONLY.forEach(k => delete data[k]);
-  return { household_id: hh.id, id: it.id, data, deleted: it.status === 'deleted', created_by: it.by || me?.id, assignee: it.forU || null, private: !!it.private };
+  return { id: it.id, group_id: it.group_id || null, data, deleted: it.status === 'deleted', created_by: it.by || me?.id, assignee: it.forU || null, private: !!it.private };
 };
 export async function flush() {
-  if (!hh || !me || flushing || !navigator.onLine) return;
+  if (!me || flushing || !navigator.onLine) return;
   flushing = true;
   try {
     const c = await client();
@@ -144,7 +177,7 @@ export async function flush() {
     while (box.length) {
       const batch = box.slice(0, 200);
       const items = (await db.all('items')).filter(it => batch.some(b => b.id === it.id));
-      if (items.length) { const { error } = await c.from('zman_items').upsert(items.map(rowOf)); if (error) throw error; }
+      if (items.length) { const { error } = await c.from('zman_tasks').upsert(items.map(rowOf)); if (error) throw error; }
       box = (await db.getKV('outbox', [])).filter(o => !batch.some(b => b.id === o.id && b.at === o.at));
       await db.setKV('outbox', box);
     }
@@ -156,44 +189,42 @@ export async function flush() {
 // ---------- קבלת שינויים מהטלפונים האחרים ----------
 async function apply(row, live) {
   const local = (await db.all('items')).find(x => x.id === row.id) || null;
-  const next = { ...row.data, status: row.deleted ? 'deleted' : row.data.status };
+  const next = { ...row.data, group_id: row.group_id, status: row.deleted ? 'deleted' : row.data.status };
   if (local) LOCAL_ONLY.forEach(k => { if (local[k] !== undefined) next[k] = local[k]; });
   await db.put('items', next);
   cb.onItem?.(local, next, live);
 }
-
 export async function pull() {
-  if (!hh || !me) return 0;
+  if (!me) return 0;
   const c = await client();
-  const since = await db.getKV('lastSync', '1970-01-01T00:00:00Z');
+  const since = await db.getKV('lastSync2', '1970-01-01T00:00:00Z');
   let from = since, n = 0;
   for (;;) {
-    const { data, error } = await c.from('zman_items').select('*').eq('household_id', hh.id).gt('updated_at', from).order('updated_at').limit(1000);
+    const { data, error } = await c.from('zman_tasks').select('*').gt('updated_at', from).order('updated_at').limit(1000);
     if (error) throw error;
     for (const row of data) { await apply(row, since !== '1970-01-01T00:00:00Z'); n++; }
     if (data.length) from = data[data.length - 1].updated_at;
     if (data.length < 1000) break;
   }
-  await db.setKV('lastSync', from);
+  await db.setKV('lastSync2', from);
   return n;
 }
-
 function subscribe() {
   stop();
-  channel = sb.channel('zman-' + hh.id)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'zman_items', filter: `household_id=eq.${hh.id}` }, async p => { if (p.new?.id) { await apply(p.new, true); const b = await busy(); if (b) cb.onBusy?.(b); cb.onRemote?.(); } })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'kv', filter: `household_id=eq.${hh.id}` }, async p => { if (p.new?.key === 'people') { await db.setKV('people', p.new.value); cb.onRemote?.(); } if (p.new?.key === 'zman_resources') { cb.onRes?.(p.new.value || []); } })
+  channel = sb.channel('zman-' + me.id)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'zman_tasks' }, async p => { if (p.new?.id) { await apply(p.new, true); const b = await busy(); if (b) cb.onBusy?.(b); cb.onRemote?.(); } })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'zman_members' }, async () => { await loadGroups(); cb.onGroups?.(); })
     .subscribe();
 }
 function stop() { if (channel) { sb.removeChannel(channel); channel = null; } }
 
-// זמנים תפוסים של משימות פרטיות של אחרים — רק מתי, בלי מה (להתראות על התנגשויות)
+// זמנים תפוסים של מי שאני בקבוצה איתו — רק מתי, בלי מה
 export async function busy() {
-  if (!hh || !me || !navigator.onLine) return null;
+  if (!me || !navigator.onLine) return null;
   try {
-    const { data, error } = await (await client()).rpc('zman_busy', { h: hh.id });
+    const { data, error } = await (await client()).rpc('zman_busy2');
     if (error) throw error;
-    return (data || []).map(r => ({ id: 'busy-' + r.id, busy: true, status: 'open', kind: 'task', hasTime: true, due: r.due, dur: r.dur, by: r.created_by, forU: r.assignee, forP: r.for_p }));
+    return (data || []).map(r => ({ id: 'busy-' + r.id, busy: true, status: 'open', kind: 'task', hasTime: true, due: r.due, dur: r.dur, by: r.owner }));
   } catch (e) { console.warn('busy', e); return null; }
 }
 
@@ -207,27 +238,28 @@ let listening = false;
 function listen() {
   if (listening) return; listening = true;
   addEventListener('online', refresh);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+  document.addEventListener('visibilitychange', async () => { if (!document.hidden) { await loadGroups(); cb.onGroups?.(); refresh(); } });
 }
 
-/** מופעל בעליית האפליקציה. מחזיר { user, household } */
+/** מופעל בעליית האפליקציה. מחזיר { user } */
 export async function start(callbacks) {
   cb = callbacks;
   try {
     await currentUser();
-    if (!me) return { user: null, household: null };
-    hh = await db.getKV('household', null);
-    try { await loadHousehold(); } catch { /* בלי רשת — נשתמש במה ששמור */ }
-    if (hh) await connected(false);
-    return { user: me, household: hh };
-  } catch (e) { console.warn('sync start', e); cb.onStatus?.('wait'); return { user: me, household: hh }; }
+    if (!me) return { user: null };
+    hh = await db.getKV('household', null); groups = await db.getKV('groups', []) || []; profile = await db.getKV('profile', null);
+    try { await loadHousehold(); } catch { /* בלי רשת */ }
+    await loadProfile(); await loadGroups();
+    await connected(false);
+    return { user: me };
+  } catch (e) { console.warn('sync start', e); cb.onStatus?.('wait'); return { user: me }; }
 }
-
-/** אחרי כניסה/הצטרפות: מעלה את מה שכבר רשום בטלפון, מוריד את של המשפחה, ומאזין לשינויים */
+/** אחרי כניסה: מעלה את מה שכבר רשום בטלפון, מוריד את של הקבוצות, ומאזין לשינויים */
 export async function connected(first = true) {
   if (first) {
-    await db.setKV('lastSync', '1970-01-01T00:00:00Z');
-    for (const it of await db.all('items')) { if (!it.by) { it.by = me.id; await db.put('items', it); } await queue(it); }
+    await db.setKV('lastSync2', '1970-01-01T00:00:00Z');
+    try { await loadHousehold(); } catch { /* */ }
+    await loadProfile(); await loadGroups();
   }
   await loadPeople();
   await refresh();
@@ -246,14 +278,14 @@ export async function pushState() {
   return sub ? 'on' : 'off';
 }
 export async function enablePush(prefs) {
-  if (!hh || !me) throw new Error('צריך להיות מחובר');
+  if (!me) throw new Error('צריך להיות מחובר');
   if (!pushSupported()) throw new Error('הדפדפן הזה לא תומך בהתראות. באייפון צריך קודם להוסיף את האפליקציה למסך הבית');
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') throw new Error('לא ניתן אישור להתראות. אפשר לאשר בהגדרות הטלפון');
   const reg = await navigator.serviceWorker.ready;
   const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUBLIC) });
   const json = sub.toJSON();
-  const { error } = await (await client()).from('zman_push_subs').upsert({ endpoint: json.endpoint, user_id: me.id, household_id: hh.id, sub: json, prefs: prefs || {}, updated_at: new Date().toISOString() });
+  const { error } = await (await client()).from('zman_push_subs').upsert({ endpoint: json.endpoint, user_id: me.id, household_id: null, sub: json, prefs: prefs || {}, updated_at: new Date().toISOString() });
   if (error) throw new Error(nice(error));
 }
 export async function disablePush() {
@@ -267,35 +299,16 @@ export async function savePrefs(prefs) {
 }
 // תור ההתראות בענן
 export async function upsertNotify(rows) {
-  if (!hh || !me || !rows.length || !navigator.onLine) return false;
-  const { error } = await (await client()).from('zman_notify').upsert(rows.map(r => ({ household_id: hh.id, created_by: me.id, sent_at: null, ...r })));
+  if (!me || !rows.length || !navigator.onLine) return false;
+  const { error } = await (await client()).from('zman_notify').upsert(rows.map(r => ({ household_id: null, created_by: me.id, sent_at: null, ...r })));
   if (error) { console.warn('notify', error); return false; }
   return true;
 }
 export async function deleteNotify(ids) {
-  if (!hh || !me || !ids.length || !navigator.onLine) return false;
+  if (!me || !ids.length || !navigator.onLine) return false;
   const { error } = await (await client()).from('zman_notify').delete().in('id', ids).is('sent_at', null);
   return !error;
 }
 
-// ---------- ניהול המשפחה (רק להורים — נאכף גם בשרת) ----------
-export async function listMembers() {
-  const { data, error } = await (await client()).rpc('list_members');
-  if (error) throw new Error(nice(error));
-  return data || [];
-}
-export async function setRole(uid, role) {
-  const { error } = await (await client()).rpc('set_member_role', { target: uid, new_role: role });
-  if (error) throw new Error(/last parent/.test(error.message) ? 'חייב להישאר לפחות הורה אחד' : nice(error));
-}
-export async function removeMember(uid) {
-  const { error } = await (await client()).rpc('remove_member', { target: uid });
-  if (error) throw new Error(/last parent/.test(error.message) ? 'חייב להישאר לפחות הורה אחד' : nice(error));
-}
-export async function removePerson(id) {
-  const list = (await loadPeople()).filter(x => x.id !== id);
-  const { error } = await (await client()).from('kv').upsert({ household_id: hh.id, key: 'people', value: list });
-  if (error) throw new Error(nice(error));
-  await db.setKV('people', list);
-  return list;
-}
+// לבדיקות בלבד (בדפדפן של המפתח): מצב מדומה בלי חשבון אמיתי
+export function _testState(st) { if (st.user) me = st.user; if (st.groups) groups = st.groups; if (st.profile) profile = st.profile; }

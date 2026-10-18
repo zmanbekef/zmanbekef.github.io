@@ -19,18 +19,40 @@ const openItems = () => S.items.filter(x => x.status === 'open');
 const isTask = x => x.kind === 'task' || x.kind === 'meeting';
 const allTasksOpen = () => openItems().filter(isTask);
 
-// ---------- בני הבית ----------
-const FACES = ['🧔', '👩', '👦', '👧', '👴', '👵', '🧑', '👶'];
+// ---------- אנשים וקבוצות ----------
+// כל אדם מזוהה לפי החשבון שלו ('u:'+uid) — אותו אדם בכל הקבוצות. "רק שם" (בלי טלפון) מזוהה לפי השורה בקבוצה ('m:'+id).
+const FACES = ['🧔', '👩', '👦', '👧', '👴', '👵', '🧑', '👶', '🙂', '😎', '🦁', '🌟'];
+const KINDS = { family: ['👨‍👩‍👧', 'משפחה'], partners: ['🤝', 'שותפים'], team: ['👥', 'צוות'], friends: ['🎉', 'חברים'], other: ['✨', 'קבוצה'], pair: ['👤', 'קשר ישיר'] };
 const person = pid => S.people.find(p => p.id === pid);
 const personOfUid = uid => uid && S.people.find(p => p.uid === uid);
 const family = () => S.people.length > 1;
+const groupOf = gid => sync.myGroups().find(g => g.id === gid);
+const gLabel = g => g ? (g.kind === 'pair' ? `👤 ${pairOther(g)?.name || 'קשר ישיר'}` : `${KINDS[g.kind]?.[0] || '✨'} ${g.name}`) : '🔒 רק לי';
+const pairOther = g => { const m = g.members.find(x => x.user_id !== S.uid); return m ? person(m.user_id ? 'u:' + m.user_id : 'm:' + m.id) : null; };
+// הכינוי של אדם בקבוצה מסוימת (ואם אין — השם שלו)
+const nameIn = (pid, gid) => { const p = person(pid); if (!p) return ''; return (gid && p.nicks.find(n => n.g === gid)?.nick) || p.name; };
+const whoIn = (pid, gid) => { if (pid === 'any') return '👨‍👩‍👧 מישהו מאיתנו'; const p = person(pid); return p ? `${p.e} ${nameIn(pid, gid)}` : ''; };
+function buildPeople() {
+  const list = [];
+  const pr = sync.myProfile();
+  if (S.uid) list.push({ id: 'u:' + S.uid, uid: S.uid, name: pr?.full_name || 'אני', e: pr?.emoji || '🙂', nicks: [] });
+  for (const g of sync.myGroups()) for (const m of g.members) {
+    const id = m.user_id ? 'u:' + m.user_id : 'm:' + m.id;
+    let p = list.find(x => x.id === id);
+    if (!p) { p = { id, uid: m.user_id || null, name: m.user_id ? (m.profile?.full_name || m.nickname) : m.nickname, e: m.profile?.emoji || m.emoji || '🙂', nicks: [] }; list.push(p); }
+    p.nicks.push({ g: g.id, nick: m.nickname, role: m.role, mid: m.id, kind: g.kind });
+  }
+  S.people = list; S.myP = S.uid ? 'u:' + S.uid : null;
+}
+// אנשים שאני חולק איתם קבוצה (לא כולל אותי)
+const others = () => S.people.filter(p => p.id !== S.myP);
 // מי אחראי על המשימה: מי שהיא בשבילו, ואם אין — מי שרשם
 const ownerP = it => it.forP || personOfUid(it.by)?.id || null;
 const byMe = it => !it.by || it.by === S.uid;
 // למי שאין חשבון (למשל ילד קטן) — השאלה "עשית?" חוזרת למי שרשם
-const isMine = it => !S.uid || (it.forP === 'any' ? sync.isParent() : it.forP ? it.forP === S.myP || (!person(it.forP)?.uid && byMe(it)) : byMe(it));
+const isMine = it => !S.uid || (it.forP === 'any' ? (!it.group_id || groupOf(it.group_id)?.myRole !== 'child') : it.forP ? it.forP === S.myP || (!person(it.forP)?.uid && byMe(it)) : byMe(it));
 const tasksOpen = () => allTasksOpen().filter(isMine);
-const who = pid => { if (pid === 'any') return '👨‍👩‍👧 מישהו מאיתנו'; const p = person(pid); return p ? `${p.e} ${p.name}` : ''; };
+const who = pid => whoIn(pid, null);
 
 // ---------- שמירה ----------
 async function save(it) {
@@ -100,7 +122,7 @@ function think(ms = 450) {
 }
 
 // כפתורים שלא "נועלים" את ההודעה (אפשר ללחוץ עליהם שוב)
-const KEEP = new Set(['editMe', 'edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
+const KEEP = new Set(['assign', 'newGroup', 'shareGroup', 'editMe', 'edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
 async function onAct(m, i, box) {
   const a = m.acts[i];
   if (!KEEP.has(a.op)) {
@@ -243,6 +265,9 @@ const OPS = {
   },
   reviewLeftovers: () => reviewOpen('leftovers'),
   goto: v => showView(v),
+  assign: id => openAssign(id),
+  newGroup: () => { showView('settings'); openNewGroup(); },
+  shareGroup: gid => { const g = groupOf(gid); if (g) window.open(waHref(inviteText(g, g.code)), '_blank'); },
   editMe: () => openEditMe(),
   switchUser: () => signOut(),
   async dur(id, m) {
@@ -292,7 +317,7 @@ async function send(text, voice) {
     if (at) { p.due = at; p.hasTime = true; p.needsWhen = false; if (p.kind === 'thought') p.kind = 'task'; }
     else return bot('🤔', 'var(--card2)', 'לא הצלחתי לחשב את הזמן', 'צריך אינטרנט כדי לקבל את זמני היום. נסה שוב עוד רגע');
   }
-  p.forP = f.forP; p.private = f.private; p.place = pl.place; p.res = C.findRes(text, S.resources);
+  p.forP = f.forP; p.private = f.private; p.group = f.group || null; p.place = pl.place; p.res = C.findRes(text, S.resources);
 
   if (p.intent === 'help') return openHelp();
   if (p.intent === 'summary') return evening(true);
@@ -319,6 +344,14 @@ async function send(text, voice) {
   return createItem(p, text);
 }
 
+// הקבוצה המשותפת לי ולאדם הזה (קודם קבוצה רגילה, אחר כך קשר ישיר)
+function sharedGroup(pid) {
+  const p = person(pid); if (!p) return null;
+  const gs = p.nicks.map(n => groupOf(n.g)).filter(Boolean);
+  return gs.find(g => g.kind !== 'pair') || gs[0] || null;
+}
+// הקבוצה "הראשית" (לשיוך של "מישהו מאיתנו")
+const defGroup = () => groupOf(S.settings.defGroup) || sync.myGroups().find(g => g.kind === 'family') || sync.myGroups().find(g => g.kind !== 'pair') || null;
 // "תזכיר לרחל מחר ב-5 לקנות חלב" / "רחל: לקנות חלב" / "משימה לרחל ..." / "פרטי: ..."
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function forWhom(text) {
@@ -326,20 +359,24 @@ function forWhom(text) {
   if ((m = t.match(/^(?:פרטי|🔒)\s*[:\-–]?\s*/))) { priv = true; t = t.slice(m[0].length); }
   if (/\(פרטי\)|\s🔒/.test(t)) { priv = true; t = t.replace(/\s*\(פרטי\)|\s*🔒/g, ''); }
   if ((m = t.match(/(^|\s)(מישהו מאיתנו|אחד מאיתנו|מישהו מהבית|אחד ההורים)(\s+(צריך|צריכה|חייב))?(?=\s|$)/))) {
-    t = t.replace(m[0], ' ').replace(/\s+/g, ' ').trim(); if (!/^(תזכיר|משימה)/.test(t)) t = 'משימה: ' + t; return { text: t, forP: 'any', private: false };
+    t = t.replace(m[0], ' ').replace(/\s+/g, ' ').trim(); if (!/^(תזכיר|משימה)/.test(t)) t = 'משימה: ' + t; return { text: t, forP: 'any', private: false, group: defGroup()?.id || null };
   }
-  const names = S.people.filter(p => p.name).sort((a, b) => b.name.length - a.name.length);
+  // כל אדם — לפי השם המלא שלו ולפי כל כינוי שלו בכל קבוצה ("אבא", "מוישי")
+  const names = S.people.flatMap(p => [{ id: p.id, name: p.name, g: null }, ...p.nicks.map(n => ({ id: p.id, name: n.nick, g: n.g }))])
+    .filter(x => x.name).sort((a, b) => b.name.length - a.name.length);
   // הודעה לבן משפחה: "פסי, קבעתי לנו דייט…" / "תגיד לפסי ש…" / "תשאל את פסי אם…"
   for (const p of names.filter(p => p.id !== S.myP)) {
     const n = reEsc(p.name);
     if ((m = t.match(new RegExp(`^${n}\\s*,\\s*`))) || (m = t.match(new RegExp(`^(?:תגיד|תגידי|תכתוב|תכתבי|תודיע|תודיעי)\\s+ל${n}(?=[\\s:,]|$)\\s*[:,]?\\s*(?:ש)?`)))
       || (m = t.match(new RegExp(`^(?:תשאל|תשאלי)\\s+את\\s+${n}(?=[\\s:,]|$)\\s*[:,]?\\s*`))) || (m = t.match(new RegExp(`^הודעה\\s+ל${n}(?=[\\s:,]|$)\\s*[:,]?\\s*`)))) {
-      return { text: t.slice(m[0].length).trim() || t, forP: p.id, private: true, msg: true };
+      return { text: t.slice(m[0].length).trim() || t, forP: p.id, private: true, msg: true, group: p.g || sharedGroup(p.id)?.id || null };
     }
   }
+  let group = null;
   for (const p of names) {
     const n = reEsc(p.name), E = '(?=[\\s:,]|$)';
     const self = p.id === S.myP;
+    group = self ? null : (p.g || sharedGroup(p.id)?.id || null);
     if ((m = t.match(new RegExp(`^(תזכיר|תזכירי|להזכיר|תגיד|תגידי|תבקש|תבקשי)\\s+(?:מ|ל|את\\s+)${n}${E}\\s*[:,]?\\s*`)))) {
       t = 'תזכיר לי ' + t.slice(m[0].length); forP = self ? null : p.id; break;
     }
@@ -349,7 +386,7 @@ function forWhom(text) {
     if ((m = t.match(new RegExp(`^ל?${n}\\s*:\\s*`)))) { t = t.slice(m[0].length); forP = self ? null : p.id; break; }
     if ((m = t.match(new RegExp(`(^|\\s)בשביל\\s+${n}${E}`)))) { t = t.replace(m[0], ' ').trim(); forP = self ? null : p.id; break; }
   }
-  return { text: t, forP, private: priv };
+  return { text: t, forP, private: priv, group: forP ? group : null };
 }
 
 async function createItem(p, raw) {
@@ -357,7 +394,7 @@ async function createItem(p, raw) {
   const it = {
     id: db.newId(), kind: p.kind === 'thought' && fp ? 'task' : p.kind, text: p.text || raw, due: p.due ? p.due.toISOString() : null, hasTime: !!p.hasTime,
     repeat: p.repeat, status: 'open', created: new Date().toISOString(), askAt: null, askedKey: null, raw: raw || null,
-    forP: p.forP === 'any' ? 'any' : fp?.id || null, forU: fp?.uid || null, private: !!p.private,
+    forP: p.forP === 'any' ? 'any' : fp?.id || null, forU: fp?.uid || null, private: !!p.private, group_id: p.private ? null : (p.group || null),
     dur: p.dur ?? null, place: p.place || null, res: p.res?.length ? p.res : null,
   };
   S.items.push(it); await save(it); await addLog(it, 'created'); renderAll();
@@ -369,12 +406,12 @@ async function createItem(p, raw) {
 }
 
 async function createReply(it, p, fp) {
-  const edit = { l: '✏️ תקן', op: 'edit', a: [it.id] }, undo = { l: '↩️ בטל', op: 'undo', a: [it.id] };
-  const extra = [it.dur ? `⏱️ ${durLbl(it.dur)}` : '', it.place ? `📍 ${it.place}` : '', ...(it.res || []).map(r => resOf(r)?.e + ' ' + resOf(r)?.n)].filter(Boolean).join(' · ');
-  if (it.forP === 'any') return bot('👨‍👩‍👧', 'var(--g6)', `מישהו מאיתנו: ${it.text}`, `${it.due ? whenLabel(it) : 'בלי תאריך'}${extra ? ' · ' + extra : ''}\nאבדוק שלפחות אחד מכם פנוי, ואתריע אם לא`, [edit, undo]);
+  const edit = { l: '✏️ תקן', op: 'edit', a: [it.id] }, undo = { l: '↩️ בטל', op: 'undo', a: [it.id] }, assign = { l: '📎 שיוך', op: 'assign', a: [it.id] };
+  const extra = [S.uid ? gLabel(groupOf(it.group_id)) : '', it.dur ? `⏱️ ${durLbl(it.dur)}` : '', it.place ? `📍 ${it.place}` : '', ...(it.res || []).map(r => resOf(r)?.e + ' ' + resOf(r)?.n)].filter(Boolean).join(' · ');
+  if (it.forP === 'any') return bot('👨‍👩‍👧', 'var(--g6)', `מישהו מאיתנו: ${it.text}`, `${it.due ? whenLabel(it) : 'בלי תאריך'}${extra ? ' · ' + extra : ''}\nאבדוק שלפחות אחד מכם פנוי, ואתריע אם לא`, [assign, edit, undo]);
   if (fp) {
-    const sub = `${it.due ? whenLabel(it) : 'בלי תאריך'}\n${fp.uid ? `השאלה "עשית?" תגיע לטלפון של ${fp.name}, ואעדכן אותך כשיסיים/תסיים 🎉` : `ל${fp.name} עוד אין חשבון באפליקציה, אז אשאל אותך`}`;
-    return bot(fp.e || '🙋', 'var(--g6)', `בשביל ${fp.name}: ${it.text}`, sub, [edit, undo]);
+    const sub = `${it.due ? whenLabel(it) : 'בלי תאריך'}\n${fp.uid ? `השאלה "עשית?" תגיע לטלפון של ${nameIn(fp.id, it.group_id)}, ואעדכן אותך כשיסיים/תסיים 🎉` : `ל${nameIn(fp.id, it.group_id)} עוד אין חשבון באפליקציה, אז אשאל אותך`}`;
+    return bot(fp.e || '🙋', 'var(--g6)', `בשביל ${nameIn(fp.id, it.group_id)}: ${it.text}`, sub, [assign, edit, undo]);
   }
   if (it.private) toast('🔒 פרטי — רק אתה רואה את זה');
 
@@ -385,7 +422,7 @@ async function createReply(it, p, fp) {
   }
   if (it.kind === 'meeting') {
     if (!it.due) return bot(KIND.meeting.ic, KIND.meeting.bg, it.text, 'מתי הפגישה? כתוב לי יום ושעה, או בחר כאן', [{ l: '📅 לבחור מועד', op: 'edit', a: [it.id, 'date'], pri: true }, edit, undo]);
-    return bot(KIND.meeting.ic, KIND.meeting.bg, it.text, `👥 פגישה · ${whenLabel(it)}${extra ? ' · ' + extra : ''}${it.hasTime ? '\nאזכיר לך חצי שעה לפני' : ''}`, [edit, undo]);
+    return bot(KIND.meeting.ic, KIND.meeting.bg, it.text, `👥 פגישה · ${whenLabel(it)}${extra ? ' · ' + extra : ''}${it.hasTime ? '\nאזכיר לך חצי שעה לפני' : ''}`, [assign, edit, undo]);
   }
   if (p.needsWhen) {
     return bot(KIND.task.ic, KIND.task.bg, it.text, 'מתי להזכיר לך?', [
@@ -397,7 +434,7 @@ async function createReply(it, p, fp) {
   const how = !it.due ? 'בלי תאריך · נמצא במסך המשימות'
     : it.hasTime ? `${whenLabel(it)}${extra ? ' · ' + extra : ''}\nכשיגיע הזמן אשאל אותך אם עשית את זה`
     : `${whenLabel(it)}\nאשאל עליו בסיכום הערב`;
-  const acts = [edit, undo];
+  const acts = [assign, edit, undo];
   if (!it.due || isToday(it.due)) acts.unshift({ l: '⭐ לחשובים של היום', op: 'star', a: [it.id] });
   return bot(k.ic, k.bg, it.text, how, acts);
 }
@@ -559,7 +596,7 @@ async function shareApp() {
   } catch (e) { if (e.name !== 'AbortError') toast('🔗 ' + help.SHARE_URL); }
 }
 function openHelp(question = '', showGuide = false) {
-  const kid = !sync.isParent();
+  const kid = !sync.isParent() && sync.myGroups().length > 0;
   const topics = help.TOPICS.filter(t => !kid || !['roles', 'add'].includes(t.id));
   sheet(`<h3>❓ עזרה</h3>
     <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -638,7 +675,7 @@ function desiredSchedule() {
 }
 let schedBusy = false;
 async function syncSchedule() {
-  if (schedBusy || !S.uid || !sync.household() || !navigator.onLine) return;
+  if (schedBusy || !S.uid || !navigator.onLine) return;
   schedBusy = true;
   try {
     const want = desiredSchedule(), had = await db.getKV('sched', {});
@@ -686,8 +723,8 @@ function inviteOf(text) {
 }
 async function sendMessage(f) {
   const to = person(f.forP);
-  if (!S.uid || !sync.household()) return bot('🔒', 'var(--card2)', 'צריך להיות מחובר כדי לשלוח הודעות', 'היכנס בהגדרות ← משפחה');
-  if (!to?.uid) return bot('🤔', 'var(--card2)', `ל${to?.name || 'מי שכתבת'} אין עדיין חשבון באפליקציה`, 'אפשר לשלוח לו/לה הזמנה מההגדרות ← משפחה');
+  if (!S.uid) return bot('🔒', 'var(--card2)', 'צריך להיות מחובר כדי לשלוח הודעות', 'נכנסים באזור האישי ⚙️');
+  if (!to?.uid) return bot('🤔', 'var(--card2)', `ל${to?.name || 'מי שכתבת'} אין עדיין חשבון באפליקציה`, 'אפשר להזמין אותו/ה מהאזור האישי ⚙️ ← הקבוצות שלי');
   const zm = Z.findZman(f.text);
   const pl = C.findPlace(zm ? zm.rest : f.text, knownPlaces());
   const inv = inviteOf(pl.text);
@@ -695,10 +732,10 @@ async function sendMessage(f) {
     if (zm) { const at = await Z.zmanTime(S.settings.city, zm); if (at) { inv.due = at.toISOString(); inv.hasTime = true; } }
     inv.place = pl.place;
   }
-  const m = { id: db.newId(), kind: 'msg', text: f.text, from: S.myP, forP: to.id, forU: to.uid, private: true, status: 'open',
+  const m = { id: db.newId(), kind: 'msg', text: f.text, from: S.myP, forP: to.id, forU: to.uid, private: true, status: 'open', group_id: f.group || sharedGroup(to.id)?.id || null,
     invite: inv, replies: [], created: new Date().toISOString() };
   S.items.push(m); await save(m);
-  await queueNotify(to.uid, 'msg', `💌 ${person(S.myP)?.name || ''}`, f.text + (inv ? `\n📅 ${whenLabel(inv)}` : ''), m.id);
+  await queueNotify(to.uid, 'msg', `💌 ${nameIn(S.myP, m.group_id)}`, f.text + (inv ? `\n📅 ${whenLabel(inv)}` : ''), m.id);
   return bot('💌', 'var(--g6)', `נשלח ל${to.name}`, `${f.text}${inv ? `\n📅 ${whenLabel(inv)}${inv.dur ? ' · ⏱️ ' + durLbl(inv.dur) : ''}` : ''}\nאעדכן אותך כש${to.name} יגיב/תגיב`,
     [{ l: '↩️ בטל שליחה', op: 'unsend', a: [m.id] }]);
 }
@@ -800,9 +837,10 @@ const durLbl = m => m >= 60 ? (m % 60 ? `${Math.floor(m / 60)}:${String(m % 60).
 const resOf = id => S.resources.find(r => r.id === id);
 const knownPlaces = () => [...new Set(S.items.map(x => x.place).filter(Boolean))];
 const ownerOf = x => x.busy ? (x.forP || personOfUid(x.forU)?.id || personOfUid(x.by)?.id || '?') : (x.forP === 'any' ? 'any' : ownerP(x) || personOfUid(x.by)?.id || S.myP || 'me');
-const adults = () => { const a = S.people.filter(p => p.uid).map(p => p.id); return a.length ? a : [S.myP || 'me']; };
+// מבוגרים עם חשבון — בקבוצה של המשימה (בשביל "מישהו מאיתנו")
+const adults = it => { const gid = it?.group_id; const a = S.people.filter(p => p.uid && (!gid || p.nicks.some(n => n.g === gid && n.role !== 'child'))).map(p => p.id); return a.length ? a : [S.myP || 'me']; };
 const meId = () => S.myP || 'me';
-const ctx = () => ({ items: S.items, busy: S.busy, owner: ownerOf, adults: adults(), resources: S.resources, travel: S.travel });
+const ctx = () => ({ items: S.items, busy: S.busy, owner: ownerOf, adults, resources: S.resources, travel: S.travel });
 const allConflicts = () => C.detect(ctx()).concat(shabbatConflicts());
 // משהו שנקבע בשבת/חג, או שמסתיים פחות משעה לפני הכניסה
 function shabbatConflicts() {
@@ -822,11 +860,11 @@ function shabbatConflicts() {
 }
 function concerns(c) {
   const mine = [c.a, c.b].some(x => x && !x.busy && ownerOf(x) === meId());
-  if (c.type === 'nobody' || c.type === 'res') return mine || adults().includes(meId());
+  if (c.type === 'nobody' || c.type === 'res') return mine || adults(c.a).includes(meId());
   return mine;
 }
 const nameOf = x => x.busy ? `${who(ownerOf(x))} תפוס/ה` : x.text;
-const lineOf = x => `${nameOf(x)} (${C.span(x)}${family() && !x.busy ? ' · ' + who(ownerOf(x)) : ''})`;
+const lineOf = x => `${nameOf(x)} (${C.span(x)}${family() && !x.busy ? ' · ' + whoIn(ownerOf(x), x.group_id) : ''})`;
 function describe(c) {
   const day = whenLabel({ due: c.a.due, hasTime: false });
   switch (c.type) {
@@ -880,7 +918,7 @@ function openConflict(aId, bId) {
   if (!c) return toast('👍 ההתנגשות כבר לא קיימת');
   const pair = [c.a, c.b, ...(c.blockers || [])].filter(Boolean);
   const t0 = Math.min(...pair.map(C.startOf)) - 45 * 60e3, t1 = Math.max(...pair.map(C.endOf)) + 45 * 60e3, W = t1 - t0;
-  const owners = [...new Set(c.type === 'nobody' ? adults() : pair.map(ownerOf))];
+  const owners = [...new Set(c.type === 'nobody' ? adults(c.a) : pair.map(ownerOf))];
   const pool = S.items.concat(S.busy).filter(x => x.status === 'open' && x.due && x.hasTime && x.dur > 0 && C.endOf(x) > t0 && C.startOf(x) < t1);
   const bar = x => { const l = (C.startOf(x) - t0) / W * 100, w = Math.max(2, x.dur * 60e3 / W * 100); const hot = pair.includes(x);
     return `<div class="tl-bar${hot ? ' hot' : ''}${x.busy ? ' busy' : ''}" style="right:${l}%;width:${w}%" title="${esc(nameOf(x))}">${esc(x.busy ? '🔒 תפוס' : x.text)}</div>`; };
@@ -931,7 +969,7 @@ function suggestions(c) {
     if (c.type === 'nobody') {
       // שעה שבה לפחות אחד מכם פנוי
       const probe = { ...tgt, dur: tgt.dur || 15 };
-      const d = freeWhen(probe, t => adults().some(p => busyFor(p).every(y => !(t < C.endOf(y) && C.startOf(y) < t + probe.dur * 60e3))));
+      const d = freeWhen(probe, t => adults(tgt).some(p => busyFor(p).every(y => !(t < C.endOf(y) && C.startOf(y) < t + probe.dur * 60e3))));
       if (d) out.push({ l: `🕐 להזיז ל${dayLbl(d)} (מישהו פנוי)`, run: move(tgt, d) });
       for (const bl of c.blockers.filter(editable)) {
         const d2 = C.freeSlot(bl, ctx(), blockersOf);
@@ -943,9 +981,9 @@ function suggestions(c) {
       const d = C.freeSlot(tgt, ctx(), both);
       if (d) out.push({ l: `🕐 להזיז את "${tgt.text}" ל${dayLbl(d)} (${c.type === 'both' ? 'שניכם פנויים' : 'פנוי'})`, run: move(tgt, d) });
       // להעביר למישהו אחר שפנוי
-      if (family() && tgt.kind !== 'meeting') for (const p of S.people.filter(p => p.uid && p.id !== ownerOf(tgt))) {
+      if (tgt.group_id && tgt.kind !== 'meeting') for (const p of S.people.filter(p => p.uid && p.id !== ownerOf(tgt) && p.nicks.some(n => n.g === tgt.group_id && n.role !== 'child'))) {
         if (busyFor(p.id).every(y => !(C.startOf(tgt) < C.endOf(y) && C.startOf(y) < C.endOf(tgt))))
-          out.push({ l: `🙋 לתת ל${p.name} (${p.name} פנוי/ה אז)`, run: async () => { tgt.forP = p.id; tgt.forU = p.uid; tgt.askedKey = null; await save(tgt); toast(`🙋 עבר ל${p.name}`); } });
+          out.push({ l: `🙋 לתת ל${nameIn(p.id, tgt.group_id)} (פנוי/ה אז)`, run: () => setAssign(tgt, tgt.group_id, p.id) });
       }
       // לקצר / לפצל
       if (other && !(c.type === 'res' && false)) {
@@ -1014,21 +1052,24 @@ function rowHtml(it) {
   const d = isDoneToday(it) && !it.repeat ? ' done' : '';
   const late = it.status === 'open' && it.due && (it.hasTime ? new Date(it.due) < new Date() : overdueDays(it));
   const star = curTop3().ids.includes(it.id);
-  const owner = family() ? who(ownerP(it)) : '';
-  const meta = [it.private ? '🔒' : '', owner, it.kind === 'meeting' ? '👥 פגישה' : '', whenLabel(it) + (it.hasTime && it.dur ? `–${hm(new Date(C.endOf(it)))}` : ''), it.place ? '📍 ' + it.place : '', ...(it.res || []).map(r => resOf(r)?.e || '')].filter(Boolean).join(' · ');
+  const g = groupOf(it.group_id);
+  const owner = !S.uid ? '' : it.forP && it.forP !== S.myP ? whoIn(it.forP, it.group_id) : g ? gLabel(g) : (it.by && it.by !== S.uid ? whoIn(personOfUid(it.by)?.id, null) : '');
+  const meta = [owner, it.kind === 'meeting' ? '👥 פגישה' : '', whenLabel(it) + (it.hasTime && it.dur ? `–${hm(new Date(C.endOf(it)))}` : ''), it.place ? '📍 ' + it.place : '', ...(it.res || []).map(r => resOf(r)?.e || '')].filter(Boolean).join(' · ');
   const warn = S.conflictIds?.has(it.id) && it.status === 'open' ? '<button class="warn" data-op="conf" aria-label="התנגשות">⚠️</button>' : '';
   return `<div class="row${d}" data-id="${it.id}"><button class="cb" data-op="check">${d ? '✓' : ''}</button>${warn}
     <div class="nm" data-op="edit">${esc(it.text)}${meta ? `<small class="${late ? 'late' : ''}">${esc(meta)}</small>` : ''}</div>
-    ${it.status === 'open' && it.kind === 'task' && isMine(it) ? `<button class="star${star ? ' on' : ''}" data-op="star" aria-label="לחשובים של היום">⭐</button>` : ''}</div>`;
+    ${S.uid && it.status === 'open' ? '<button class="star on" data-op="assign" aria-label="שיוך" style="font-size:16px">📎</button>' : ''}${it.status === 'open' && it.kind === 'task' && isMine(it) ? `<button class="star${star ? ' on' : ''}" data-op="star" aria-label="לחשובים של היום">⭐</button>` : ''}</div>`;
 }
 function renderTasks() {
   const now = new Date(), t0 = sod(now), t1 = addDays(t0, 1), t2 = addDays(t0, 2);
-  const pass = x => S.who === 'all' || ownerP(x) === S.who || (S.who === S.myP && isMine(x));
+  // סינון: הכל / שלי / רק לי (בלי קבוצה) / קבוצה מסוימת
+  const pass = x => S.who === 'all' || (S.who === 'mine' && isMine(x)) || (S.who === 'solo' && !x.group_id) || x.group_id === S.who;
   const open = rankForToday(allTasksOpen().filter(pass));
   const isLate = x => x.due && (x.hasTime ? new Date(x.due) < now : new Date(x.due) < t0);
-  $('#whoFilter').hidden = !family();
-  if (family()) $('#whoFilter').innerHTML = `<button class="chip ${S.who === 'all' ? 'on' : ''}" data-w="all">כולם</button>` +
-    S.people.map(p => `<button class="chip ${S.who === p.id ? 'on' : ''}" data-w="${p.id}">${p.e} ${esc(p.id === S.myP ? 'שלי' : p.name)}</button>`).join('');
+  const gs = sync.myGroups();
+  $('#whoFilter').hidden = !gs.length;
+  if (gs.length) $('#whoFilter').innerHTML = [['all', 'הכל'], ['mine', '🙋 שלי'], ['solo', '🔒 רק לי'], ...gs.map(g => [g.id, gLabel(g)])]
+    .map(([k, l]) => `<button class="chip ${S.who === k ? 'on' : ''}" data-w="${k}">${esc(l)}</button>`).join('');
   const groups = [
     ['⚠️ באיחור', open.filter(isLate)],
     ['☀️ היום', open.filter(x => !isLate(x) && x.due && new Date(x.due) < t1 && !x.repeat)],
@@ -1052,6 +1093,7 @@ $('#taskList').addEventListener('click', e => {
   if (op === 'edit') return openEdit(id);
   if (op === 'star') return OPS.star(id);
   if (op === 'conf') return openConflict(id);
+  if (op === 'assign') return openAssign(id);
 });
 
 // ---------- מסך מחשבות ----------
@@ -1081,8 +1123,6 @@ function openEdit(id, focus, forceKind) {
   let kind = forceKind || it.kind;
   const d = it.due ? new Date(it.due) : null;
   const rep = it.repeat?.type || '';
-  let forP = ownerP(it) || S.myP, priv = !!it.private;
-  const mineToLock = !it.by || it.by === S.uid;
   sheet(`<h3>✏️ עריכה</h3>
     <label>סוג</label><div class="seg" id="eKind">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
     <label>מה</label><input id="eText" value="${esc(it.text)}">${it.raw && it.raw !== it.text ? `<p class="note" style="margin-top:4px">✍️ במקור כתבת: "${esc(it.raw)}"</p>` : ''}
@@ -1091,8 +1131,7 @@ function openEdit(id, focus, forceKind) {
     <label>חוזר</label><select id="eRep"><option value="">לא חוזר</option><option value="daily">כל יום</option><option value="weekly">כל שבוע</option><option value="monthly">כל חודש</option></select></div>
     <div id="eWhen2"><div class="two"><div><label>כמה זמן</label><select id="eDur"><option value="">לא ידוע</option><option value="0">רק תזכורת</option>${[15, 30, 45, 60, 90, 120, 180, 240].map(m => `<option value="${m}">${durLbl(m)}</option>`).join('')}</select></div>
     <div><label>איפה (לא חובה)</label><input id="ePlace" value="${esc(it.place || '')}" list="placeList"><datalist id="placeList">${knownPlaces().concat(C.CITIES).map(x => `<option value="${esc(x)}">`).join('')}</datalist></div></div></div>
-    ${family() ? `<label>בשביל מי</label><div class="seg" id="eFor">${S.people.map(p => `<button data-p="${p.id}" class="${p.id === forP ? 'on' : ''}">${p.e} ${esc(p.id === S.myP ? 'אני' : p.name)}</button>`).join('')}<button data-p="any" class="${forP === 'any' ? 'on' : ''}">👨‍👩‍👧 מישהו מאיתנו</button></div>` : ''}
-    ${S.uid && mineToLock ? `<label>מי רואה</label><div class="seg" id="ePriv"><button data-v="0" class="${it.private ? '' : 'on'}">👨‍👩‍👧 כל המשפחה</button><button data-v="1" class="${it.private ? 'on' : ''}">🔒 רק אני</button></div>` : ''}
+    ${S.uid ? `<label>שייכת ל</label><div class="set-row" style="border:none;padding:4px 0"><b>${esc(assignLabel(it))}</b><button class="act pri" id="eAssign">📎 שיוך</button></div>` : ''}
     <button class="btn pri" id="eSave" style="margin-top:16px">💾 שמור</button>
     <div class="two"><button class="btn" id="eCancel">ביטול</button><button class="btn danger" id="eDel">🗑️ מחק</button></div>`);
   $('#eRep').value = rep;
@@ -1101,8 +1140,7 @@ function openEdit(id, focus, forceKind) {
   const syncKind = () => { $('#eWhen').style.display = $('#eWhen2').style.display = kind === 'thought' ? 'none' : ''; };
   syncKind();
   $('#eKind').onclick = e => { const b = e.target.closest('button'); if (!b) return; kind = b.dataset.k; [...$('#eKind').children].forEach(x => x.classList.toggle('on', x === b)); syncKind(); };
-  if ($('#eFor')) $('#eFor').onclick = e => { const b = e.target.closest('button'); if (!b) return; forP = b.dataset.p; [...$('#eFor').children].forEach(x => x.classList.toggle('on', x === b)); };
-  if ($('#ePriv')) $('#ePriv').onclick = e => { const b = e.target.closest('button'); if (!b) return; priv = b.dataset.v === '1'; [...$('#ePriv').children].forEach(x => x.classList.toggle('on', x === b)); };
+  $('#eAssign')?.addEventListener('click', () => openAssign(id));
   if (focus === 'date') setTimeout(() => { try { $('#eDate').showPicker?.(); } catch { $('#eDate').focus(); } }, 350);
   $('#eCancel').onclick = closeSheet;
   $('#eDel').onclick = () => { closeSheet(); OPS.remove(id); };
@@ -1123,19 +1161,53 @@ function openEdit(id, focus, forceKind) {
     Object.assign(it, { kind, text, due: due ? due.toISOString() : null, hasTime: kind === 'thought' ? false : hasTime, repeat, askAt: null, askedKey: null });
     const dv = $('#eDur').value; it.dur = dv === '' ? null : +dv; it.place = $('#ePlace').value.trim() || null;
     it.res = C.findRes(text, S.resources); if (!it.res.length) it.res = null;
-    if (family() && forP === 'any') { it.forP = 'any'; it.forU = null; }
-    else if (family()) {
-      const fp = forP && forP !== S.myP ? person(forP) : null;
-      const creatorP = personOfUid(it.by)?.id || S.myP;
-      it.forP = fp && fp.id !== creatorP ? fp.id : (forP === S.myP && creatorP !== S.myP ? S.myP : null);
-      it.forU = it.forP ? person(it.forP)?.uid || null : null;
-    }
-    if (mineToLock) it.private = priv;
     await save(it); closeSheet(); renderAll();
     toast('✏️ נשמר');
     scanConflicts();
     if (S.pending === id) S.pending = null;
   };
+}
+
+// ---------- 📎 שיוך: רק לי / קבוצה / אדם בקבוצה / קשר ישיר ----------
+function assignLabel(it) {
+  const g = groupOf(it.group_id);
+  if (it.forP === 'any') return `👨‍👩‍👧 מישהו מאיתנו · ${gLabel(g)}`;
+  if (it.forP && it.forP !== S.myP) return `🙋 ${whoIn(it.forP, it.group_id)}${g && g.kind !== 'pair' ? ' · ' + gLabel(g) : ''}`;
+  return g ? `👥 ${gLabel(g)}` : '🔒 רק לי';
+}
+function openAssign(id) {
+  const it = item(id); if (!it) return toast('המשימה הזאת כבר לא קיימת', true);
+  if (!S.uid) { toast('כדי לשייך צריך קודם להיכנס', true); return showGate(); }
+  const gs = sync.myGroups(), cur = (g, p) => (it.group_id || null) === (g || null) && (it.forP || null) === (p || null);
+  const opt = (g, p, label, sub) => `<div class="pick${cur(g, p) ? ' on' : ''}" data-g="${g || ''}" data-p="${p || ''}"><div class="ck">${cur(g, p) ? '✓' : ''}</div>${label}${sub ? `<small>${esc(sub)}</small>` : ''}</div>`;
+  let html = opt(null, null, '🔒 רק לי', 'אף אחד אחר לא רואה');
+  for (const g of gs.filter(g => g.kind !== 'pair')) {
+    html += `<p class="note" style="margin:12px 0 6px">${esc(gLabel(g))}</p>` + opt(g.id, null, `👥 כל ${esc(g.name)}`, 'כולם בקבוצה רואים');
+    if (g.kind === 'family' || g.members.filter(m => m.user_id).length > 2) html += opt(g.id, 'any', '👨‍👩‍👧 מישהו מאיתנו', 'אבדוק שמישהו פנוי');
+    for (const m of g.members.filter(m => m.user_id !== S.uid)) { const pid = m.user_id ? 'u:' + m.user_id : 'm:' + m.id; html += opt(g.id, pid, `🙋 ${esc(m.profile?.emoji || m.emoji || '🙂')} ${esc(m.nickname)}`, m.user_id ? 'יקבל/תקבל "עשית?"' : 'רק שם — אשאל אותך'); }
+  }
+  const pairs = gs.filter(g => g.kind === 'pair');
+  if (pairs.length) html += `<p class="note" style="margin:12px 0 6px">👤 קשרים ישירים (רק שניכם)</p>` + pairs.map(g => { const o = pairOther(g); return o ? opt(g.id, o.id, `👤 ${esc(o.e)} ${esc(o.name)}`, 'רק שניכם רואים') : opt(g.id, null, '👤 ממתין שיצטרף…', 'אפשר לשתף כבר עכשיו'); }).join('');
+  sheet(`<h3>📎 שיוך</h3><p class="note" style="margin-bottom:10px">${esc(it.text)}</p><div id="asList">${html}</div>
+    <div class="two" style="margin-top:12px"><button class="btn" id="asNewPerson" style="margin:0">➕ אדם חדש</button><button class="btn" id="asNewGroup" style="margin:0">➕ קבוצה חדשה</button></div>`);
+  $('#asList').onclick = async e => {
+    const el = e.target.closest('.pick'); if (!el) return;
+    const g = el.dataset.g || null, p = el.dataset.p || null;
+    closeSheet(); await setAssign(it, g, p);
+  };
+  $('#asNewPerson').onclick = () => { closeSheet(); openNewPair(it.id); };
+  $('#asNewGroup').onclick = () => { closeSheet(); openNewGroup(); };
+}
+async function setAssign(it, g, p) {
+  const before = it.forU;
+  it.group_id = g; it.forP = p === 'any' ? 'any' : (p && p !== S.myP ? p : null);
+  it.forU = it.forP && it.forP !== 'any' ? person(it.forP)?.uid || null : null;
+  it.private = !g; it.askedKey = null;
+  if (it.kind === 'thought' && it.forP) it.kind = 'task';
+  await save(it); renderAll(); scanConflicts();
+  toast(`📎 ${assignLabel(it)}`);
+  if (it.forU && it.forU !== S.uid && it.forU !== before)
+    await queueNotify(it.forU, 'msg', `📎 ${nameIn(S.myP, g)} שייך/ה לך משימה`, `${it.text}${it.due ? ' · ' + whenLabel(it) : ''}`, it.id);
 }
 
 function openPicker(mustSwapFor) {
@@ -1497,20 +1569,19 @@ async function onRemoteItem(local, next, live) {
   }
 }
 
-// ---------- מסך פתיחה: כניסה ← משפחה ← שם ----------
+// ---------- מסך פתיחה: כניסה ← שם ואייקון (← הצטרפות אם הגיעו מקישור הזמנה) ----------
 const joinCode = (new URLSearchParams(location.search).get('join') || '').toUpperCase();
 const joinName = new URLSearchParams(location.search).get('name') || '';
+let joinHandled = false;
 async function gateStep() {
   if (!sync.user()) return 'auth';
-  if (!sync.household()) return 'family';
-  S.people = await db.getKV('people', []);
-  const mine = personOfUid(S.uid);
-  if (!mine) return 'name';
-  S.myP = mine.id;
+  if (!sync.myProfile()?.full_name) return 'profile';
+  if (joinCode && !joinHandled && !sync.myGroups().some(g => g.code === joinCode || g.child_code === joinCode)) return 'join';
   return null;
 }
 async function showGate() {
   S.uid = sync.user()?.id || null;
+  buildPeople();
   const step = await gateStep();
   const g = $('#gate'), body = $('#gateBody');
   if (!step) { g.classList.remove('on'); renderAll(); renderFamily(); renderMe(); return true; }
@@ -1520,7 +1591,7 @@ async function showGate() {
 
   if (step === 'auth') {
     body.innerHTML = `<div class="g-logo">⏰</div><h2>ברוכים הבאים ל"זמן בכיף"</h2>
-      <p class="note">${joinCode ? '👋 הוזמנת למשפחה! קודם נרשמים. ' : ''}אותו מייל ואותה סיסמה כמו באפליקציית <b>כסף בכיף</b>. מי שכבר רשום שם, פשוט נכנס.</p>
+      <p class="note">${joinCode ? '👋 הוזמנת לקבוצה! קודם נכנסים או נרשמים. ' : ''}יש לך <b>כסף בכיף</b>? אותו מייל ואותה סיסמה. חדש? נרשמים כאן.</p>
       <input id="gEmail" type="email" autocomplete="email" placeholder="מייל" dir="ltr">
       <input id="gPass" type="password" autocomplete="current-password" placeholder="סיסמה (לפחות 6 תווים)" dir="ltr">
       <div class="err"></div>
@@ -1531,7 +1602,7 @@ async function showGate() {
       if (!/^\S+@\S+\.\S+$/.test(e)) return err('צריך מייל תקין');
       if (p.length < 6) return err('הסיסמה צריכה להיות לפחות 6 תווים');
       busy(b, true);
-      try { await fn(e, p); try { await sync.loadHousehold(); } catch { /* */ } fresh = true; await afterGate(); }
+      try { await fn(e, p); fresh = true; await sync.connected(true); await afterGate(); }
       catch (x) { err(x.message); busy(b, false); }
     };
     $('#gIn').onclick = e => go(sync.signIn, e.target);
@@ -1539,48 +1610,48 @@ async function showGate() {
     body.querySelectorAll('input').forEach(i => i.oninput = () => err(''));
     return false;
   }
-  if (step === 'family') {
-    body.innerHTML = `<h2>👨‍👩‍👧 המשפחה</h2>
-      <p class="note">מי שמתחיל פותח משפחה ושולח קוד לבני הבית. מי שקיבל קוד מצטרף איתו.</p>
-      ${joinCode ? '' : `<input id="gName" placeholder="שם המשפחה, למשל: משפחת כהן"><button class="btn pri" id="gNew">פתיחת משפחה חדשה</button><div class="or">או</div>`}
-      <input id="gCode" placeholder="קוד הצטרפות (6 תווים)" value="${esc(joinCode)}" dir="ltr" style="text-transform:uppercase;letter-spacing:3px;text-align:center">
-      <button class="btn ${joinCode ? 'pri' : ''}" id="gJoin">🔑 הצטרפות עם קוד</button>
+  if (step === 'profile') {
+    // הצעה מהשם שב"כסף בכיף"
+    const old = (await sync.loadPeople()).find(x => x.uid === S.uid);
+    let face = Math.max(0, FACES.indexOf(old?.e || '🧔'));
+    body.innerHTML = `<h2>🙋 איך קוראים לך?</h2>
+      <p class="note">השם המלא שלך — ככה יזהו אותך. בכל קבוצה אפשר גם כינוי משלה ("אבא", "מוישי").</p>
+      <div style="display:flex;gap:8px"><button class="round" id="gFace" style="background:var(--card2);border:1px solid var(--line);width:50px;height:50px;font-size:24px">${FACES[face]}</button>
+      <input id="gMe" placeholder="שם מלא, למשל: משה כהן" value="${esc(joinName || old?.name || '')}" style="flex:1"></div>
       <div class="err"></div>
+      <button class="btn pri" id="gSave">המשך</button>
       <button class="link" id="gOut">יציאה מהחשבון</button>`;
-    const run = async (fn, b) => { busy(b, true); try { await fn(); fresh = true; confetti(); await afterGate(); } catch (x) { err(x.message); busy(b, false); } };
-    $('#gNew')?.addEventListener('click', e => run(() => sync.createHousehold($('#gName').value.trim()), e.target));
-    $('#gJoin').onclick = e => { const c = $('#gCode').value.trim(); if (c.length < 6) return err('הקוד הוא 6 תווים'); run(() => sync.joinHousehold(c), e.target); };
+    $('#gFace').onclick = e => { face = (face + 1) % FACES.length; e.target.textContent = FACES[face]; };
+    $('#gSave').onclick = async e => {
+      const name = $('#gMe').value.trim(); if (!name) return err('צריך לכתוב שם');
+      busy(e.target, true);
+      try { await sync.saveProfile(name, FACES[face]); await sync.loadGroups(); toast(`🎉 ברוך הבא, ${name}!`); await afterGate(); } catch (x) { err(x.message); busy(e.target, false); }
+    };
     $('#gOut').onclick = signOut;
     return false;
   }
-  // step === 'name'
-  S.people = await sync.loadPeople();
-  if (personOfUid(S.uid)) return showGate();
-  const free = S.people.filter(p => !p.uid).sort((a, b) => (b.name === joinName) - (a.name === joinName));
-  let face = 0;
-  body.innerHTML = `<h2>🙋 איך קוראים לך?</h2>
-    <p class="note">כל מה שתרשום יופיע עם השם שלך, ואפשר יהיה לתת לך משימות.</p>
-    ${free.length ? `<p class="note">אולי זה אתה?</p><div class="chips" style="flex-wrap:wrap;padding:0 0 12px">${free.map(p => `<button class="chip" data-claim="${p.id}">אני ${p.e} ${esc(p.name)}</button>`).join('')}</div>` : ''}
-    <div style="display:flex;gap:8px"><button class="round" id="gFace" style="background:var(--card2);border:1px solid var(--line);width:48px;height:48px">${FACES[0]}</button>
-    <input id="gMe" placeholder="השם שלך" style="flex:1"></div>
+  // step === 'join': הגיעו מקישור הזמנה
+  const pr = sync.myProfile();
+  body.innerHTML = `<h2>👋 הוזמנת לקבוצה</h2>
+    <p class="note">קוד: <b dir="ltr" style="letter-spacing:2px">${esc(joinCode)}</b><br>איך יקראו לך בקבוצה הזאת?</p>
+    <input id="gNick" placeholder="כינוי, למשל: אבא / מוישי" value="${esc(pr?.full_name?.split(' ')[0] || '')}">
     <div class="err"></div>
-    <button class="btn pri" id="gSave">המשך</button>
-    <button class="link" id="gOut">יציאה מהחשבון</button>`;
-  const finish = async p => { try { S.people = await sync.savePerson(p); S.myP = p.id; confetti(); toast('🎉 ברוך הבא!'); await afterGate(); } catch (x) { err(x.message); } };
-  body.querySelectorAll('[data-claim]').forEach(b => b.onclick = () => finish({ ...free.find(p => p.id === b.dataset.claim), uid: S.uid }));
-  $('#gFace').onclick = e => { face = (face + 1) % FACES.length; e.target.textContent = FACES[face]; };
-  $('#gSave').onclick = () => {
-    const name = $('#gMe').value.trim(); if (!name) return err('צריך לכתוב שם');
-    if (S.people.some(p => p.name === name)) return err('השם הזה כבר קיים. אם זה אתה, לחץ עליו למעלה');
-    finish({ id: db.newId(), name, e: FACES[face], uid: S.uid });
+    <button class="btn pri" id="gJoin">🔑 הצטרפות</button>
+    <button class="link" id="gSkip">לא עכשיו</button>`;
+  $('#gJoin').onclick = async e => {
+    busy(e.target, true);
+    try { await sync.joinGroup(joinCode, $('#gNick').value.trim() || pr?.full_name, pr?.emoji); joinHandled = true; confetti(); toast('🎉 הצטרפת לקבוצה!'); history.replaceState(null, '', location.pathname); await afterGate(); }
+    catch (x) { err(x.message); busy(e.target, false); }
   };
-  $('#gOut').onclick = signOut;
+  $('#gSkip').onclick = () => { joinHandled = true; afterGate(); };
   return false;
 }
 let fresh = false;
 async function afterGate() {
   if (!(await showGate())) return;
-  if (fresh) { fresh = false; await sync.connected(true); S.items = await db.all('items'); renderAll(); }
+  if (fresh) { fresh = false; S.items = await db.all('items'); }
+  await migrateToGroups();
+  buildPeople(); renderAll(); renderFamily(); renderMe();
   if (!started) boot();
 }
 async function signOut() {
@@ -1589,87 +1660,159 @@ async function signOut() {
   await load(); showGate();
 }
 
-// ---------- כרטיס המשפחה בהגדרות ----------
+// מעבר חד-פעמי: מה שנרשם עם המשפחה של "כסף בכיף" עובר לקבוצה "המשפחה"
+async function migrateToGroups() {
+  if (!S.uid || await db.getKV('migratedGroups', false)) return;
+  const hh = sync.household(), mine = S.items.filter(it => it.status !== 'deleted' && (!it.by || it.by === S.uid));
+  try {
+    let gid = null;
+    if (hh && (mine.length || sync.myGroups().some(g => g.source_household === hh.id))) gid = await sync.importHousehold(hh.id);
+    buildPeople();
+    const oldPeople = await db.getKV('people', []) || [];
+    for (const it of S.items) {
+      // forP ישן (מרשימת כסף בכיף) → זיהוי לפי חשבון
+      const map = v => { if (!v || v === 'any' || /^[um]:/.test(v)) return v; const op = oldPeople.find(x => x.id === v); return op?.uid ? 'u:' + op.uid : null; };
+      it.forP = map(it.forP); if (it.from) it.from = map(it.from); if (it.doneBy) it.doneBy = map(it.doneBy);
+      if (it.replies) it.replies = it.replies.map(r => ({ ...r, p: map(r.p) }));
+      if (!it.group_id && gid && !it.private && it.status !== 'deleted') it.group_id = gid;
+      if (!it.by) it.by = S.uid;
+      await db.put('items', it);
+      if (it.by === S.uid) await sync.queue(it);
+    }
+    await db.setKV('migratedGroups', true);
+    if (gid) await bot('👨‍👩‍👧', 'var(--g6)', 'עברנו לקבוצות!', `מה שרשמתם עם המשפחה נמצא עכשיו בקבוצה "${groupOf(gid)?.name || 'המשפחה'}".\nאפשר לפתוח עוד קבוצות — שותפים, צוות, חברים — באזור האישי ⚙️`);
+  } catch (e) { console.warn('migrate', e); }
+}
+
+// ---------- הקבוצות שלי (בהגדרות) ----------
+const inviteText = (g, code) => {
+  const link = `${location.origin}${location.pathname}guide/?join=${code}`;
+  return g.kind === 'pair'
+    ? `היי! הוספתי אותך ב"זמן בכיף" ⏰ — ככה נוכל לתת אחד לשני משימות ולשלוח הודעות, רק שנינו.\n${link}\n\nקוד (למקרה שצריך): ${code}`
+    : `הצטרפו ל"${g.name}" ב"זמן בכיף" ⏰\nהכל בקישור אחד — התקנה, הצטרפות והסבר:\n${link}\n\nקוד: ${code}`;
+};
+const waHref = t => `https://wa.me/?text=${encodeURIComponent(t)}`;
 function renderFamily() {
-  const hh = sync.household(), el = $('#familyCard'); if (!el) return;
-  if (!hh) { el.hidden = true; return; }
+  const el = $('#familyCard'); if (!el) return;
+  if (!S.uid) { el.hidden = true; return; }
   el.hidden = false;
-  const meP = person(S.myP), email = sync.user()?.email || '';
-  const head = `<h4>👨‍👩‍👧 ${esc(hh.name)}<small id="syncState">${navigator.onLine ? 'מסונכרן ✓' : 'ממתין לרשת…'}</small></h4>
-    <p class="note" style="margin-bottom:10px">${esc(email)} · ${meP ? `${meP.e} ${esc(meP.name)}` : ''} · ${sync.isParent() ? 'הורה — רואה הכל ומנהל את המשפחה' : '🧒 ילד — רואה את מה שרשמת ומה שנתנו לך'}<br>זה אותו חשבון ואותה משפחה כמו ב"כסף בכיף".</p><button class="act" id="editMeBtn" style="margin-bottom:10px">✏️ לשנות את השם או האייקון שלי</button>`;
-  if (!sync.isParent()) { el.innerHTML = head + '<button class="btn danger" id="signOutBtn">יציאה מהחשבון</button>'; $('#signOutBtn').onclick = signOut; $('#editMeBtn').onclick = openEditMe; return; }
-  const inviteHref = (role, name) => {
-    const code = role === 'parent' ? hh.invite_code : hh.child_code;
-    const link = `${location.origin}${location.pathname}guide/?join=${code}${name ? '&name=' + encodeURIComponent(name) : ''}`;
-    const msg = `${name ? `היי ${name}! ` : ''}הצטרפו ללוח המשפחתי שלנו ב"זמן בכיף" ⏰\nהכל בקישור אחד — התקנה, הצטרפות והסבר:\n${link}\n\nקוד ${role === 'parent' ? 'הורה' : 'ילד'} (למקרה שצריך): ${code}`;
-    return `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  const gs = sync.myGroups(), hh = sync.household();
+  const canImport = hh && !gs.some(g => g.source_household === hh.id);
+  const card = g => {
+    const me = g.members.find(m => m.user_id === S.uid), admin = me?.role === 'admin';
+    const mem = g.members.map(m => `<div class="fam-row"><span style="flex:1;min-width:110px">${m.user_id ? '📱' : '✏️'} ${esc(m.profile?.emoji || m.emoji || '🙂')} <b>${esc(m.nickname)}</b>${m.user_id === S.uid ? ' (אני)' : ''}${m.user_id && m.profile?.full_name && m.profile.full_name !== m.nickname ? ` <span class="note">· ${esc(m.profile.full_name)}</span>` : ''}</span>
+      ${g.kind !== 'pair' && admin && m.user_id !== S.uid ? `<button class="chip" data-role="${m.id}" data-to="${m.role === 'admin' ? 'member' : g.kind === 'family' && m.role === 'member' ? 'child' : 'admin'}">${{ admin: '⭐ מנהל', member: '🙂 חבר', child: '🧒 ילד' }[m.role]}</button><button class="chip" data-rm="${m.id}">✕</button>` : `<span class="note">${g.kind === 'pair' ? '' : { admin: '⭐ מנהל', member: '🙂 חבר', child: '🧒 ילד' }[m.role]}</span>`}</div>`).join('');
+    return `<div class="grp" data-g="${g.id}">
+      <div class="grp-h"><b>${esc(gLabel(g))}</b><span class="note">הכינוי שלי: <b>${esc(me?.nickname || '')}</b></span></div>
+      ${mem}
+      ${g.kind === 'pair' && g.members.length < 2 ? '<p class="note">⏳ ממתין שיצטרף בקישור ששלחת</p>' : ''}
+      ${admin || g.kind === 'pair' ? `<div class="codes">${g.kind !== 'pair' || g.members.length < 2 ? `<div class="code-box" style="background:rgba(124,58,237,.25);border-color:rgba(196,181,253,.4)"><div class="note">${g.kind === 'family' ? '👨‍👩 קוד להורה' : '🔑 קוד הצטרפות'}</div><div class="code">${g.code}</div><button class="chip" data-copy="${g.code}">📋 העתקה</button> <a class="chip" href="${waHref(inviteText(g, g.code))}" target="_blank" rel="noopener" style="text-decoration:none">💬 וואטסאפ</a></div>` : ''}
+        ${g.kind === 'family' && g.child_code ? `<div class="code-box" style="background:rgba(249,115,22,.25);border-color:rgba(253,186,116,.4)"><div class="note">🧒 קוד לילד</div><div class="code">${g.child_code}</div><button class="chip" data-copy="${g.child_code}">📋 העתקה</button> <a class="chip" href="${waHref(inviteText(g, g.child_code))}" target="_blank" rel="noopener" style="text-decoration:none">💬 וואטסאפ</a></div>` : ''}</div>` : ''}
+      <div class="chips" style="padding:8px 0 0;flex-wrap:wrap">
+        <button class="chip" data-nick="${g.id}">✏️ הכינוי שלי</button>
+        ${admin && g.kind !== 'pair' ? `<button class="chip" data-addname="${g.id}">➕ רק שם (בלי טלפון)</button><button class="chip" data-rename="${g.id}">✏️ שם הקבוצה</button>` : ''}
+        <button class="chip" data-leave="${me?.id || ''}">🚪 יציאה</button>
+        ${g.kind !== 'pair' ? `<button class="chip ${S.settings.defGroup === g.id ? 'on' : ''}" data-def="${g.id}">⭐ ראשית</button>` : ''}
+      </div></div>`;
   };
-  const codeBox = (code, label, bg, border, sub) => `<div class="code-box" style="background:${bg};border-color:${border}"><div class="note" style="color:${sub}">${label}</div>
-    <div class="code">${code || '—'}</div>${code ? `<button class="chip" data-copy="${code}">📋 העתקה</button>` : ''}</div>`;
-  const row = (inner, actions) => `<div class="fam-row"><span style="flex:1;min-width:120px">${inner}</span>${actions}</div>`;
-  el.innerHTML = head + `<p class="note" style="margin-bottom:6px">🔑 קודי הצטרפות — אפשר להקריא או להעתיק:</p>
-    <div class="two" style="margin-bottom:14px">${codeBox(hh.invite_code, '👨‍👩 קוד להורה', 'linear-gradient(160deg,rgba(124,58,237,.35),rgba(168,85,247,.2))', 'rgba(196,181,253,.4)', '#E9D5FF')}
-    ${codeBox(hh.child_code, '🧒 קוד לילד', 'linear-gradient(160deg,rgba(249,115,22,.35),rgba(251,146,60,.2))', 'rgba(253,186,116,.4)', '#FFEDD5')}</div>
-    <p class="note" style="margin-bottom:6px">👨‍👩‍👧 מי במשפחה:</p>
-    <div id="famList" class="note">טוען…</div>
-    <div class="err" id="memErr" style="color:#FB7185;font-size:13px"></div>
-    <div style="display:flex;gap:8px;margin-top:6px"><button class="round" id="pplFace" style="background:var(--card2);border:1px solid var(--line);width:44px;height:44px" aria-label="בחירת אייקון">${FACES[1]}</button>
-      <input id="pplName" placeholder="הוספת בן משפחה, למשל: יעל" class="fam-in"><button class="act pri" id="pplAdd">הוספה</button></div>
-    <p class="note" style="margin-top:10px;line-height:1.6">📱 מחובר — יש לו טלפון משלו<br>✏️ רק שם — נותנים לו משימות, למשל "משימה ליעל לסדר את החדר", והשאלה "עשית?" חוזרת אליך</p>
-    <button class="btn danger" id="signOutBtn">יציאה מהחשבון</button>`;
-  $('#signOutBtn').onclick = signOut; $('#editMeBtn').onclick = openEditMe;
+  el.innerHTML = `<h4>👥 הקבוצות שלי<small id="syncState">${navigator.onLine ? 'מסונכרן ✓' : 'ממתין לרשת…'}</small></h4>
+    ${gs.length ? gs.map(card).join('') : '<p class="note">עוד אין קבוצות. משימות שתרשום יהיו רק שלך — עד שתפתח קבוצה או תצטרף לאחת.</p>'}
+    <div class="two" style="margin-top:10px"><button class="btn pri" id="gNewBtn" style="margin:0">➕ קבוצה חדשה</button><button class="btn" id="gJoinBtn" style="margin:0">🔑 הצטרפות עם קוד</button></div>
+    <button class="btn" id="gPairBtn">👤 קשר ישיר עם אדם אחד</button>
+    ${canImport ? `<button class="btn" id="gImportBtn">📥 ליצור קבוצה מהמשפחה של "כסף בכיף"</button>` : ''}
+    <div id="grpErr" style="color:#FB7185;font-size:13px;min-height:16px"></div>`;
+  const err = m => { $('#grpErr').textContent = m; };
+  const run = async fn => { try { await fn(); buildPeople(); renderAll(); renderFamily(); renderProfile(); } catch (x) { err(x.message); } };
+  $('#gNewBtn').onclick = () => openNewGroup();
+  $('#gJoinBtn').onclick = () => openJoin();
+  $('#gPairBtn').onclick = () => openNewPair();
+  $('#gImportBtn')?.addEventListener('click', () => run(async () => { await sync.importHousehold(hh.id); confetti(); toast('👨‍👩‍👧 הקבוצה נוצרה מהמשפחה!'); }));
   el.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = '✅ הועתק'; } catch { b.textContent = b.dataset.copy; } });
-  let face = 1;
-  const err = m => { $('#memErr').textContent = m; };
-  const drawList = async () => {
-    const box = $('#famList'); if (!box) return;
-    let members = [], offline = false;
-    try { members = await sync.listMembers(); } catch { offline = true; }
-    const roleBtn = m => `<button class="chip ${m.role === 'parent' ? 'on' : ''}" data-role="${m.user_id}" data-to="${m.role === 'parent' ? 'child' : 'parent'}">${m.role === 'parent' ? '👨‍👩 הורה' : '🧒 ילד'}</button>`;
-    const html = S.people.map(p => {
-      const m = members.find(x => x.user_id === p.uid), me = p.uid === S.uid;
-      if (m) return row(`📱 ${p.e} <b>${esc(p.name)}</b>${me ? ' (אני)' : ''}`, roleBtn(m) + (me ? '' : `<button class="chip" data-rm="${m.user_id}" aria-label="הסרה מהמשפחה">✕</button>`));
-      return row(`✏️ ${p.e} <b>${esc(p.name)}</b> <span class="note">· רק שם</span>`, `<span data-invbox="${p.id}"><button class="chip" data-inv="${p.id}">📱 הזמנה</button></span><button class="chip" data-del="${p.id}" aria-label="מחיקת השם">✕</button>`);
-    }).join('') + members.filter(m => !S.people.some(p => p.uid === m.user_id)).map(m => row('📱 👤 <span class="note">נרשם, עוד לא בחר שם</span>', roleBtn(m) + `<button class="chip" data-rm="${m.user_id}" aria-label="הסרה">✕</button>`)).join('');
-    box.innerHTML = (html || 'עוד אין אף אחד') + (offline ? '<div>⚠️ אין חיבור — מוצג חלקית</div>' : '');
-    box.querySelectorAll('[data-role]').forEach(b => b.onclick = async () => { try { await sync.setRole(b.dataset.role, b.dataset.to); toast(b.dataset.to === 'parent' ? 'עכשיו הורה 👨‍👩' : 'עכשיו ילד 🧒'); drawList(); } catch (x) { err(x.message); } });
-    box.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
-      if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'להסיר?'; return; }
-      try { await sync.removeMember(b.dataset.rm); toast('הוסר מהמשפחה'); drawList(); } catch (x) { err(x.message); }
-    });
-    box.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => {
-      const p = person(b.dataset.inv);
-      box.querySelector(`[data-invbox="${p.id}"]`).innerHTML = `<span class="note">להזמין כ:</span>
-        <a class="chip" href="${inviteHref('parent', p.name)}" target="_blank" rel="noopener" style="text-decoration:none">👨‍👩 הורה <b dir="ltr">${hh.invite_code}</b></a>
-        <a class="chip" href="${inviteHref('child', p.name)}" target="_blank" rel="noopener" style="text-decoration:none">🧒 ילד <b dir="ltr">${hh.child_code || ''}</b></a>`;
-    });
-    box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-      if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'למחוק?'; return; }
-      try { S.people = await sync.removePerson(b.dataset.del); renderAll(); drawList(); } catch (x) { err(x.message); }
-    });
+  el.querySelectorAll('[data-role]').forEach(b => b.onclick = () => run(() => sync.setRole(b.dataset.role, b.dataset.to)));
+  el.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'להסיר?'; return; } run(() => sync.removeMember(b.dataset.rm)); });
+  el.querySelectorAll('[data-leave]').forEach(b => b.onclick = () => { if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'בטוח? לצאת'; return; } run(() => sync.removeMember(b.dataset.leave)); });
+  el.querySelectorAll('[data-def]').forEach(b => b.onclick = async () => { S.settings.defGroup = b.dataset.def; await db.setKV('settings', S.settings); renderFamily(); toast('⭐ זו הקבוצה הראשית'); });
+  el.querySelectorAll('[data-nick]').forEach(b => b.onclick = () => openNick(b.dataset.nick));
+  el.querySelectorAll('[data-rename]').forEach(b => b.onclick = () => {
+    const g = groupOf(b.dataset.rename);
+    sheet(`<h3>✏️ שם הקבוצה</h3><input id="rnName" class="fam-in" value="${esc(g.name)}"><button class="btn pri" id="rnSave" style="margin-top:12px">💾 שמור</button>`);
+    $('#rnSave').onclick = () => { closeSheet(); run(() => sync.renameGroup(g.id, $('#rnName').value.trim() || g.name)); };
+  });
+  el.querySelectorAll('[data-addname]').forEach(b => b.onclick = () => {
+    let face = 2;
+    sheet(`<h3>➕ רק שם (בלי טלפון)</h3><p class="note" style="margin-bottom:10px">למשל ילד קטן. אפשר לתת לו משימות — והשאלה "עשית?" תחזור אליך.</p>
+      <div style="display:flex;gap:8px"><button class="round" id="anFace" style="background:var(--card2);border:1px solid var(--line);width:46px;height:46px">${FACES[face]}</button><input id="anName" class="fam-in" placeholder="השם, למשל: יעל"></div>
+      <button class="btn pri" id="anSave" style="margin-top:12px">הוספה</button>`);
+    $('#anFace').onclick = e => { face = (face + 1) % FACES.length; e.target.textContent = FACES[face]; };
+    $('#anSave').onclick = () => { const n = $('#anName').value.trim(); if (!n) return; closeSheet(); run(() => sync.addName(b.dataset.addname, n, FACES[face])); };
+  });
+}
+function openNewGroup() {
+  if (!S.uid) return showGate();
+  const pr = sync.myProfile();
+  let kind = 'partners';
+  sheet(`<h3>➕ קבוצה חדשה</h3>
+    <label>סוג</label><div class="seg" id="ngKind">${['family', 'partners', 'team', 'friends', 'other'].map(k => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${KINDS[k][0]} ${KINDS[k][1]}</button>`).join('')}</div>
+    <label>שם הקבוצה</label><input id="ngName" placeholder="למשל: אני ויוסי — העסק">
+    <label>הכינוי שלך בקבוצה</label><input id="ngNick" value="${esc(pr?.full_name?.split(' ')[0] || '')}" placeholder="למשל: מוישי">
+    <button class="btn pri" id="ngSave" style="margin-top:14px">✨ יצירה</button>`);
+  $('#ngKind').onclick = e => { const b = e.target.closest('button'); if (!b) return; kind = b.dataset.k; [...$('#ngKind').children].forEach(x => x.classList.toggle('on', x === b)); };
+  $('#ngSave').onclick = async () => {
+    const name = $('#ngName').value.trim(); if (!name) return toast('צריך שם לקבוצה', true);
+    try {
+      const gid = await sync.createGroup(name, kind, $('#ngNick').value.trim() || pr?.full_name, pr?.emoji);
+      closeSheet(); buildPeople(); renderAll(); renderFamily(); confetti();
+      const g = groupOf(gid);
+      await bot(KINDS[kind][0], 'var(--g6)', `הקבוצה "${name}" נוצרה!`, `קוד הצטרפות: ${g?.code || ''}${g?.child_code ? `\nקוד לילד: ${g.child_code}` : ''}\nשלח/י את הקישור למי שצריך להצטרף 👇`,
+        [{ l: '💬 שליחה בוואטסאפ', op: 'shareGroup', a: [gid], pri: true }]);
+      showView('chat');
+    } catch (x) { toast(x.message, true); }
   };
-  drawList();
-  $('#pplFace').onclick = e => { face = (face + 1) % FACES.length; e.target.textContent = FACES[face]; };
-  $('#pplName').oninput = () => err('');
-  $('#pplAdd').onclick = async () => {
-    const name = $('#pplName').value.trim();
-    if (!name) return err('צריך לכתוב שם');
-    if (S.people.some(p => p.name === name)) return err('השם הזה כבר קיים');
-    const p = { id: db.newId(), name, e: FACES[face] };
-    try { S.people = await sync.savePerson(p); } catch (x) { return err(x.message); }
-    $('#pplName').value = ''; renderAll(); drawList();
-    toast(`👋 ${p.e} ${name} נוסף/ה — אפשר לתת לו/ה משימות, או ללחוץ "📱 הזמנה"`);
+}
+function openJoin() {
+  if (!S.uid) return showGate();
+  const pr = sync.myProfile();
+  sheet(`<h3>🔑 הצטרפות לקבוצה</h3><label>הקוד שקיבלת (6 תווים)</label><input id="jCode" dir="ltr" style="text-transform:uppercase;letter-spacing:3px;text-align:center">
+    <label>איך יקראו לך בקבוצה?</label><input id="jNick" value="${esc(pr?.full_name?.split(' ')[0] || '')}">
+    <button class="btn pri" id="jGo" style="margin-top:14px">🔑 הצטרפות</button>`);
+  $('#jGo').onclick = async () => {
+    const c = $('#jCode').value.trim(); if (c.length < 6) return toast('הקוד הוא 6 תווים', true);
+    try { const gid = await sync.joinGroup(c, $('#jNick').value.trim() || pr?.full_name, pr?.emoji); closeSheet(); buildPeople(); renderAll(); renderFamily(); confetti(); toast(`🎉 הצטרפת ל"${groupOf(gid)?.name || 'קבוצה'}"`); }
+    catch (x) { toast(x.message, true); }
   };
+}
+// קשר ישיר עם אדם אחד (בלי קבוצה): יוצרים "זוג" ושולחים לו קישור
+async function openNewPair(itemId) {
+  if (!S.uid) return showGate();
+  const pr = sync.myProfile();
+  sheet(`<h3>👤 קשר ישיר עם אדם אחד</h3><p class="note" style="margin-bottom:10px">רק שניכם — בלי קבוצה. שולחים לו קישור, וכשהוא נכנס אפשר לתת לו משימות ולשלוח הודעות.</p>
+    <label>איך קוראים לו? (בשבילך)</label><input id="npName" placeholder="למשל: דני הקבלן">
+    <button class="btn pri" id="npGo" style="margin-top:14px">💬 יצירה ושליחה בוואטסאפ</button>`);
+  $('#npGo').onclick = async () => {
+    const other = $('#npName').value.trim() || 'קשר ישיר';
+    try {
+      const gid = await sync.createGroup(`${pr?.full_name || 'אני'} ↔ ${other}`, 'pair', pr?.full_name, pr?.emoji);
+      closeSheet(); buildPeople(); renderFamily();
+      const g = groupOf(gid);
+      if (itemId && item(itemId)) await setAssign(item(itemId), gid, null);
+      window.open(waHref(inviteText(g, g.code)), '_blank');
+      toast(`👤 נשלח! כש${other} יצטרף — תוכל לשייך לו משימות`);
+    } catch (x) { toast(x.message, true); }
+  };
+}
+function openNick(gid) {
+  const g = groupOf(gid), me = g?.members.find(m => m.user_id === S.uid); if (!me) return;
+  sheet(`<h3>✏️ הכינוי שלי ב"${esc(g.name)}"</h3><input id="nkName" class="fam-in" value="${esc(me.nickname)}"><button class="btn pri" id="nkSave" style="margin-top:12px">💾 שמור</button>`);
+  $('#nkSave').onclick = async () => { try { await sync.setNickname(gid, $('#nkName').value.trim(), null); closeSheet(); buildPeople(); renderAll(); renderFamily(); toast('✅ נשמר'); } catch (x) { toast(x.message, true); } };
 }
 
 let started = false;
-// מי מחובר — תמיד גלוי למעלה, ובכניסה הראשונה הודעה ברורה
-// כרטיס "הפרטים שלי" — תמיד בראש ההגדרות
+// כרטיס "האזור האישי" — תמיד בראש ההגדרות
 function renderProfile() {
   const el = $('#meCard'); if (!el) return;
-  const p = person(S.myP), hh = sync.household(), u = sync.user();
+  const p = person(S.myP), u = sync.user(), gs = sync.myGroups();
   if (!u) {
-    el.innerHTML = `<h4>👤 האזור האישי</h4><p class="note">לא מחובר. נכנסים עם אותו מייל וסיסמה של "כסף בכיף" — ואז רואים את המשפחה, נותנים משימות ושולחים הודעות.</p>
+    el.innerHTML = `<h4>👤 האזור האישי</h4><p class="note">לא מחובר. נכנסים (או נרשמים) — ואז אפשר ליצור קבוצות, לתת משימות ולשלוח הודעות.</p>
       <button class="btn pri" id="pLogin">🔑 כניסה / הרשמה</button>`;
     $('#pLogin').onclick = () => showGate();
     return;
@@ -1678,53 +1821,51 @@ function renderProfile() {
   const doneWeek = S.log.filter(l => l.action === 'done' && new Date(l.ts) > weekAgo).length;
   const stat = (n, l) => `<div class="me-stat"><b>${n}</b><span>${l}</span></div>`;
   el.innerHTML = `<h4 style="margin-bottom:10px">👤 האזור האישי</h4><div class="me-top"><button class="me-face" id="pFace" aria-label="שינוי אייקון">${p?.e || '🙋'}</button>
-      <div class="me-txt"><b>${esc(p?.name || 'עוד לא בחרת שם')}</b><span dir="ltr">${esc(u.email || '')}</span>
-      <span>${hh ? `👨‍👩‍👧 ${esc(hh.name)} · ${sync.isParent() ? '👨‍👩 הורה' : '🧒 ילד'}` : 'עוד לא במשפחה'}</span></div></div>
+      <div class="me-txt"><b>${esc(p?.name || '')}</b><span dir="ltr">${esc(u.email || '')}</span>
+      <span>${gs.length ? gs.map(g => `${gLabel(g)} · "${esc(g.members.find(m => m.user_id === S.uid)?.nickname || '')}"`).join('<br>') : 'עוד לא בשום קבוצה'}</span></div></div>
     <div class="me-stats">${stat('🔥 ' + streak(), 'ימים ברצף')}${stat(doneWeek, 'בוצעו השבוע')}${stat(tasksOpen().length, 'פתוחות שלי')}${stat(openItems().filter(x => x.kind === 'thought' && byMe(x)).length, 'מחשבות')}</div>
-    ${hh ? '' : '<button class="btn pri" id="pGroup" style="margin-top:10px">👥 יצירת קבוצה / הצטרפות עם קוד</button>'}
     <div class="two" style="margin-top:10px"><button class="btn" id="pEdit" style="margin:0">✏️ שם ואייקון</button><button class="btn danger" id="pOut" style="margin:0">יציאה</button></div>`;
-  $('#pEdit').onclick = () => p ? openEditMe() : showGate();
-  $('#pFace').onclick = () => p ? openEditMe() : showGate();
+  $('#pEdit').onclick = openEditMe; $('#pFace').onclick = openEditMe;
   $('#pOut').onclick = signOut;
-  $('#pGroup')?.addEventListener('click', () => showGate());
 }
 function renderMe() {
   renderProfile();
   const el = $('#meBtn'); if (!el) return;
   const p = person(S.myP);
-  el.hidden = !p; if (p) { el.textContent = p.e; el.title = p.name; $('#hello').textContent = `שלום ${p.name} 👋 · `; } else $('#hello').textContent = '';
+  el.hidden = !p; if (p) { el.textContent = p.e; el.title = p.name; $('#hello').textContent = `שלום ${p.name.split(' ')[0]} 👋 · `; } else $('#hello').textContent = '';
 }
 async function welcomeMe() {
   renderMe();
-  const p = person(S.myP), hh = sync.household();
-  if (!p || !hh) return;
-  const key = 'welcomed:' + S.uid;
+  const p = person(S.myP);
+  if (!p) return;
+  const key = 'welcomed2:' + S.uid;
   if (await db.getKV(key, false)) return;
   await db.setKV(key, true);
-  const others = S.people.filter(x => x.id !== p.id).map(x => `${x.e} ${x.name}`).join(', ');
-  await bot(p.e, 'var(--g1)', `שלום ${p.name}! זיהיתי אותך 👋`, `נכנסת עם ${sync.user()?.email || 'החשבון שלך'} — אותו חשבון כמו ב"כסף בכיף".\n👨‍👩‍👧 משפחה: ${hh.name}${others ? `\nיחד איתך: ${others}` : ''}\nככה כולם רואים מי רשם מה, ואפשר לתת משימות ולשלוח הודעות אחד לשני.`,
-    [{ l: '✏️ לשנות שם או אייקון', op: 'editMe' }, { l: 'זה לא אני — להחליף חשבון', op: 'switchUser' }]);
+  const gs = sync.myGroups();
+  await bot(p.e, 'var(--g1)', `שלום ${p.name}! 👋`, `נכנסת עם ${sync.user()?.email || 'החשבון שלך'}.\n${gs.length ? `👥 הקבוצות שלך: ${gs.map(g => gLabel(g)).join(', ')}` : 'עוד אין לך קבוצות — כל מה שתרשום יהיה רק שלך.'}\nאפשר לפתוח קבוצה (משפחה, שותפים, צוות) או קשר ישיר עם אדם אחד — באזור האישי ⚙️`,
+    [{ l: '➕ קבוצה חדשה', op: 'newGroup', pri: true }, { l: '✏️ שם ואייקון', op: 'editMe' }, { l: 'זה לא אני', op: 'switchUser' }]);
 }
 function openEditMe() {
   const p = person(S.myP); if (!p) return;
   let face = Math.max(0, FACES.indexOf(p.e));
-  sheet(`<h3>🙋 השם שלי</h3><p class="note" style="margin-bottom:10px">ככה יראו אותך בני המשפחה — כאן וב"כסף בכיף"</p>
+  sheet(`<h3>🙋 השם שלי</h3><p class="note" style="margin-bottom:10px">השם המלא והאייקון — בכל הקבוצות. את הכינוי בכל קבוצה משנים בכרטיס הקבוצה.</p>
     <div style="display:flex;gap:8px"><button class="round" id="meFace" style="background:var(--card2);border:1px solid var(--line);width:48px;height:48px">${FACES[face]}</button>
     <input id="meName" class="fam-in" value="${esc(p.name)}"></div><button class="btn pri" id="meSave" style="margin-top:14px">💾 שמור</button>`);
   $('#meFace').onclick = e => { face = (face + 1) % FACES.length; e.target.textContent = FACES[face]; };
   $('#meSave').onclick = async () => {
     const name = $('#meName').value.trim(); if (!name) return toast('צריך שם', true);
-    if (S.people.some(x => x.name === name && x.id !== p.id)) return toast('השם הזה כבר קיים', true);
-    try { S.people = await sync.savePerson({ ...p, name, e: FACES[face] }); } catch (x) { return toast(x.message, true); }
-    closeSheet(); renderAll(); renderFamily(); renderMe(); toast('✅ נשמר');
+    try { await sync.saveProfile(name, FACES[face]); await sync.loadGroups(); } catch (x) { return toast(x.message, true); }
+    closeSheet(); buildPeople(); renderAll(); renderFamily(); renderMe(); toast('✅ נשמר');
   };
 }
+
 async function boot() {
   started = true;
   await welcomeMe();
   if (!S.msgs.length) {
-    const ex = family() ? `\n🙋 תזכיר ל${S.people.find(p => p.id !== S.myP)?.name || 'רחל'} מחר ב-5 לקנות חלב` : '';
-    await bot('👋', 'var(--g1)', 'שלום! אני "זמן בכיף"', `כתוב או אמור לי כל דבר, ואני אסדר:\n📌 תזכיר לי מחר ב-10 להתקשר לבנק\n🔁 כל יום חמישי ב-9 לשלם לגננת\n👥 פגישה עם יוסי ביום שלישי ב-4\n💭 רעיון: לסדר את המחסן\n✅ סיימתי לשלוח הצעת מחיר${ex}\n🔒 פרטי: ... (רק אתה תראה)\n\nכשיגיע הזמן, אשאל אותך אם עשית את זה.`);
+    const o = others()[0];
+    const ex = o ? `\n🙋 תזכיר ל${nameIn(o.id, o.nicks[0]?.g)} מחר ב-5 לקנות חלב\n💌 ${nameIn(o.id, o.nicks[0]?.g)}, קבעתי לנו פגישה ביום שלישי ב-8` : '';
+    await bot('👋', 'var(--g1)', 'שלום! אני "זמן בכיף"', `כתוב או אמור לי כל דבר, ואני אסדר:\n📌 תזכיר לי מחר ב-10 להתקשר לבנק\n🔁 כל יום חמישי ב-9 לשלם לגננת\n👥 פגישה עם יוסי ביום שלישי ב-4\n💭 רעיון: לסדר את המחסן\n✅ סיימתי לשלוח הצעת מחיר${ex}\n\nליד כל משימה יש 📎 שיוך — רק לי, לקבוצה, או לאדם מסוים.\nכשיגיע הזמן, אשאל אותך אם עשית את זה.`);
   }
   await tick();
   setInterval(tick, 30000);
@@ -1736,13 +1877,13 @@ async function boot() {
   await sync.start({
     onItem: onRemoteItem,
     onRemote: () => { renderAll(); renderFamily(); if (started) scanConflicts(); },
+    onGroups: () => { buildPeople(); renderAll(); renderFamily(); renderMe(); },
     onBusy: b => { S.busy = b; },
     onRes: async r => { await db.setKV('resources', r); S.resources = C.DEFAULT_RES.concat(r); renderRes(); },
     onStatus: st => { const el = $('#syncState'); if (el) el.textContent = st === 'ok' ? 'מסונכרן ✓' : 'ממתין לרשת…'; },
   });
-  S.people = await db.getKV('people', []);
   S.items = await db.all('items');
-  if (await showGate()) boot();
+  if (await showGate()) { await migrateToGroups(); buildPeople(); renderAll(); renderFamily(); boot(); }
 })();
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
@@ -1752,4 +1893,4 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 // לבדיקות מהדפדפן
-window.__zman = { S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };
+window.__zman = { buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };
