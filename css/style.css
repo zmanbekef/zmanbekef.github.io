@@ -225,3 +225,4 @@ input,select,textarea{font-size:16px}
 .codes .code-box:only-child{grid-column:1/-1}
 .code-box .chip{display:inline-block;margin-top:2px}
 a.chip{color:#fff}
+.fb-txt{width:100%;border-radius:16px;border:1px solid var(--line);background:var(--card2);color:#fff;font:inherit;font-size:16px;padding:12px 14px;outline:none;resize:vertical}

@@ -156,6 +156,13 @@ export async function saveRes(list) {
   if (error) throw new Error(nice(error));
 }
 
+// משוב — גיבוי בענן (אפשר רק להוסיף; אף אחד לא קורא מהאפליקציה)
+export async function saveFeedback(f) {
+  if (!me) return false;
+  const { error } = await (await client()).from('feedback').insert({ user_id: me.id, app: 'zman-bekef', ...f });
+  return !error;
+}
+
 // ---------- תור שליחה (עובד גם כשאין רשת) ----------
 export async function queue(it) {
   if (!me) return;

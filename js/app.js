@@ -302,6 +302,8 @@ const OPS = {
 // ---------- טיפול במה שכתבת ----------
 async function send(text, voice) {
   text = text.trim(); if (!text) return;
+  // משוב ("משוב: …", "תקלה: …") — חלון משוב שנשלח למייל של מוישי, בלי לשמור בשיחה
+  if (FEEDBACK_RE.test(text)) { $('#inp').blur(); return openFeedback(text.replace(FEEDBACK_RE, '').trim(), text); }
   // שאלה על האפליקציה ("איך מוסיפים את אשתי?") — תשובה בחלון עזרה, בלי ללכלך את השיחה
   const pi = parse(text).intent;
   if (!['query', 'summary', 'morning', 'yes', 'no', 'done'].includes(pi) && help.isHelpRequest(text)) { $('#inp').blur(); return openHelp(text, help.wantsGuide(text) && !help.answer(text).length); }
@@ -588,6 +590,48 @@ async function query(day) {
   return bot('📋', 'var(--g2)', `מה יש ${name}`, sub, [{ l: 'למסך המשימות', op: 'goto', a: ['tasks'] }]);
 }
 
+// ---------- משוב: מגיע ישר למייל של מוישי ----------
+const FEEDBACK_TO = 'mvindish@gmail.com';
+const FEEDBACK_RE = /^(משוב|פידבק|הערה|הערות|הצעה|הצעת שיפור|יש לי הערה|יש לי הצעה|רעיון לאפליקציה|יש לי רעיון לאפליקציה|באג|תקלה|בעיה באפליקציה|דיווח|feedback)(?=[\s:,-]|$)[\s:,-]*/i;
+const FKINDS = { idea: '💡 רעיון', bug: '🐞 משהו לא עובד', love: '❤️ מחמאה', other: '💬 אחר' };
+function openFeedback(text = '', hint = text) {
+  let kind = /באג|תקלה|בעיה|לא עובד/.test(hint) ? 'bug' : /רעיון|הצעה|שיפור/.test(hint) ? 'idea' : /תודה|מעולה|אוהב|כל הכבוד|מדהים/.test(hint) ? 'love' : 'other';
+  const me = person(S.myP);
+  sheet(`<h3>💌 שליחת משוב</h3>
+    <p class="note" style="margin-bottom:12px">כל הערה, רעיון או תקלה מגיעים ישירות למוישי — ועוזרים לשפר את האפליקציה 🙏</p>
+    <div class="chips" style="flex-wrap:wrap;padding:0 0 12px">${Object.entries(FKINDS).map(([k, n]) => `<button class="chip ${k === kind ? 'on' : ''}" data-fk="${k}">${n}</button>`).join('')}</div>
+    <textarea id="fMsg" rows="5" placeholder="מה תרצו לספר? למשל: היה נחמד אם…" class="fb-txt">${esc(text)}</textarea>
+    <label>איך לחזור אליך (לא חובה)</label><input id="fContact" value="${esc([me?.name, sync.user()?.email].filter(Boolean).join(' · '))}" placeholder="שם / טלפון / מייל">
+    <label class="set-row" style="cursor:pointer;border:none"><span>לצרף פרטי מכשיר (עוזר לתקן תקלות)</span><input type="checkbox" id="fDev" checked></label>
+    <div id="fErr" style="color:#FB7185;font-size:13px;min-height:16px"></div>
+    <button class="btn pri" id="fSend">📨 שליחה</button>`);
+  $('#sheet').querySelectorAll('[data-fk]').forEach(b => b.onclick = () => { kind = b.dataset.fk; $('#sheet').querySelectorAll('[data-fk]').forEach(x => x.classList.toggle('on', x === b)); });
+  $('#fMsg').oninput = () => $('#fErr').textContent = '';
+  $('#fSend').onclick = async e => {
+    const message = $('#fMsg').value.trim();
+    if (message.length < 2) return $('#fErr').textContent = 'צריך לכתוב משהו 🙂';
+    const contact = $('#fContact').value.trim();
+    const device = $('#fDev').checked
+      ? `${navigator.userAgent.match(/iPhone|iPad|Android[^;)]*|Mac|Windows/)?.[0] || 'מכשיר'} · ${screen.width}×${screen.height} · ${isStandalone() ? 'מותקנת' : 'דפדפן'} · קבוצות: ${sync.myGroups().length}`
+      : '';
+    e.target.disabled = true; e.target.textContent = 'שולח…';
+    const cloud = sync.saveFeedback({ kind, message, contact, device }).catch(() => false);
+    let mailed = false;
+    try {
+      const r = await fetch(`https://formsubmit.co/ajax/${FEEDBACK_TO}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ _subject: `💌 משוב חדש — זמן בכיף (${FKINDS[kind]})`, _template: 'table', _captcha: 'false',
+          'אפליקציה': 'זמן בכיף ⏰', 'סוג': FKINDS[kind], 'משוב': message, 'פרטים לחזרה': contact || '—', 'מכשיר': device || '—' }),
+      });
+      mailed = r.ok;
+    } catch { mailed = false; }
+    const saved = await cloud;
+    if (mailed || saved) { closeSheet(); confetti(); toast('💌 תודה! המשוב נשלח'); return; }
+    e.target.disabled = false; e.target.textContent = '📨 שליחה';
+    $('#fErr').innerHTML = `לא הצלחתי לשלוח (אין אינטרנט?). אפשר <a href="mailto:${FEEDBACK_TO}?subject=${encodeURIComponent('משוב — זמן בכיף')}&body=${encodeURIComponent(message)}" style="color:#F9A8D4">לשלוח במייל רגיל</a>`;
+  };
+}
+
 // ---------- עזרה: שאלות ותשובות בחלון נפרד ----------
 async function shareApp() {
   try {
@@ -607,6 +651,7 @@ function openHelp(question = '', showGuide = false) {
     <button class="btn" id="hOpenGuide" style="margin-bottom:12px">📖 המדריך המלא (עם תמונות)</button>
     <p class="note" style="margin-bottom:6px">שאלות נפוצות:</p>
     <div class="chips" style="flex-wrap:wrap;padding:0 0 12px">${topics.map(t => `<button class="chip" data-topic="${t.id}">${t.t}</button>`).join('')}</div>
+    <button class="btn" id="hFeedback" style="margin-bottom:10px">💌 שליחת משוב / דיווח על תקלה</button>
     <p class="note" style="text-align:center">עדיין תקוע? מוישי וינדיש · <a href="tel:0542964361" style="color:#F9A8D4">054-2964361</a> · <a href="mailto:mvindish@gmail.com" style="color:#F9A8D4">mvindish@gmail.com</a></p>`);
   const box = $('#hAns');
   const bubble = (cls, html) => {
@@ -636,6 +681,7 @@ function openHelp(question = '', showGuide = false) {
   $('#hAsk').onclick = () => ask($('#hQ').value);
   $('#hQ').addEventListener('keydown', e => { if (e.key === 'Enter') ask(e.target.value); });
   $('#hOpenGuide').onclick = showGuideFrame;
+  $('#hFeedback').onclick = () => openFeedback();
   $('#sheet').querySelectorAll('[data-topic]').forEach(c => c.onclick = () => {
     const t = help.TOPICS.find(x => x.id === c.dataset.topic);
     bubble('me', esc(t.t.replace(/^\S+\s/, ''))); bubble('bot', answerHtml(t));
@@ -1470,6 +1516,7 @@ function drawLockCard() {
   $('#lkOffBtn').onclick = async () => { if (!(await lock.pinOk($('#lkOff').value))) return $('#lkErr').textContent = 'קוד שגוי'; lock.disable(); drawLockCard(); toast('הנעילה כובתה'); };
 }
 $('#shareAppBtn').onclick = shareApp;
+$('#feedbackBtn').onclick = () => openFeedback();
 $('#helpBtn').onclick = () => openHelp();
 $('#meBtn').onclick = () => showView('settings');
 $('#helpBtn2').onclick = () => openHelp();
