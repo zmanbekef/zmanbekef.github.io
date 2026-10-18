@@ -1177,7 +1177,7 @@ function openPicker(mustSwapFor) {
 
 // ---------- ניווט ותצוגה ----------
 function showView(v) {
-  if (v === 'settings') { drawPush(); drawLockCard(); }
+  if (v === 'settings') { renderProfile(); drawPush(); drawLockCard(); }
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
   $('#composer').style.display = v === 'chat' ? 'flex' : 'none';
@@ -1398,7 +1398,7 @@ function drawLockCard() {
 }
 $('#shareAppBtn').onclick = shareApp;
 $('#helpBtn').onclick = () => openHelp();
-$('#meBtn').onclick = openEditMe;
+$('#meBtn').onclick = () => showView('settings');
 $('#helpBtn2').onclick = () => openHelp();
 
 // ---------- הפעלה ----------
@@ -1663,7 +1663,30 @@ function renderFamily() {
 
 let started = false;
 // מי מחובר — תמיד גלוי למעלה, ובכניסה הראשונה הודעה ברורה
+// כרטיס "הפרטים שלי" — תמיד בראש ההגדרות
+function renderProfile() {
+  const el = $('#meCard'); if (!el) return;
+  const p = person(S.myP), hh = sync.household(), u = sync.user();
+  if (!u) {
+    el.innerHTML = `<h4>👤 האזור האישי</h4><p class="note">לא מחובר. נכנסים עם אותו מייל וסיסמה של "כסף בכיף" — ואז רואים את המשפחה, נותנים משימות ושולחים הודעות.</p>
+      <button class="btn pri" id="pLogin">🔑 כניסה / הרשמה</button>`;
+    $('#pLogin').onclick = () => showGate();
+    return;
+  }
+  const weekAgo = Date.now() - 7 * 864e5;
+  const doneWeek = S.log.filter(l => l.action === 'done' && new Date(l.ts) > weekAgo).length;
+  const stat = (n, l) => `<div class="me-stat"><b>${n}</b><span>${l}</span></div>`;
+  el.innerHTML = `<h4 style="margin-bottom:10px">👤 האזור האישי</h4><div class="me-top"><button class="me-face" id="pFace" aria-label="שינוי אייקון">${p?.e || '🙋'}</button>
+      <div class="me-txt"><b>${esc(p?.name || 'עוד לא בחרת שם')}</b><span dir="ltr">${esc(u.email || '')}</span>
+      <span>${hh ? `👨‍👩‍👧 ${esc(hh.name)} · ${sync.isParent() ? '👨‍👩 הורה' : '🧒 ילד'}` : 'עוד לא במשפחה'}</span></div></div>
+    <div class="me-stats">${stat('🔥 ' + streak(), 'ימים ברצף')}${stat(doneWeek, 'בוצעו השבוע')}${stat(tasksOpen().length, 'פתוחות שלי')}${stat(openItems().filter(x => x.kind === 'thought' && byMe(x)).length, 'מחשבות')}</div>
+    <div class="two" style="margin-top:10px"><button class="btn" id="pEdit" style="margin:0">✏️ שם ואייקון</button><button class="btn danger" id="pOut" style="margin:0">יציאה</button></div>`;
+  $('#pEdit').onclick = () => p ? openEditMe() : showGate();
+  $('#pFace').onclick = () => p ? openEditMe() : showGate();
+  $('#pOut').onclick = signOut;
+}
 function renderMe() {
+  renderProfile();
   const el = $('#meBtn'); if (!el) return;
   const p = person(S.myP);
   el.hidden = !p; if (p) { el.textContent = p.e; el.title = p.name; $('#hello').textContent = `שלום ${p.name} 👋 · `; } else $('#hello').textContent = '';
