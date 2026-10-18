@@ -277,3 +277,25 @@ export async function deleteNotify(ids) {
   const { error } = await (await client()).from('zman_notify').delete().in('id', ids).is('sent_at', null);
   return !error;
 }
+
+// ---------- ניהול המשפחה (רק להורים — נאכף גם בשרת) ----------
+export async function listMembers() {
+  const { data, error } = await (await client()).rpc('list_members');
+  if (error) throw new Error(nice(error));
+  return data || [];
+}
+export async function setRole(uid, role) {
+  const { error } = await (await client()).rpc('set_member_role', { target: uid, new_role: role });
+  if (error) throw new Error(/last parent/.test(error.message) ? 'חייב להישאר לפחות הורה אחד' : nice(error));
+}
+export async function removeMember(uid) {
+  const { error } = await (await client()).rpc('remove_member', { target: uid });
+  if (error) throw new Error(/last parent/.test(error.message) ? 'חייב להישאר לפחות הורה אחד' : nice(error));
+}
+export async function removePerson(id) {
+  const list = (await loadPeople()).filter(x => x.id !== id);
+  const { error } = await (await client()).from('kv').upsert({ household_id: hh.id, key: 'people', value: list });
+  if (error) throw new Error(nice(error));
+  await db.setKV('people', list);
+  return list;
+}

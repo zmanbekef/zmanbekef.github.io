@@ -185,3 +185,26 @@ nav .badge{top:0;left:6px}
 .hzman:empty{display:none}
 .sel,.num{background:var(--card2);border:1px solid var(--line);color:#fff;border-radius:10px;padding:6px 8px;font:inherit;color-scheme:dark}
 .num{width:64px;text-align:center}
+.code-box{text-align:center;border:1px solid;border-radius:18px;padding:12px 6px;min-width:0;overflow:hidden}
+.code-box .code{font-size:clamp(20px,6vw,28px);font-weight:800;letter-spacing:2px;direction:ltr;margin:4px 0 8px;white-space:nowrap}
+.fam-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px 10px;margin-bottom:6px;font-size:14px;color:#fff}
+.fam-in{flex:1;min-width:0;height:44px;border-radius:14px;border:1px solid var(--line);background:var(--card2);color:#fff;padding:0 12px;outline:none;font:inherit;font-size:16px}
+input,select,textarea{font-size:16px}
+.lock{position:absolute;inset:0;z-index:100;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px}
+.lock.on{display:flex}
+.lock .blob{opacity:.5}
+.lock h2{font-size:22px;font-weight:700;position:relative}
+.lock .logo{font-size:30px;position:relative}
+.dots{display:flex;gap:14px;position:relative}
+.dots i{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.5);transition:.15s}
+.dots i.f{background:#fff;border-color:#fff}
+.dots.shake{animation:shake .4s}
+@keyframes shake{25%{transform:translateX(-10px)}75%{transform:translateX(10px)}}
+.pad{display:grid;grid-template-columns:repeat(3,72px);gap:14px;position:relative;direction:ltr}
+.pad button{width:72px;height:72px;border-radius:50%;border:1px solid var(--line);background:var(--card2);font-size:26px;cursor:pointer;backdrop-filter:blur(10px)}
+.pad button:active{background:rgba(255,255,255,.25)}
+.lock .bio{position:relative}
+.gate{padding-top:calc(30px + env(safe-area-inset-top,0px))}
+.lock .logo{font-size:30px;font-weight:800;background:linear-gradient(135deg,#06B6D4,#7C3AED,#EC4899);-webkit-background-clip:text;background-clip:text;color:transparent}
+.inst{display:flex;gap:10px;align-items:center;margin:0 16px 12px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:10px 12px}
+.inst .em{font-size:26px}.inst p{flex:1;font-size:13px;color:var(--muted)}.inst b{color:#fff;font-size:14px}

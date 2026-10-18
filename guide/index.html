@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#140C26">
+<title>זמן בכיף — המדריך</title>
+<meta name="description" content="המדריך הכי פשוט: איך מתקינים את זמן בכיף באנדרואיד ובאייפון, איך נרשמים ואיך משתמשים">
+<meta property="og:title" content="זמן בכיף — המדריך">
+<meta property="og:description" content="הזמן של הבית — סוף סוף בשליטה. משימות, תזכורות ופגישות בצ'אט, בקול, ביחד עם כל המשפחה.">
+<meta property="og:image" content="https://kesefbekef.github.io/zman/icons/icon-512.png">
+<link rel="icon" href="../icons/icon-192.png">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="apple-touch-icon" href="../icons/icon-180.png">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1E1533;--soft:#4B4266;--paper:#FBF8FF;--g:linear-gradient(135deg,#7C3AED 0%,#EC4899 55%,#F97316 100%)}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:Rubik,system-ui,sans-serif;background:var(--paper);color:var(--ink);line-height:1.5}
+a{color:inherit}
+.wrap{max-width:980px;margin:0 auto;padding:0 18px}
+section{padding:56px 0}
+.dark{background:linear-gradient(160deg,#2A1458 0%,#140C26 60%,#2B0F2A 100%);color:#FBF8FF}
+.grad{background:var(--g);color:#fff}
+.eyebrow{font-weight:700;color:#C026D3;font-size:17px;margin-bottom:6px}
+.dark .eyebrow{color:#F9A8D4}
+h1{font-size:clamp(48px,11vw,96px);font-weight:800;line-height:1.05;background:linear-gradient(90deg,#F97316,#EC4899,#A78BFA);-webkit-background-clip:text;background-clip:text;color:transparent}
+h2{font-size:clamp(30px,6vw,52px);font-weight:800;line-height:1.15;margin-bottom:22px}
+h3{font-size:22px;font-weight:700;margin:8px 0 6px}
+p.lead{font-size:clamp(19px,3.6vw,26px);color:#E4DBF7;margin:14px 0 22px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+.card{background:#fff;border:2px solid #E9D5FF;border-radius:26px;padding:24px;box-shadow:0 12px 30px rgba(124,58,237,.08)}
+.card p{color:var(--soft);font-size:17px}
+.emo{font-size:52px;line-height:1}
+.num{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:26px;background:var(--g)}
+.green .num{background:linear-gradient(135deg,#22C55E,#14B8A6)} .green .card{border-color:#BBF7D0}
+.blue .num{background:linear-gradient(135deg,#3B82F6,#7C3AED)} .blue .card{border-color:#C7D2FE}
+.orange .card{border-color:#FED7AA}
+.pill{display:inline-block;padding:8px 18px;border-radius:999px;font-weight:700;font-size:16px}
+.btn{display:inline-block;text-decoration:none;font-weight:700;font-size:20px;padding:16px 28px;border-radius:18px;background:var(--g);color:#fff;box-shadow:0 10px 30px rgba(236,72,153,.35)}
+.btn.ghost{background:rgba(255,255,255,.12);box-shadow:none;border:2px solid rgba(255,255,255,.35)}
+.choose{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
+.choose a{display:block;text-align:center;text-decoration:none;background:rgba(20,12,38,.3);border:2px solid rgba(255,255,255,.5);border-radius:26px;padding:22px}
+.choose .emo{font-size:60px}
+.phone{width:min(300px,100%);margin:26px auto 0;background:#0E0A1A;border:5px solid #3B2A63;border-radius:42px;padding:22px 16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 30px 80px rgba(124,58,237,.45)}
+.me{align-self:flex-start;background:linear-gradient(135deg,#7C3AED,#EC4899);color:#fff;padding:10px 16px;border-radius:18px 18px 18px 6px;font-size:17px}
+.bot{align-self:flex-end;background:#2A2240;color:#FBF8FF;padding:10px 16px;border-radius:18px 18px 6px 18px;font-size:16px}
+.bot small{display:block;color:#B9AED6;font-size:13px}
+.ex{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.ex div{display:flex;gap:14px;align-items:center;background:#fff;border:2px solid #E9D5FF;border-radius:20px;padding:14px 18px}
+.ex b{font-size:19px;display:block} .ex span{color:var(--soft);font-size:15px}
+.roles .card{color:#fff;border:none}
+.note{background:#F3E8FF;color:#6D28D9;border-radius:18px;padding:14px 18px;margin-top:18px;font-size:17px}
+.dark .card{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);box-shadow:none}
+.dark .card p{color:#D9D2EA}
+.contact{background:rgba(20,12,38,.3);border:2px solid rgba(255,255,255,.45);border-radius:28px;padding:26px;margin-top:26px;text-align:center}
+.contact a{text-decoration:none}
+nav.toc{position:sticky;top:0;z-index:5;background:rgba(251,248,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid #EDE7F8}
+nav.toc .wrap{display:flex;gap:8px;overflow-x:auto;padding-top:10px;padding-bottom:10px;scrollbar-width:none}
+nav.toc a{flex:none;text-decoration:none;font-size:15px;font-weight:600;padding:8px 14px;border-radius:999px;background:#F3E8FF;color:#6D28D9}
+
+/* ---- פיד בסגנון אינסטגרם ---- */
+.ig{background:#0B0712;color:#F5F0FF;padding:40px 0 56px}
+.stories{display:flex;gap:16px;overflow-x:auto;padding:6px 18px 22px;scrollbar-width:none;max-width:980px;margin:0 auto}
+.stories::-webkit-scrollbar{display:none}
+.story{flex:none;width:78px;text-align:center;text-decoration:none;color:#E9E2F7;font-size:13px}
+.story .ring{width:74px;height:74px;border-radius:50%;padding:3px;background:conic-gradient(from 200deg,#FEDA75,#FA7E1E,#D62976,#962FBF,#4F5BD5,#FEDA75);margin:0 auto 6px;animation:spin 6s linear infinite}
+.story .ring span{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;background:#0B0712;border:3px solid #0B0712;font-size:30px;animation:spin 6s linear infinite reverse}
+@keyframes spin{to{transform:rotate(360deg)}}
+.feed{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:22px;max-width:1060px;margin:0 auto;padding:0 18px}
+.post{background:#15101F;border:1px solid #2A2238;border-radius:22px;overflow:hidden}
+.post .top{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.post .av{width:36px;height:36px;border-radius:50%;padding:2px;background:linear-gradient(45deg,#FEDA75,#FA7E1E,#D62976,#962FBF)}
+.post .av span{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;background:#15101F;font-size:17px}
+.post .who{font-weight:700;font-size:15px}.post .who small{display:block;font-weight:400;color:#A79BC0;font-size:12px}
+.post .pic{aspect-ratio:1/1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:26px;gap:12px;position:relative;overflow:hidden}
+.post .pic .big{font-size:84px;line-height:1;filter:drop-shadow(0 10px 24px rgba(0,0,0,.35))}
+.post .pic h3{font-size:clamp(26px,6vw,34px);font-weight:800;line-height:1.15;color:#fff;text-shadow:0 4px 20px rgba(0,0,0,.25)}
+.post .pic .tag{font-size:15px;font-weight:700;background:rgba(255,255,255,.22);backdrop-filter:blur(6px);padding:6px 14px;border-radius:999px;color:#fff}
+.post .acts{display:flex;gap:16px;padding:12px 14px 4px;font-size:24px}
+.post .cap{padding:4px 14px 16px;font-size:15.5px;line-height:1.55;color:#E2DAF2}
+.post .cap b{color:#fff}.post .cap .h{color:#C4A8FF}
+.p1{background:linear-gradient(135deg,#7C3AED,#EC4899)} .p2{background:linear-gradient(135deg,#F97316,#EC4899)}
+.p3{background:linear-gradient(135deg,#06B6D4,#7C3AED)} .p4{background:linear-gradient(135deg,#22C55E,#14B8A6)}
+.p5{background:linear-gradient(135deg,#3B82F6,#06B6D4)} .p6{background:linear-gradient(135deg,#0EA5E9,#22C55E)}
+.p7{background:linear-gradient(135deg,#FEDA75,#FA7E1E,#D62976)} .p8{background:linear-gradient(135deg,#F59E0B,#EF4444)}
+.p9{background:linear-gradient(135deg,#16A34A,#65A30D)} .p10{background:linear-gradient(135deg,#962FBF,#4F5BD5)}
+.p11{background:linear-gradient(135deg,#EC4899,#F43F5E)} .p12{background:linear-gradient(135deg,#334155,#7C3AED)}
+.post .pic:after{content:"";position:absolute;width:70%;height:70%;border-radius:50%;background:rgba(255,255,255,.12);top:-25%;left:-20%}
+.ig h2{text-align:center;max-width:980px;margin:0 auto 6px;padding:0 18px}
+.ig .sub2{text-align:center;color:#BFB3DA;font-size:18px;margin-bottom:18px;padding:0 18px}
+.divider{text-align:center;padding:40px 18px 0}
+.divider span{display:inline-block;font-weight:800;font-size:22px;padding:12px 26px;border-radius:999px;background:var(--g);color:#fff;box-shadow:0 10px 30px rgba(236,72,153,.35)}
+footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
+</style>
+</head>
+<body>
+
+<section class="dark">
+  <div class="wrap">
+    <div class="eyebrow">הזמן של הבית — סוף סוף בשליטה 💜</div>
+    <h1>זמן בכיף ⏰</h1>
+    <p class="lead">משימות, תזכורות ופגישות — כותבים או אומרים, כמו הודעה בוואטסאפ.<br>והיא כבר שואלת "עשית?", מתריעה על התנגשויות, ושומרת שבת.</p>
+    <a class="btn install" href="../">📲 התקנת האפליקציה</a> <a class="btn ghost" href="#features" style="margin-top:10px">🔥 מה היא יודעת?</a>
+    <p style="margin-top:14px;font-size:16px"><a class="open-app" href="../" style="color:#F9A8D4">כבר מותקן? כניסה לאפליקציה ←</a></p>
+    <div class="phone">
+      <div class="me">תזכיר לי מחר ב-10 להתקשר לבנק</div>
+      <div class="bot">📌 להתקשר לבנק<small>מחר ב-10:00 · אשאל אותך אם עשית</small></div>
+      <div class="me">🎤 פסי, קבעתי לנו דייט ביום שלישי ב-8</div>
+      <div class="bot">💌 נשלח לפסי<small>אעדכן כשהיא תגיב ❤️</small></div>
+    </div>
+    <p style="margin-top:26px;color:#CFC4EA;font-size:15px">💜 מוישי וינדיש · <a href="tel:0542964361">054-2964361</a> · <a href="mailto:mvindish@gmail.com">mvindish@gmail.com</a></p>
+  </div>
+</section>
+
+<section class="ig" id="features">
+  <h2>כל מה שהזמן שלכם היה צריך 🔥</h2>
+  <p class="sub2">גוללים כמו באינסטגרם — ומגלים מה זמן בכיף יודע לעשות</p>
+  <div class="stories"><a class="story" href="#f-chat"><div class="ring"><span>💬</span></div>שיחה</a><a class="story" href="#f-ask"><div class="ring"><span>⏰</span></div>עשית?</a><a class="story" href="#f-top3"><div class="ring"><span>⭐</span></div>3 חשובים</a><a class="story" href="#f-thoughts"><div class="ring"><span>💭</span></div>מחשבות</a><a class="story" href="#f-family"><div class="ring"><span>👨‍👩‍👧</span></div>משפחה</a><a class="story" href="#f-msg"><div class="ring"><span>💌</span></div>הודעות</a><a class="story" href="#f-clash"><div class="ring"><span>⚠️</span></div>התנגשויות</a><a class="story" href="#f-shabbat"><div class="ring"><span>🕯️</span></div>שבת</a><a class="story" href="#f-push"><div class="ring"><span>🔔</span></div>התראות</a><a class="story" href="#f-lock"><div class="ring"><span>🔒</span></div>נעילה</a></div>
+  <div class="feed">
+    <article class="post" id="f-chat">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p1"><div class="big">💬</div><h3>כותבים — והיא מסדרת</h3><span class="tag">#כמו_בוואטסאפ</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> כותבים <b>"תזכיר לי מחר ב-10 להתקשר לבנק"</b> ושולחים. בלי טפסים, בלי לבחור תאריך מתוך לוח. היא מבינה לבד. <span class="h">#פשוט_ככה</span></div>
+    </article>
+    <article class="post" id="f-voice">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p3"><div class="big">🎤</div><h3>מדברים — והיא רושמת</h3><span class="tag">#בלי_ידיים</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> באמצע הנהיגה? לוחצים 🎤 ואומרים <b>"פגישה עם יוסי ביום שלישי ב-4"</b> — וזה ביומן. בעברית, בקול. <span class="h">#אפס_הקלדה</span></div>
+    </article>
+    <article class="post" id="f-ask">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p2"><div class="big">⏰</div><h3>"עשית?" — בזמן</h3><span class="tag">#לא_שוכחים</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> כשמגיע הזמן היא שואלת בשיחה, ואתם עונים <b>"כן"</b>, <b>"עוד לא"</b> או <b>"תזכיר אחרי הצהריים"</b>. ממשיכה לשאול עד שזה נעשה. <span class="h">#נודניקית_חמודה</span></div>
+    </article>
+    <article class="post" id="f-top3">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p7"><div class="big">⭐</div><h3>3 החשובים של היום</h3><span class="tag">#פוקוס</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> כל בוקר בוחרים רק 3 דברים שחייבים לקרות. הם למעלה, בגדול — ומסמנים בלחיצה. <span class="h">#יותר_מדי_ואין_סדר_זה_נגמר</span></div>
+    </article>
+    <article class="post" id="f-thoughts">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p10"><div class="big">💭</div><h3>תיבת מחשבות</h3><span class="tag">#ראש_נקי</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> כל מה שעולה בראש — <b>"רעיון: לסדר את המחסן"</b> — נשמר בלי תאריך. מתי שנוח: הופכים למשימה, נותנים תאריך, או מוחקים. <span class="h">#לא_מאבדים_כלום</span></div>
+    </article>
+    <article class="post" id="f-family">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p4"><div class="big">👨‍👩‍👧</div><h3>כל המשפחה, לוח אחד</h3><span class="tag">#ביחד</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> <b>"תזכיר לפסי מחר ב-5 לקנות חלב"</b> — המשימה אצלה, היא נשאלת "עשית?", ואתה רואה כשהיא מסיימת 🎉 <span class="h">#אותו_חשבון_כמו_כסף_בכיף</span></div>
+    </article>
+    <article class="post" id="f-msg">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p11"><div class="big">💌</div><h3>הודעות עם תגובות</h3><span class="tag">#מאושר</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> <b>"פסי, קבעתי לנו דייט ביום שלישי ב-8"</b> — היא מקבלת התראה ועונה ❤️ / ✅ מאושר / ❌ לא יכולה / 🕐 זמן אחר. מאשרים — וזה בלוח של שניכם. <span class="h">#תקשורת_זוגית</span></div>
+    </article>
+    <article class="post" id="f-clash">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p8"><div class="big">⚠️</div><h3>מתריעה על התנגשויות</h3><span class="tag">#בלי_פספוסים</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> פגישה על פגישה? שניכם תפוסים כשצריך לאסוף ילדים? שניכם צריכים את הרכב? היא מראה <b>במה זה מתנגש</b> — ומציעה שעה ששניכם פנויים. <span class="h">#פותרים_בלחיצה</span></div>
+    </article>
+    <article class="post" id="f-shabbat">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p12"><div class="big">🕯️</div><h3>שומרת שבת</h3><span class="tag">#שבת_שלום</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> זמני כניסה ויציאה לפי העיר שלך, התראה לפני כניסת שבת, ו<b>בשבת ובחג — שקט מוחלט</b>. מה שנפל בשבת — במוצאי שבת. <span class="h">#זמני_היום #חגים</span></div>
+    </article>
+    <article class="post" id="f-push">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p5"><div class="big">🔔</div><h3>התראות לטלפון</h3><span class="tag">#גם_כשסגור</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> "עשית?", הודעה מפסי, התנגשות, סיכום בוקר — קופץ גם כשהאפליקציה סגורה. כל אחד בוחר על מה. <span class="h">#חוץ_משבת</span></div>
+    </article>
+    <article class="post" id="f-summary">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p6"><div class="big">☀️</div><h3>סיכום בוקר וערב</h3><span class="tag">#יום_מסודר</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> בבוקר: מה יש היום. בערב: מה הספקת — ועל כל מה שנשאר היא <b>שואלת</b>: למחר? לתאריך אחר? למחשבות? <span class="h">#שום_דבר_לא_עובר_לבד</span></div>
+    </article>
+    <article class="post" id="f-lock">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p9"><div class="big">🔒</div><h3>נעול רק בשבילכם</h3><span class="tag">#פרטיות</span></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> קוד או Face ID / טביעת אצבע. וכל משימה אפשר לסמן <b>🔒 פרטי</b> — רק אתה רואה. <span class="h">#שלכם_ורק_שלכם</span></div>
+    </article>
+  </div>
+</section>
+
+<div class="divider"><span>איך מתחילים? 3 שלבים 👇</span></div>
+
+<section class="grad" id="install">
+  <div class="wrap" style="text-align:center">
+    <span class="pill" style="background:rgba(255,255,255,.2)">שלב 1</span>
+    <h2 style="margin-top:14px">מתקינים על הטלפון 📲</h2>
+    <p style="font-size:20px">איזה טלפון יש לך? 👇</p>
+    <div class="choose">
+      <a href="#android"><div class="emo">🤖</div><h3>אנדרואיד</h3><span>סמסונג, שיאומי, פיקסל…</span></a>
+      <a href="#iphone"><div class="emo">🍏</div><h3>אייפון</h3><span>כל סוגי האייפון</span></a>
+    </div>
+  </div>
+</section>
+
+<section class="green" id="android" style="background:#F2FBF5">
+  <div class="wrap">
+    <span class="pill" style="background:#15803D;color:#fff">3 צעדים, דקה אחת</span>
+    <h2 style="margin-top:12px">🤖 התקנה באנדרואיד</h2>
+    <div class="cards">
+      <div class="card"><div class="num">1</div><h3>פותחים את הקישור</h3><p>לוחצים על הקישור שקיבלתם. צריך שייפתח ב-<b>Chrome</b> 🌐</p></div>
+      <div class="card"><div class="num">2</div><h3>לוחצים "התקנה"</h3><p>בכרטיס <b>"📲 להתקין כאפליקציה?"</b> ואז <b>"התקן"</b>.<br>לא רואים? ⋮ ← "התקנת אפליקציה"</p></div>
+      <div class="card"><div class="num">3</div><h3>יש אייקון! 🎉</h3><p>במסך הבית מופיע <b>"זמן בכיף"</b>. פותחים ממנו — כמו וואטסאפ</p></div>
+    </div>
+    <div class="note" style="background:#DCFCE7;color:#166534">בדפדפן "סמסונג אינטרנט": תפריט ☰ ← "הוסף דף אל" ← "מסך הבית"</div>
+  </div>
+</section>
+
+<section class="blue" id="iphone" style="background:#F4F6FF">
+  <div class="wrap">
+    <span class="pill" style="background:#2563EB;color:#fff">רק בדפדפן Safari 🧭</span>
+    <h2 style="margin-top:12px">🍏 התקנה באייפון</h2>
+    <div class="cards">
+      <div class="card"><div class="num">1</div><h3>פותחים ב-Safari</h3><p>לוחצים על הקישור. נפתח בתוך וואטסאפ? לוחצים על סמל המצפן 🧭</p></div>
+      <div class="card"><div class="num">2</div><h3>כפתור השיתוף ⬆️</h3><p>הריבוע עם החץ למעלה, בתחתית המסך</p></div>
+      <div class="card"><div class="num">3</div><h3>"הוסף למסך הבית"</h3><p>גוללים קצת למטה, בוחרים, ולוחצים <b>"הוסף"</b> ✅</p></div>
+    </div>
+    <div class="note" style="background:#DBEAFE;color:#1E40AF">🔔 באייפון, התראות לטלפון עובדות רק כשפותחים את האפליקציה <b>מהאייקון במסך הבית</b> (iOS 16.4 ומעלה)</div>
+  </div>
+</section>
+
+<section class="dark" style="text-align:center">
+  <div class="wrap">
+    <div style="display:flex;justify-content:center;gap:22px;align-items:flex-end">
+      <div style="opacity:.5"><div style="width:72px;height:72px;border-radius:20px;background:#25D366;margin:0 auto"></div><p style="font-size:14px;margin-top:6px">וואטסאפ</p></div>
+      <div><img src="../icons/icon-192.png" alt="האייקון של זמן בכיף" style="width:110px;height:110px;border-radius:28px;display:block;margin:0 auto;box-shadow:0 18px 50px rgba(124,58,237,.6)"><p style="font-weight:700;margin-top:8px">זמן בכיף</p></div>
+      <div style="opacity:.5"><div style="width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,#7C3AED,#EC4899);margin:0 auto"></div><p style="font-size:14px;margin-top:6px">כסף בכיף</p></div>
+    </div>
+    <h2 style="margin-top:22px">יש אייקון! 🎉</h2>
+    <p class="lead">מעכשיו פותחים מהאייקון, כמו כל אפליקציה.<br>היא מתעדכנת לבד — לא צריך להתקין שוב</p>
+  </div>
+</section>
+
+<section id="signup">
+  <div class="wrap">
+    <div class="eyebrow">שלב 2 · מי שמתחיל ראשון</div>
+    <h2>נרשמים ופותחים משפחה 🔑</h2>
+    <div class="cards">
+      <div class="card"><div class="emo">📧</div><h3>הרשמה</h3><p>מייל + סיסמה (לפחות 6 תווים). <b>יש לכם כבר "כסף בכיף"? אותו מייל ואותה סיסמה</b> — ואתם כבר בפנים</p></div>
+      <div class="card"><div class="emo">🏡</div><h3>משפחה</h3><p>המשפחה של "כסף בכיף" עוברת לבד. חדשים? כותבים שם, למשל "משפחת כהן" ← <b>"פתיחת משפחה חדשה"</b></p></div>
+      <div class="card"><div class="emo">🙋</div><h3>השם שלך</h3><p>כותבים את השם ובוחרים אייקון — כדי שיוכלו לתת לך משימות ולשלוח לך הודעות</p></div>
+    </div>
+    <div class="note">🔒 כל אחד בבית נרשם עם מייל וסיסמה משלו. את הסיסמה לא מגלים לאף אחד</div>
+  </div>
+</section>
+
+<section class="orange" id="join" style="background:#FFF7F0">
+  <div class="wrap">
+    <div class="eyebrow" style="color:#EA580C">שלב 2 · כל השאר במשפחה</div>
+    <h2>מצטרפים למשפחה 👨‍👩‍👧</h2>
+    <div class="cards">
+      <div class="card"><div class="num">1</div><h3>ההורה שולח (או מקריא)</h3><p>⚙️ הגדרות ← כרטיס המשפחה ← <b>"📱 הזמנה"</b> ← הורה או ילד ← וואטסאפ.<br>יושבים ליד? שם מופיעים <b>קוד להורה</b> ו<b>קוד לילד</b> — פשוט מקריאים 🔑</p></div>
+      <div class="card"><div class="num">2</div><h3>פותחים ומתקינים</h3><p>לוחצים על הקישור, ומתקינים כמו בשלב 1 📲</p></div>
+      <div class="card"><div class="num">3</div><h3>נרשמים + קוד</h3><p>מייל וסיסמה משלך, הקוד מההודעה ← <b>"🔑 הצטרפות עם קוד"</b></p></div>
+      <div class="card"><div class="num">4</div><h3>"אני ___"</h3><p>לוחצים על השם שלך (או כותבים אותו) 🎉</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="roles">
+  <div class="wrap">
+    <h2>מי רואה מה? 👀</h2>
+    <div class="cards">
+      <div class="card" style="background:linear-gradient(160deg,#7C3AED,#A855F7)"><div class="emo">👨‍👩</div><h3>הורה</h3><p style="color:#F3E8FF">רואה את <b>כל</b> המשימות והפגישות של המשפחה — חוץ ממה שמישהו סימן <b>🔒 פרטי</b>.</p></div>
+      <div class="card" style="background:linear-gradient(160deg,#F97316,#FB923C)"><div class="emo">🧒</div><h3>ילד</h3><p style="color:#FFF1E6">רואה רק את מה שהוא רשם ומה <b>שנתנו לו</b>.</p></div>
+      <div class="card" style="background:#fff;color:var(--ink);border:2px dashed #C4B5FD"><div class="emo">✏️</div><h3>רק שם</h3><p>בלי טלפון (ילד קטן). נותנים לו משימה — <b>"משימה ליוסי לסדר את החדר"</b> — והשאלה "עשית?" חוזרת אליכם</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="dark" id="use">
+  <div class="wrap">
+    <div class="eyebrow">שלב 3 · משתמשים כל יום</div>
+    <h2>כותבים — כמו הודעה 💬</h2>
+    <p class="lead">לא צריך לבחור כלום. האפליקציה מבינה לבד אם זו תזכורת, פגישה, משימה קבועה או סתם מחשבה.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">אפשר לכתוב — או לדבר 🎤</div>
+    <h2>ככה כותבים, וזה מבין</h2>
+    <div class="ex">
+      <div><span style="font-size:34px">📌</span><p><b>תזכיר לי מחר ב-10 להתקשר לבנק</b><span>תזכורת · ואז "עשית?"</span></p></div>
+      <div><span style="font-size:34px">🔁</span><p><b>כל יום חמישי ב-9 לשלם לגננת</b><span>משימה קבועה</span></p></div>
+      <div><span style="font-size:34px">👥</span><p><b>פגישה עם יוסי ביום שלישי מ-4 עד 5</b><span>פגישה ביומן, עם משך</span></p></div>
+      <div><span style="font-size:34px">💭</span><p><b>רעיון: לסדר את המחסן</b><span>לתיבת המחשבות, בלי תאריך</span></p></div>
+      <div><span style="font-size:34px">✅</span><p><b>סיימתי לשלוח הצעת מחיר</b><span>מסמן בוצע + קונפטי 🎉</span></p></div>
+      <div><span style="font-size:34px">🙋</span><p><b>תזכיר לפסי מחר ב-5 לקנות חלב</b><span>משימה בשבילה — היא נשאלת</span></p></div>
+      <div><span style="font-size:34px">💌</span><p><b>פסי, קבעתי לנו דייט ביום שלישי ב-8</b><span>הודעה — והיא עונה ❤️ / ✅ / ❌</span></p></div>
+      <div><span style="font-size:34px">👨‍👩‍👧</span><p><b>מישהו מאיתנו צריך לאסוף את הילדים ב-4</b><span>בודק שמישהו פנוי</span></p></div>
+      <div><span style="font-size:34px">🕯️</span><p><b>שעה לפני כניסת שבת לכבות את הדוד</b><span>לפי זמני השבת בעיר שלך</span></p></div>
+      <div><span style="font-size:34px">🔒</span><p><b>פרטי: לקנות מתנה לפסי</b><span>רק אתה רואה</span></p></div>
+      <div><span style="font-size:34px">📋</span><p><b>מה יש לי מחר?</b><span>רשימה מסודרת</span></p></div>
+      <div><span style="font-size:34px">❓</span><p><b>איך מוסיפים את אשתי?</b><span>שאלה — מקבלים תשובה</span></p></div>
+    </div>
+  </div>
+</section>
+
+<section class="green" style="background:#F2FBF5">
+  <div class="wrap">
+    <h2>טעיתי? לא נורא 😅</h2>
+    <div class="cards">
+      <div class="card"><div class="emo">✏️</div><h3>תקן</h3><p>מתחת לכל תשובה יש <b>"✏️ תקן"</b> — משנים סוג, שעה, משך, למי ומי רואה</p></div>
+      <div class="card"><div class="emo">↩️</div><h3>בטל</h3><p><b>"↩️ בטל"</b> מוחק את מה שנרשם עכשיו</p></div>
+      <div class="card"><div class="emo">⏰</div><h3>דחה</h3><p>"עוד לא" ← בעוד שעה / אחר הצהריים / הערב / מחר — או כותבים "תזכיר אחרי הצהריים"</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">הכפתורים למטה במסך</div>
+    <h2>4 מסכים, זה הכל 👇</h2>
+    <div class="cards">
+      <div class="card"><div class="emo">💬</div><h3>שיחה</h3><p>כותבים, מדברים, עונים על "עשית?", ורואים את 3 החשובים של היום למעלה</p></div>
+      <div class="card"><div class="emo">📋</div><h3>משימות</h3><p>באיחור · היום · מחר · בהמשך · קבועות · בלי תאריך. סינון: כולם / שלי / פסי</p></div>
+      <div class="card"><div class="emo">💭</div><h3>מחשבות</h3><p>כל מה שעלה בראש. הופכים למשימה, נותנים תאריך, או מוחקים</p></div>
+      <div class="card"><div class="emo">⚙️</div><h3>הגדרות</h3><p>משפחה וקודים · התראות · שבת וחגים · נעילה · גיבוי · שיתוף</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="dark" id="tips">
+  <div class="wrap">
+    <h2>עוד כמה דברים טובים ⭐</h2>
+    <div class="cards">
+      <div class="card"><div class="emo">☀️</div><h3>סיכום בוקר וערב</h3><p>בבוקר: מה יש היום. בערב: מה הספקת — ועל כל דבר פתוח היא <b>שואלת</b> מה לעשות. שום דבר לא עובר לבד.</p></div>
+      <div class="card"><div class="emo">🔥</div><h3>רצפים</h3><p>כל יום שמסיימים משהו — הרצף גדל. וקונפטי על כל משימה חשובה 🎉</p></div>
+      <div class="card"><div class="emo">🚗</div><h3>הרכב</h3><p>שניכם צריכים את הרכב באותה שעה? היא מתריעה. אפשר להוסיף עוד דברים משותפים</p></div>
+      <div class="card"><div class="emo">📍</div><h3>זמן נסיעה</h3><p>"פגישה בירושלים" ואחריה "פגישה בתל אביב"? היא בודקת שיש זמן להגיע</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="grad" style="text-align:center">
+  <div class="wrap">
+    <h2>זהו, אפשר להתחיל! 🚀</h2>
+    <p class="lead" style="color:#fff">כותבים את הדבר הראשון שצריך לזכור — ומשם זה כבר זורם</p>
+    <a class="btn install" href="../" style="background:#fff;color:#7C3AED">📲 להתקנה ולכניסה</a>
+    <div class="contact">
+      <p style="font-size:18px;font-weight:700">צריך עזרה? 🙋</p>
+      <p style="font-size:17px;margin-top:6px">מוישי וינדיש · <a href="tel:0542964361">054-2964361</a> · <a href="mailto:mvindish@gmail.com">mvindish@gmail.com</a></p>
+      <p style="font-size:15px;margin-top:10px;opacity:.9">ויש גם את <a href="https://kesefbekef.github.io/guide/" style="text-decoration:underline">💰 כסף בכיף</a> — לניהול הכסף של הבית</p>
+    </div>
+  </div>
+</section>
+
+<footer>זמן בכיף ⏰ · עם אהבה 💜</footer>
+
+<script>
+// קישור אחד לכל דבר: התקנה ישירה מהמדריך, וקוד המשפחה עובר לאפליקציה
+(function () {
+  var q = location.search || '';
+  document.querySelectorAll('a.open-app, a.install').forEach(function (a) { a.href = '../' + q; });
+  var evt = null;
+  var standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  var ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); evt = e; });
+  window.addEventListener('appinstalled', function () { location.href = '../' + q; });
+  document.querySelectorAll('a.install').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      if (standalone) return;
+      if (evt) { e.preventDefault(); evt.prompt(); evt.userChoice.then(function (c) { if (c.outcome === 'accepted') setTimeout(function(){ location.href = '../' + q; }, 1200); }); return; }
+      if (ios) { e.preventDefault(); document.getElementById('iphone').scrollIntoView({ behavior: 'smooth' }); return; }
+    });
+  });
+  if (q.indexOf('join=') >= 0) {
+    var bar = document.createElement('div');
+    bar.style.cssText = 'position:sticky;top:0;z-index:9;background:linear-gradient(135deg,#3B82F6,#7C3AED,#EC4899);color:#fff;text-align:center;padding:12px 16px;font-weight:700;font-size:17px';
+    bar.innerHTML = '👋 הוזמנת למשפחה! <a href="../' + q + '" class="install" style="color:#fff;text-decoration:underline">התקנה והצטרפות ←</a>';
+    document.body.prepend(bar);
+  }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('../sw.js').catch(function () {});
+})();
+</script>
+</body>
+</html>

@@ -4,6 +4,8 @@ import { hebDate } from './hebdate.js';
 import * as sync from './sync.js';
 import * as C from './conflicts.js';
 import * as Z from './zmanim.js';
+import * as help from './help.js';
+import * as lock from './lock.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -273,6 +275,9 @@ const OPS = {
 // ---------- טיפול במה שכתבת ----------
 async function send(text, voice) {
   text = text.trim(); if (!text) return;
+  // שאלה על האפליקציה ("איך מוסיפים את אשתי?") — תשובה בחלון עזרה, בלי ללכלך את השיחה
+  const pi = parse(text).intent;
+  if (!['query', 'summary', 'morning', 'yes', 'no', 'done'].includes(pi) && help.isHelpRequest(text)) { $('#inp').blur(); return openHelp(text, help.wantsGuide(text) && !help.answer(text).length); }
   await me(text, voice);
   await think();
   const f = forWhom(text);
@@ -287,7 +292,7 @@ async function send(text, voice) {
   }
   p.forP = f.forP; p.private = f.private; p.place = pl.place; p.res = C.findRes(text, S.resources);
 
-  if (p.intent === 'help') return help();
+  if (p.intent === 'help') return openHelp();
   if (p.intent === 'summary') return evening(true);
   if (p.intent === 'morning') return morning(true);
   if (p.intent === 'query') return query(p.day);
@@ -544,14 +549,61 @@ async function query(day) {
   return bot('📋', 'var(--g2)', `מה יש ${name}`, sub, [{ l: 'למסך המשימות', op: 'goto', a: ['tasks'] }]);
 }
 
-function help() {
-  return bot('💡', 'var(--g2)', 'מה אפשר לכתוב לי', [
-    '📌 תזכיר לי מחר ב-10 להתקשר לבנק', '🔁 כל יום חמישי ב-9 לשלם לגננת', '👥 פגישה עם יוסי ביום שלישי ב-4',
-    '💭 רעיון: לסדר את המחסן', '✅ סיימתי לשלוח הצעת מחיר', '📋 מה יש לי היום? / מחר? / השבוע?', '🌙 סיכום',
-    `💌 ${S.people.find(p => p.id !== S.myP)?.name || 'רחל'}, קבעתי לנו דייט ביום שלישי ב-8`, `🙋 תזכיר ל${S.people.find(p => p.id !== S.myP)?.name || 'רחל'} מחר ב-5 לקנות חלב`,
-    '👨‍👩‍👧 מישהו מאיתנו צריך לאסוף את הילדים ב-4', '🕯️ תזכיר לי שעה לפני כניסת שבת לכבות את הדוד', '☀️ תזכיר לי חצי שעה לפני סוף זמן ק"ש',
-  ].join('\n'));
+// ---------- עזרה: שאלות ותשובות בחלון נפרד ----------
+async function shareApp() {
+  try {
+    if (navigator.share) { await navigator.share({ title: 'זמן בכיף', text: help.SHARE_TEXT.replace(help.SHARE_URL, '').trim(), url: help.SHARE_URL }); return; }
+    await navigator.clipboard.writeText(help.SHARE_TEXT); toast('🔗 הקישור הועתק — אפשר להדביק לחבר');
+  } catch (e) { if (e.name !== 'AbortError') toast('🔗 ' + help.SHARE_URL); }
 }
+function openHelp(question = '', showGuide = false) {
+  const kid = !sync.isParent();
+  const topics = help.TOPICS.filter(t => !kid || !['roles', 'add'].includes(t.id));
+  sheet(`<h3>❓ עזרה</h3>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input id="hQ" placeholder="שאל אותי, למשל: איך מוסיפים את אשתי?" style="flex:1;min-width:0" enterkeyhint="send">
+      <button class="act pri" id="hAsk" style="padding:0 16px">שאל</button></div>
+    <div id="hAns" class="chat" style="padding:0;margin-bottom:12px;gap:8px"></div>
+    <div id="hGuide"></div>
+    <button class="btn" id="hOpenGuide" style="margin-bottom:12px">📖 המדריך המלא (עם תמונות)</button>
+    <p class="note" style="margin-bottom:6px">שאלות נפוצות:</p>
+    <div class="chips" style="flex-wrap:wrap;padding:0 0 12px">${topics.map(t => `<button class="chip" data-topic="${t.id}">${t.t}</button>`).join('')}</div>
+    <p class="note" style="text-align:center">עדיין תקוע? מוישי וינדיש · <a href="tel:0542964361" style="color:#F9A8D4">054-2964361</a> · <a href="mailto:mvindish@gmail.com" style="color:#F9A8D4">mvindish@gmail.com</a></p>`);
+  const box = $('#hAns');
+  const bubble = (cls, html) => {
+    const d = document.createElement('div'); d.className = cls + ' new'; d.innerHTML = html; d.style.maxWidth = '100%'; box.appendChild(d);
+    d.querySelector('[data-share-app]')?.addEventListener('click', shareApp);
+    d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return d;
+  };
+  const answerHtml = t => `<div><b>${t.t}</b><div class="sub" style="margin-top:6px;line-height:1.6;color:#fff">${t.a}</div></div>`;
+  const showGuideFrame = () => {
+    $('#hGuide').innerHTML = `<iframe src="guide/" title="המדריך" style="width:100%;height:65vh;border:0;border-radius:18px;margin-bottom:12px;background:#FBF8FF"></iframe>`;
+    $('#hOpenGuide').style.display = 'none';
+    $('#hGuide').scrollIntoView({ behavior: 'smooth' });
+  };
+  const ask = q => {
+    q = q.trim(); if (!q) return;
+    bubble('me', esc(q));
+    const found = help.answer(q).filter(t => topics.includes(t));
+    if (found.length) found.forEach(t => bubble('bot', answerHtml(t)));
+    else {
+      const b = bubble('bot', `<div><b>🤔 לא בטוח שהבנתי</b><div class="sub" style="margin-top:4px">רצית לראות את ההוראות? או לבחור נושא למטה 👇</div>
+        <div class="acts"><button class="act pri" data-g="1">📖 כן, פתח את המדריך</button></div></div>`);
+      b.querySelector('[data-g]').onclick = showGuideFrame;
+    }
+    $('#hQ').value = '';
+  };
+  $('#hAsk').onclick = () => ask($('#hQ').value);
+  $('#hQ').addEventListener('keydown', e => { if (e.key === 'Enter') ask(e.target.value); });
+  $('#hOpenGuide').onclick = showGuideFrame;
+  $('#sheet').querySelectorAll('[data-topic]').forEach(c => c.onclick = () => {
+    const t = help.TOPICS.find(x => x.id === c.dataset.topic);
+    bubble('me', esc(t.t.replace(/^\S+\s/, ''))); bubble('bot', answerHtml(t));
+  });
+  if (showGuide) showGuideFrame(); else if (question) ask(question);
+}
+
 
 // ---------- התראות לטלפון ----------
 const APP_URL = './';
@@ -1123,7 +1175,7 @@ function openPicker(mustSwapFor) {
 
 // ---------- ניווט ותצוגה ----------
 function showView(v) {
-  if (v === 'settings') drawPush();
+  if (v === 'settings') { drawPush(); drawLockCard(); }
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
   $('#composer').style.display = v === 'chat' ? 'flex' : 'none';
@@ -1248,9 +1300,103 @@ $('#clearChatBtn').onclick = async () => {
   if (!confirm('למחוק את כל ההודעות בשיחה? המשימות והמחשבות נשארות.')) return;
   await db.clear('msgs'); S.msgs = []; renderChat(); toast('🧹 השיחה נוקתה');
 };
+// ---------- התקנה על המסך (כמו אפליקציה רגילה) ----------
 let installEvt = null;
-addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#installBtn').hidden = false; });
-$('#installBtn').onclick = async () => { if (!installEvt) return; installEvt.prompt(); installEvt = null; $('#installBtn').hidden = true; };
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#installBtn').hidden = false; drawInstallBanner(); });
+addEventListener('appinstalled', () => { installEvt = null; drawInstallBanner(); toast('🎉 האפליקציה הותקנה על המסך'); confetti(); });
+function openInstallSheet() {
+  if (installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; drawInstallBanner(); }); return; }
+  sheet(`<h3>📲 התקנה על המסך</h3><p class="note" style="margin-bottom:12px">ככה "זמן בכיף" יופיע עם אייקון במסך הבית, כמו וואטסאפ — ייפתח במסך מלא, יעבוד גם בלי אינטרנט, ויוכל לשלוח התראות</p>
+    ${isIOS() ? `<div class="card"><p class="note"><b>🍏 באייפון (Safari):</b><br>1. כפתור השיתוף <b>⬆️</b> בתחתית המסך<br>2. <b>"הוסף למסך הבית"</b><br>3. <b>"הוסף"</b> — וזהו!</p></div>`
+      : `<div class="card" style="margin-bottom:10px"><p class="note"><b>🤖 באנדרואיד (Chrome):</b><br>1. <b>⋮</b> (שלוש נקודות) למעלה<br>2. <b>"התקנת אפליקציה"</b> או <b>"הוספה למסך הבית"</b><br>3. מאשרים — וזהו!</p></div>
+         <div class="card"><p class="note"><b>💻 במחשב (Chrome / Edge):</b> סמל ההתקנה בשורת הכתובת, או ⋮ ← "התקנה".</p></div>`}`);
+}
+function drawInstallBanner() {
+  const el = $('#installBanner'); if (!el) return;
+  let hidden = false; try { hidden = localStorage.getItem('zman-install-hide') === '1'; } catch { /* */ }
+  if (isStandalone() || hidden || !location.protocol.startsWith('https')) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="inst"><div class="em">📲</div><p><b>להתקין כאפליקציה?</b><br>אייקון במסך הבית + התראות</p>
+    <button class="act pri" id="instGo">התקנה</button><button class="chip" id="instX" aria-label="סגירה">✕</button></div>`;
+  $('#instGo').onclick = openInstallSheet;
+  $('#instX').onclick = () => { try { localStorage.setItem('zman-install-hide', '1'); } catch { /* */ } drawInstallBanner(); };
+}
+$('#installBtn').onclick = openInstallSheet;
+drawInstallBanner();
+
+// ---------- נעילה ----------
+let pinBuf = '', fails = 0, lockedUntil = 0, hiddenAt = 0;
+function showLock() {
+  const st = lock.settings(); if (!st) return;
+  pinBuf = ''; drawDots(); $('#lockErr').textContent = '';
+  $('#lockBio').hidden = !st.cred;
+  $('#lockBio').textContent = isIOS() ? '👆 לחיצה כאן — ונפתח עם Face ID' : '👆 פתיחה בטביעת אצבע';
+  $('#lock').classList.add('on');
+  if (st.cred && !isIOS()) tryBio(true);
+}
+$('#lock').addEventListener('click', e => { if (e.target.closest('#lockPad') || e.target.closest('#lockBio')) return; if (lock.settings()?.cred) tryBio(false); });
+function unlockNow() { $('#lock').classList.remove('on'); fails = 0; }
+async function tryBio(auto) {
+  try { if (await lock.bioUnlock()) unlockNow(); }
+  catch (e) { if (!auto && e.name !== 'NotAllowedError') $('#lockErr').textContent = 'הזיהוי לא הצליח — אפשר להקליד קוד'; }
+}
+function drawDots() { document.querySelectorAll('#lockDots i').forEach((d, i) => d.classList.toggle('f', i < pinBuf.length)); }
+$('#lockPad').innerHTML = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map(k => k ? `<button data-k="${k}" aria-label="${k === '⌫' ? 'מחיקה' : k}">${k}</button>` : '<span></span>').join('');
+$('#lockPad').addEventListener('click', async e => {
+  const b = e.target.closest('[data-k]'); if (!b) return;
+  if (Date.now() < lockedUntil) { $('#lockErr').textContent = `יותר מדי ניסיונות. נסה שוב בעוד ${Math.ceil((lockedUntil - Date.now()) / 1000)} שניות`; return; }
+  const k = b.dataset.k;
+  pinBuf = k === '⌫' ? pinBuf.slice(0, -1) : (pinBuf + k).slice(0, 4);
+  drawDots(); $('#lockErr').textContent = '';
+  if (pinBuf.length === 4) {
+    if (await lock.pinOk(pinBuf)) { unlockNow(); return; }
+    fails++; pinBuf = ''; drawDots();
+    $('#lockDots').classList.remove('shake'); void $('#lockDots').offsetWidth; $('#lockDots').classList.add('shake');
+    if (fails >= 5) { lockedUntil = Date.now() + 30000; fails = 0; $('#lockErr').textContent = 'יותר מדי ניסיונות. המתן 30 שניות'; }
+    else $('#lockErr').textContent = 'קוד שגוי';
+  }
+});
+$('#lockBio').onclick = () => tryBio(false);
+document.addEventListener('visibilitychange', () => {
+  const st = lock.settings(); if (!st) return;
+  if (document.hidden) hiddenAt = Date.now();
+  else if (hiddenAt && Date.now() - hiddenAt >= (st.minutes ?? 5) * 60000) showLock();
+});
+showLock();
+function drawLockCard() {
+  const el = $('#lockCard'); if (!el) return;
+  const st = lock.settings();
+  if (!st) {
+    el.innerHTML = `<h4>🔒 נעילת האפליקציה</h4><p class="note">כדי שלא כל מי שמחזיק את הטלפון יראה את המשימות וההודעות</p><button class="btn" id="lkOn">הפעלת נעילה</button>`;
+    $('#lkOn').onclick = async () => {
+      const bio = await lock.bioSupported();
+      el.innerHTML = `<h4>🔒 בחירת קוד (4 ספרות)</h4>
+        <div class="two"><input id="lk1" class="fam-in" type="password" inputmode="numeric" maxlength="4" placeholder="קוד" style="text-align:center;letter-spacing:8px">
+        <input id="lk2" class="fam-in" type="password" inputmode="numeric" maxlength="4" placeholder="שוב" style="text-align:center;letter-spacing:8px"></div>
+        ${bio ? '<label class="set-row" style="cursor:pointer"><span>גם טביעת אצבע / Face ID</span><input type="checkbox" id="lkBio" checked></label>' : ''}
+        <div id="lkErr" style="color:#FB7185;font-size:13px;min-height:18px"></div><button class="btn pri" id="lkSave">הפעלה</button>`;
+      el.querySelectorAll('input').forEach(i => i.oninput = () => $('#lkErr').textContent = '');
+      $('#lkSave').onclick = async () => {
+        const a = $('#lk1').value, b = $('#lk2').value;
+        if (!/^\d{4}$/.test(a)) return $('#lkErr').textContent = 'הקוד צריך להיות 4 ספרות';
+        if (a !== b) return $('#lkErr').textContent = 'הקודים לא זהים';
+        try { await lock.enable(a, !!$('#lkBio')?.checked, 5); drawLockCard(); toast('🔒 הנעילה הופעלה — תינעל אחרי 5 דקות שהאפליקציה סגורה'); }
+        catch (e) { if (e.name === 'NotAllowedError') { await lock.enable(a, false, 5); drawLockCard(); toast('🔒 הנעילה הופעלה עם קוד בלבד'); } else $('#lkErr').textContent = 'לא הצלחתי להפעיל טביעת אצבע. נסה בלי'; }
+      };
+    };
+    return;
+  }
+  el.innerHTML = `<h4>🔒 הנעילה פעילה <small>${st.cred ? '👆 + קוד' : 'קוד בלבד'}</small></h4><p class="note" style="margin-bottom:6px">לנעול כשחוזרים לאפליקציה אחרי:</p>
+    <div class="chips" style="padding:0 0 10px;flex-wrap:wrap">${[[0, 'מיד'], [1, 'דקה'], [5, '5 דקות'], [15, 'רבע שעה']].map(([m, l]) => `<button class="chip ${(st.minutes ?? 5) === m ? 'on' : ''}" data-min="${m}">${l}</button>`).join('')}</div>
+    <div style="display:flex;gap:8px"><input id="lkOff" class="fam-in" type="password" inputmode="numeric" maxlength="4" placeholder="הקוד — כדי לכבות" style="text-align:center"><button class="act" id="lkOffBtn">כיבוי</button></div>
+    <div id="lkErr" style="color:#FB7185;font-size:13px;min-height:18px"></div>`;
+  el.querySelectorAll('[data-min]').forEach(b => b.onclick = () => { lock.setMinutes(+b.dataset.min); drawLockCard(); });
+  $('#lkOffBtn').onclick = async () => { if (!(await lock.pinOk($('#lkOff').value))) return $('#lkErr').textContent = 'קוד שגוי'; lock.disable(); drawLockCard(); toast('הנעילה כובתה'); };
+}
+$('#shareAppBtn').onclick = shareApp;
+$('#helpBtn').onclick = () => openHelp();
+$('#helpBtn2').onclick = () => openHelp();
 
 // ---------- הפעלה ----------
 async function load() {
@@ -1349,6 +1495,7 @@ async function onRemoteItem(local, next, live) {
 
 // ---------- מסך פתיחה: כניסה ← משפחה ← שם ----------
 const joinCode = (new URLSearchParams(location.search).get('join') || '').toUpperCase();
+const joinName = new URLSearchParams(location.search).get('name') || '';
 async function gateStep() {
   if (!sync.user()) return 'auth';
   if (!sync.household()) return 'family';
@@ -1405,7 +1552,7 @@ async function showGate() {
   // step === 'name'
   S.people = await sync.loadPeople();
   if (personOfUid(S.uid)) return showGate();
-  const free = S.people.filter(p => !p.uid);
+  const free = S.people.filter(p => !p.uid).sort((a, b) => (b.name === joinName) - (a.name === joinName));
   let face = 0;
   body.innerHTML = `<h2>🙋 איך קוראים לך?</h2>
     <p class="note">כל מה שתרשום יופיע עם השם שלך, ואפשר יהיה לתת לך משימות.</p>
@@ -1443,18 +1590,72 @@ function renderFamily() {
   const hh = sync.household(), el = $('#familyCard'); if (!el) return;
   if (!hh) { el.hidden = true; return; }
   el.hidden = false;
-  const meP = person(S.myP);
-  const url = location.origin + location.pathname;
-  const share = (code, label) => `<div class="set-row"><span>${label}</span><b dir="ltr" style="letter-spacing:2px">${esc(code)}</b></div>
-    <a class="btn" href="https://wa.me/?text=${encodeURIComponent(`הצטרפות ל"זמן בכיף" של ${hh.name}: ${url}?join=${code}`)}" target="_blank" rel="noopener" style="display:grid;place-items:center;text-decoration:none">💬 שליחת הזמנה בוואטסאפ</a>`;
-  el.innerHTML = `<h4>👨‍👩‍👧 ${esc(hh.name)}<small id="syncState">${navigator.onLine ? 'מסונכרן ✓' : 'ממתין לרשת…'}</small></h4>
-    <div class="set-row"><span>אני</span><b>${meP ? `${meP.e} ${esc(meP.name)}` : ''}</b></div>
-    <div class="set-row"><span>בני הבית</span><span>${S.people.map(p => `${p.e} ${esc(p.name)}${p.uid ? '' : ' <small style="color:var(--muted)">(בלי חשבון)</small>'}`).join('<br>')}</span></div>
-    ${sync.isParent() && hh.invite_code ? share(hh.invite_code, 'קוד להורה / בן זוג') : ''}
-    ${sync.isParent() && hh.child_code ? share(hh.child_code, 'קוד לילד (רואה רק את שלו)') : ''}
-    <p class="note" style="margin-top:8px">זה אותו חשבון ואותה משפחה כמו ב"כסף בכיף".</p>
+  const meP = person(S.myP), email = sync.user()?.email || '';
+  const head = `<h4>👨‍👩‍👧 ${esc(hh.name)}<small id="syncState">${navigator.onLine ? 'מסונכרן ✓' : 'ממתין לרשת…'}</small></h4>
+    <p class="note" style="margin-bottom:10px">${esc(email)} · ${meP ? `${meP.e} ${esc(meP.name)}` : ''} · ${sync.isParent() ? 'הורה — רואה הכל ומנהל את המשפחה' : '🧒 ילד — רואה את מה שרשמת ומה שנתנו לך'}<br>זה אותו חשבון ואותה משפחה כמו ב"כסף בכיף".</p>`;
+  if (!sync.isParent()) { el.innerHTML = head + '<button class="btn danger" id="signOutBtn">יציאה מהחשבון</button>'; $('#signOutBtn').onclick = signOut; return; }
+  const inviteHref = (role, name) => {
+    const code = role === 'parent' ? hh.invite_code : hh.child_code;
+    const link = `${location.origin}${location.pathname}guide/?join=${code}${name ? '&name=' + encodeURIComponent(name) : ''}`;
+    const msg = `${name ? `היי ${name}! ` : ''}הצטרפו ללוח המשפחתי שלנו ב"זמן בכיף" ⏰\nהכל בקישור אחד — התקנה, הצטרפות והסבר:\n${link}\n\nקוד ${role === 'parent' ? 'הורה' : 'ילד'} (למקרה שצריך): ${code}`;
+    return `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  };
+  const codeBox = (code, label, bg, border, sub) => `<div class="code-box" style="background:${bg};border-color:${border}"><div class="note" style="color:${sub}">${label}</div>
+    <div class="code">${code || '—'}</div>${code ? `<button class="chip" data-copy="${code}">📋 העתקה</button>` : ''}</div>`;
+  const row = (inner, actions) => `<div class="fam-row"><span style="flex:1;min-width:120px">${inner}</span>${actions}</div>`;
+  el.innerHTML = head + `<p class="note" style="margin-bottom:6px">🔑 קודי הצטרפות — אפשר להקריא או להעתיק:</p>
+    <div class="two" style="margin-bottom:14px">${codeBox(hh.invite_code, '👨‍👩 קוד להורה', 'linear-gradient(160deg,rgba(124,58,237,.35),rgba(168,85,247,.2))', 'rgba(196,181,253,.4)', '#E9D5FF')}
+    ${codeBox(hh.child_code, '🧒 קוד לילד', 'linear-gradient(160deg,rgba(249,115,22,.35),rgba(251,146,60,.2))', 'rgba(253,186,116,.4)', '#FFEDD5')}</div>
+    <p class="note" style="margin-bottom:6px">👨‍👩‍👧 מי במשפחה:</p>
+    <div id="famList" class="note">טוען…</div>
+    <div class="err" id="memErr" style="color:#FB7185;font-size:13px"></div>
+    <div style="display:flex;gap:8px;margin-top:6px"><button class="round" id="pplFace" style="background:var(--card2);border:1px solid var(--line);width:44px;height:44px" aria-label="בחירת אייקון">${FACES[1]}</button>
+      <input id="pplName" placeholder="הוספת בן משפחה, למשל: יעל" class="fam-in"><button class="act pri" id="pplAdd">הוספה</button></div>
+    <p class="note" style="margin-top:10px;line-height:1.6">📱 מחובר — יש לו טלפון משלו<br>✏️ רק שם — נותנים לו משימות, למשל "משימה ליעל לסדר את החדר", והשאלה "עשית?" חוזרת אליך</p>
     <button class="btn danger" id="signOutBtn">יציאה מהחשבון</button>`;
   $('#signOutBtn').onclick = signOut;
+  el.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = '✅ הועתק'; } catch { b.textContent = b.dataset.copy; } });
+  let face = 1;
+  const err = m => { $('#memErr').textContent = m; };
+  const drawList = async () => {
+    const box = $('#famList'); if (!box) return;
+    let members = [], offline = false;
+    try { members = await sync.listMembers(); } catch { offline = true; }
+    const roleBtn = m => `<button class="chip ${m.role === 'parent' ? 'on' : ''}" data-role="${m.user_id}" data-to="${m.role === 'parent' ? 'child' : 'parent'}">${m.role === 'parent' ? '👨‍👩 הורה' : '🧒 ילד'}</button>`;
+    const html = S.people.map(p => {
+      const m = members.find(x => x.user_id === p.uid), me = p.uid === S.uid;
+      if (m) return row(`📱 ${p.e} <b>${esc(p.name)}</b>${me ? ' (אני)' : ''}`, roleBtn(m) + (me ? '' : `<button class="chip" data-rm="${m.user_id}" aria-label="הסרה מהמשפחה">✕</button>`));
+      return row(`✏️ ${p.e} <b>${esc(p.name)}</b> <span class="note">· רק שם</span>`, `<span data-invbox="${p.id}"><button class="chip" data-inv="${p.id}">📱 הזמנה</button></span><button class="chip" data-del="${p.id}" aria-label="מחיקת השם">✕</button>`);
+    }).join('') + members.filter(m => !S.people.some(p => p.uid === m.user_id)).map(m => row('📱 👤 <span class="note">נרשם, עוד לא בחר שם</span>', roleBtn(m) + `<button class="chip" data-rm="${m.user_id}" aria-label="הסרה">✕</button>`)).join('');
+    box.innerHTML = (html || 'עוד אין אף אחד') + (offline ? '<div>⚠️ אין חיבור — מוצג חלקית</div>' : '');
+    box.querySelectorAll('[data-role]').forEach(b => b.onclick = async () => { try { await sync.setRole(b.dataset.role, b.dataset.to); toast(b.dataset.to === 'parent' ? 'עכשיו הורה 👨‍👩' : 'עכשיו ילד 🧒'); drawList(); } catch (x) { err(x.message); } });
+    box.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+      if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'להסיר?'; return; }
+      try { await sync.removeMember(b.dataset.rm); toast('הוסר מהמשפחה'); drawList(); } catch (x) { err(x.message); }
+    });
+    box.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => {
+      const p = person(b.dataset.inv);
+      box.querySelector(`[data-invbox="${p.id}"]`).innerHTML = `<span class="note">להזמין כ:</span>
+        <a class="chip" href="${inviteHref('parent', p.name)}" target="_blank" rel="noopener" style="text-decoration:none">👨‍👩 הורה <b dir="ltr">${hh.invite_code}</b></a>
+        <a class="chip" href="${inviteHref('child', p.name)}" target="_blank" rel="noopener" style="text-decoration:none">🧒 ילד <b dir="ltr">${hh.child_code || ''}</b></a>`;
+    });
+    box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+      if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'למחוק?'; return; }
+      try { S.people = await sync.removePerson(b.dataset.del); renderAll(); drawList(); } catch (x) { err(x.message); }
+    });
+  };
+  drawList();
+  $('#pplFace').onclick = e => { face = (face + 1) % FACES.length; e.target.textContent = FACES[face]; };
+  $('#pplName').oninput = () => err('');
+  $('#pplAdd').onclick = async () => {
+    const name = $('#pplName').value.trim();
+    if (!name) return err('צריך לכתוב שם');
+    if (S.people.some(p => p.name === name)) return err('השם הזה כבר קיים');
+    const p = { id: db.newId(), name, e: FACES[face] };
+    try { S.people = await sync.savePerson(p); } catch (x) { return err(x.message); }
+    $('#pplName').value = ''; renderAll(); drawList();
+    toast(`👋 ${p.e} ${name} נוסף/ה — אפשר לתת לו/ה משימות, או ללחוץ "📱 הזמנה"`);
+  };
 }
 
 let started = false;
@@ -1483,7 +1684,11 @@ async function boot() {
   if (await showGate()) boot();
 })();
 
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then(r => r.update?.()).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) toast('✨ האפליקציה עודכנה לגרסה חדשה'); });
+}
 
 // לבדיקות מהדפדפן
 window.__zman = { S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule };

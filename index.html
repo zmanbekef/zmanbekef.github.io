@@ -23,6 +23,7 @@
   <header>
     <div><div class="logo">זמן בכיף ⏰</div><div class="hdate" id="hdate"></div><div class="hdate hzman" id="hzman"></div></div>
     <div style="display:flex;gap:8px">
+      <button class="icon-btn" id="helpBtn" aria-label="עזרה">❓</button>
       <button class="icon-btn" id="todayBtn" aria-label="מה יש לי היום">📋</button>
     </div>
   </header>
@@ -38,6 +39,7 @@
         <div class="bar"><i id="t3bar" style="width:0"></i></div>
         <div class="hrow"><span id="t3txt"></span><button id="t3edit">✏️ לבחור אחרים</button></div>
       </div>
+      <div id="installBanner"></div>
       <div class="chat" id="chat"></div>
       <div class="chips" id="chips"></div>
     </section>
@@ -81,6 +83,13 @@
           <div id="resList"></div>
           <div class="res-row"><input id="resNew" placeholder="למשל: העגלה, המחשב הנייד"><button class="act pri" id="resAdd">＋ הוסף</button></div>
         </div>
+        <div class="card" id="lockCard"></div>
+        <div class="card">
+          <h4>📤 לשתף את האפליקציה עם חבר</h4>
+          <p class="note">חבר שיקבל את הקישור יפתח משפחה משלו, נפרדת לגמרי.</p>
+          <button class="btn pri" id="shareAppBtn">📤 שיתוף</button>
+          <button class="btn" id="helpBtn2">❓ עזרה ומדריך</button>
+        </div>
         <div class="card">
           <h4>גיבוי</h4>
           <p class="note">המשימות נשמרות בטלפון ובענן של המשפחה. אפשר גם לשמור עותק לקובץ.</p>
@@ -115,6 +124,16 @@
   </nav>
 
   <div class="gate" id="gate"><div class="gate-box" id="gateBody"></div></div>
+  <div class="lock" id="lock">
+    <div class="blob b1"></div><div class="blob b2"></div>
+    <div class="logo" style="position:relative">זמן בכיף ⏰</div>
+    <h2>🔒 האפליקציה נעולה</h2>
+    <button class="btn pri bio" id="lockBio" hidden style="width:auto;padding:0 20px">👆 פתיחה בטביעת אצבע / Face ID</button>
+    <div class="note" style="position:relative">או הקלדת קוד</div>
+    <div class="dots" id="lockDots"><i></i><i></i><i></i><i></i></div>
+    <div class="err" id="lockErr" style="position:relative;margin:0;color:#FB7185;min-height:18px"></div>
+    <div class="pad" id="lockPad"></div>
+  </div>
   <div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet"></div></div>
 </div>
 <script type="module" src="js/app.js"></script>
