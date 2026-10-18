@@ -1,5 +1,6 @@
 // עזרה: תשובות לשאלות תפעול (בחינם, בלי בינה מלאכותית) — מזהים נושא לפי מילים
-export const SHARE_URL = 'https://kesefbekef.github.io/zman/guide/';
+// הקישור למדריך — לפי הכתובת שהאפליקציה יושבת בה עכשיו
+export const SHARE_URL = location.origin + location.pathname.replace(/[^/]*$/, '') + 'guide/';
 export const SHARE_TEXT = '⏰ מצאתי אפליקציה מעולה לניהול הזמן של הבית — "זמן בכיף".\nכותבים משימות ותזכורות כמו הודעה בוואטסאפ, היא שואלת "עשית?", מתריעה על התנגשויות ושומרת שבת. בחינם!\n👇 כל מה שצריך בקישור אחד:\n' + SHARE_URL;
 const SHARE_BTNS = `<div class="acts" style="margin-top:10px;gap:10px;flex-wrap:wrap">
   <a href="https://wa.me/?text=${encodeURIComponent(SHARE_TEXT)}" target="_blank" rel="noopener" style="color:#fff;background:#25D366;padding:8px 14px;border-radius:999px;text-decoration:none;font-weight:600">📤 שליחה בוואטסאפ</a>
