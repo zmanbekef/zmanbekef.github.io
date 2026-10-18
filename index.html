@@ -21,7 +21,7 @@
   <div class="toast" id="toast"></div>
 
   <header>
-    <div><div class="logo">זמן בכיף ⏰</div><div class="hdate" id="hdate"></div></div>
+    <div><div class="logo">זמן בכיף ⏰</div><div class="hdate" id="hdate"></div><div class="hdate hzman" id="hzman"></div></div>
     <div style="display:flex;gap:8px">
       <button class="icon-btn" id="todayBtn" aria-label="מה יש לי היום">📋</button>
     </div>
@@ -60,6 +60,15 @@
       <div class="h2">הגדרות ⚙️</div>
       <div class="cards">
         <div class="card" id="familyCard" hidden></div>
+        <div class="card" id="pushCard"></div>
+        <div class="card">
+          <h4>🕯️ שבת וחגים</h4>
+          <div class="set-row"><span>העיר שלי</span><select id="setCity" class="sel"></select></div>
+          <div class="set-row"><span>הדלקת נרות, דקות לפני השקיעה</span><input type="number" id="setCandle" min="0" max="60" class="num"></div>
+          <div class="set-row" style="display:block"><span>להתריע לפני כניסת שבת/חג</span><div class="chips" id="setShAlerts" style="padding:8px 0 0;flex-wrap:wrap"></div></div>
+          <div class="set-row"><span>🎵 צליל ההתראות</span><span style="display:flex;gap:6px"><select id="setMelody" class="sel"></select><button class="act" id="testMelody">▶️</button></span></div>
+          <p class="note">בשבת ובחג אין שום תזכורת או התראה, ומה שנופל בהם עובר למוצאי שבת או חג. הזמנים מגיעים מ-Hebcal, לוח שנה יהודי חינמי. הצליל הזה מושמע כשהאפליקציה פתוחה.</p>
+        </div>
         <div class="card">
           <h4>סיכומים בשיחה</h4>
           <div class="set-row"><span>☀️ סיכום בוקר, מהשעה</span><input type="time" id="setMorning"></div>

@@ -3,17 +3,19 @@ import { parse, matchScore, whenLabel, nextOccurrence, sod, addDays, ymd, hm, DA
 import { hebDate } from './hebdate.js';
 import * as sync from './sync.js';
 import * as C from './conflicts.js';
+import * as Z from './zmanim.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const today = () => ymd(new Date());
 const isToday = iso => iso && ymd(new Date(iso)) === today();
 
-const S = { items: [], msgs: [], log: [], top3: null, settings: { morning: '07:00', evening: '20:00' }, pending: null, day: today(),
+const S = { items: [], msgs: [], log: [], top3: null, settings: { morning: '07:00', evening: '20:00', city: 'ירושלים', candleMin: 40, shabbatAlerts: [60], melody: 'bells' }, pending: null, day: today(),
   people: [], uid: null, myP: null, who: 'all', busy: [], resources: C.DEFAULT_RES, travel: {}, alerted: [] };
 const item = id => S.items.find(x => x.id === id && x.status !== 'deleted');
 const openItems = () => S.items.filter(x => x.status === 'open');
-const allTasksOpen = () => openItems().filter(x => x.kind !== 'thought');
+const isTask = x => x.kind === 'task' || x.kind === 'meeting';
+const allTasksOpen = () => openItems().filter(isTask);
 
 // ---------- בני הבית ----------
 const FACES = ['🧔', '👩', '👦', '👧', '👴', '👵', '🧑', '👶'];
@@ -96,7 +98,7 @@ function think(ms = 450) {
 }
 
 // כפתורים שלא "נועלים" את ההודעה (אפשר ללחוץ עליהם שוב)
-const KEEP = new Set(['edit', 'star', 'pickTop3', 'goto', 'conflict']);
+const KEEP = new Set(['edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
 async function onAct(m, i, box) {
   const a = m.acts[i];
   if (!KEEP.has(a.op)) {
@@ -247,8 +249,23 @@ const OPS = {
   },
   async travel(a, b, m) { S.travel[[a, b].sort().join('|')] = m; await db.setKV('travel', S.travel); toast(`🚗 נשמר: ${durLbl(m)}`); await scanConflicts(); },
   conflict: (a, b) => openConflict(a, b),
+  async react(id, r) {
+    const m = item(id); if (!m) return toast('ההודעה כבר לא קיימת', true);
+    await addReply(m, { r });
+    if (r === 'yes' && m.invite) { await createShared(m, m.invite); await bot('✅', 'var(--g3)', 'מאושר! נכנס ללוח של שניכם', `${m.text}\n📅 ${whenLabel(m.invite)}`); confetti(70); }
+    else toast(`${REACT[r]} נשלח`);
+  },
+  replyNo: (id, mode) => openReplyNo(id, mode),
+  replyText: id => openReplyText(id),
+  async acceptAlt(id, idx) {
+    const m = item(id); const r = m?.replies?.[idx]; if (!r?.alt) return;
+    await addReply(m, { r: 'yes', alt: r.alt });
+    await createShared(m, r.alt);
+    await bot('✅', 'var(--g3)', 'סגרנו! נכנס ללוח של שניכם', `${m.text}\n📅 ${whenLabel(r.alt)}`); confetti(70);
+  },
+  async unsend(id) { const m = item(id); if (!m) return; m.status = 'deleted'; await save(m); toast('↩️ ההודעה בוטלה'); },
   async okConf(aId, bId) {
-    for (const [x, y] of [[aId, bId], [bId, aId]]) { const it = item(x); if (it && y && !it.busy) { it.ok = [...new Set([...(it.ok || []), y])]; await save(it); } }
+    for (const [x, y] of [[aId, bId], [bId, aId]]) { const it = x && item(x); if (it && y && !it.busy) { it.ok = [...new Set([...(it.ok || []), y])]; await save(it); } }
     renderAll(); await scanConflicts(); toast('👍 בסדר, לא אתריע על זה שוב');
   },
 };
@@ -259,8 +276,15 @@ async function send(text, voice) {
   await me(text, voice);
   await think();
   const f = forWhom(text);
-  const pl = C.findPlace(f.text, knownPlaces());
+  if (f.msg) return sendMessage(f);
+  const zm = Z.findZman(f.text);
+  const pl = C.findPlace(zm ? zm.rest : f.text, knownPlaces());
   const p = parse(pl.text);
+  if (zm && p.intent === 'item') {
+    const at = await Z.zmanTime(S.settings.city, zm, p.due && !p.hasTime ? p.due : null);
+    if (at) { p.due = at; p.hasTime = true; p.needsWhen = false; if (p.kind === 'thought') p.kind = 'task'; }
+    else return bot('🤔', 'var(--card2)', 'לא הצלחתי לחשב את הזמן', 'צריך אינטרנט כדי לקבל את זמני היום. נסה שוב עוד רגע');
+  }
   p.forP = f.forP; p.private = f.private; p.place = pl.place; p.res = C.findRes(text, S.resources);
 
   if (p.intent === 'help') return help();
@@ -298,6 +322,14 @@ function forWhom(text) {
     t = t.replace(m[0], ' ').replace(/\s+/g, ' ').trim(); if (!/^(תזכיר|משימה)/.test(t)) t = 'משימה: ' + t; return { text: t, forP: 'any', private: false };
   }
   const names = S.people.filter(p => p.name).sort((a, b) => b.name.length - a.name.length);
+  // הודעה לבן משפחה: "פסי, קבעתי לנו דייט…" / "תגיד לפסי ש…" / "תשאל את פסי אם…"
+  for (const p of names.filter(p => p.id !== S.myP)) {
+    const n = reEsc(p.name);
+    if ((m = t.match(new RegExp(`^${n}\\s*,\\s*`))) || (m = t.match(new RegExp(`^(?:תגיד|תגידי|תכתוב|תכתבי|תודיע|תודיעי)\\s+ל${n}(?=[\\s:,]|$)\\s*[:,]?\\s*(?:ש)?`)))
+      || (m = t.match(new RegExp(`^(?:תשאל|תשאלי)\\s+את\\s+${n}(?=[\\s:,]|$)\\s*[:,]?\\s*`))) || (m = t.match(new RegExp(`^הודעה\\s+ל${n}(?=[\\s:,]|$)\\s*[:,]?\\s*`)))) {
+      return { text: t.slice(m[0].length).trim() || t, forP: p.id, private: true, msg: true };
+    }
+  }
   for (const p of names) {
     const n = reEsc(p.name), E = '(?=[\\s:,]|$)';
     const self = p.id === S.myP;
@@ -323,6 +355,8 @@ async function createItem(p, raw) {
   };
   S.items.push(it); await save(it); await addLog(it, 'created'); renderAll();
   await createReply(it, p, fp);
+  const qw = it.due && it.hasTime && it.kind === 'task' && !it.dur ? Z.quietAt(new Date(it.due)) : null;
+  if (qw) await bot('🕯️', 'linear-gradient(135deg,#F59E0B,#FACC15)', `זה נופל ב${qw.name}`, `בשבת ובחג אין תזכורות. אזכיר לך ב${qw.name === 'שבת' ? 'מוצאי שבת' : 'מוצאי החג'}, ב-${hm(new Date(qw.end))}`);
   if (it.kind !== 'thought' && it.hasTime && it.dur == null) await askDur(it);
   else await scanConflicts();
 }
@@ -423,7 +457,7 @@ async function followUps() {
     }
   } finally { following = false; }
 }
-function buzz() { try { if (navigator.userActivation?.hasBeenActive) navigator.vibrate?.(80); } catch { /* */ } if (document.hidden) document.title = '🔔 זמן בכיף'; }
+function buzz(silent) { if (!silent && !Z.quietAt(Date.now())) Z.play(S.settings.melody); try { if (navigator.userActivation?.hasBeenActive) navigator.vibrate?.(80); } catch { /* */ } if (document.hidden) document.title = '🔔 זמן בכיף'; }
 
 // ---------- סיכומי בוקר וערב ----------
 const minutes = s => { const [h, m] = (s || '0:0').split(':').map(Number); return h * 60 + m; };
@@ -514,7 +548,196 @@ function help() {
   return bot('💡', 'var(--g2)', 'מה אפשר לכתוב לי', [
     '📌 תזכיר לי מחר ב-10 להתקשר לבנק', '🔁 כל יום חמישי ב-9 לשלם לגננת', '👥 פגישה עם יוסי ביום שלישי ב-4',
     '💭 רעיון: לסדר את המחסן', '✅ סיימתי לשלוח הצעת מחיר', '📋 מה יש לי היום? / מחר? / השבוע?', '🌙 סיכום',
+    `💌 ${S.people.find(p => p.id !== S.myP)?.name || 'רחל'}, קבעתי לנו דייט ביום שלישי ב-8`, `🙋 תזכיר ל${S.people.find(p => p.id !== S.myP)?.name || 'רחל'} מחר ב-5 לקנות חלב`,
+    '👨‍👩‍👧 מישהו מאיתנו צריך לאסוף את הילדים ב-4', '🕯️ תזכיר לי שעה לפני כניסת שבת לכבות את הדוד', '☀️ תזכיר לי חצי שעה לפני סוף זמן ק"ש',
   ].join('\n'));
+}
+
+// ---------- התראות לטלפון ----------
+const APP_URL = './';
+// בשבת/חג — ההתראה נדחית לצאת השבת
+const outOfQuiet = t => { const w = Z.quietAt(t); return w ? new Date(+new Date(w.end) + 60e3) : new Date(t); };
+async function queueNotify(toUid, cat, title, body, ref) {
+  if (!toUid || !S.uid) return;
+  await sync.upsertNotify([{ id: `${toUid}:${cat}:${ref}:${Date.now()}`, to_uid: toUid, at: outOfQuiet(Date.now()).toISOString(), cat, title, body: (body || '').slice(0, 300), url: APP_URL }]);
+}
+// מה צריך לקפוץ לי בטלפון בשבועיים הקרובים: "עשית?", פגישות, שבת, סיכומים
+function desiredSchedule() {
+  const uid = S.uid, now = Date.now(), until = now + 14 * 864e5, out = [];
+  const add = (key, at, cat, title, body) => { if (+at > now && +at < until) out.push({ id: `${uid}:${key}`, to_uid: uid, at: outOfQuiet(at).toISOString(), cat, title, body, url: APP_URL }); };
+  for (const it of tasksOpen()) {
+    if (!it.due || !it.hasTime) continue;
+    const t = new Date(it.askAt || it.due);
+    if (it.kind === 'meeting') add(`pre:${it.id}`, new Date(+t - 30 * 60e3), 'task', `🔔 בעוד חצי שעה: ${it.text}`, `ב-${hm(t)}${it.place ? ' · ' + it.place : ''}`);
+    else add(`task:${it.id}`, t, 'task', `⏰ ${it.text}`, 'הגיע הזמן. עשית את זה?');
+  }
+  for (const w of Z.windows().filter(w => +new Date(w.start) > now).slice(0, 3))
+    for (const off of S.settings.shabbatAlerts || [])
+      add(`sh:${w.start}:${off}`, new Date(+new Date(w.start) - off * 60e3), 'shabbat', `🕯️ עוד ${durLbl(off)} ${w.name === 'שבת' ? 'נכנסת שבת' : 'נכנס ' + w.name}`, `הדלקת נרות ב-${hm(new Date(w.start))}`);
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(sod(new Date()), i), at = (hhmm) => { const [h, m] = hhmm.split(':'); const x = new Date(d); x.setHours(+h, +m, 0, 0); return x; };
+    const am = at(S.settings.morning), pm = at(S.settings.evening);
+    if (!Z.quietAt(am)) add(`am:${ymd(d)}`, am, 'summary', '☀️ בוקר טוב!', 'בוא נראה מה יש היום ונבחר את 3 החשובים');
+    if (!Z.quietAt(pm)) add(`pm:${ymd(d)}`, pm, 'summary', '🌙 סיכום היום', 'בוא נסגור את היום: מה הספקת ומה עובר למחר');
+  }
+  return out;
+}
+let schedBusy = false;
+async function syncSchedule() {
+  if (schedBusy || !S.uid || !sync.household() || !navigator.onLine) return;
+  schedBusy = true;
+  try {
+    const want = desiredSchedule(), had = await db.getKV('sched', {});
+    const sig = r => `${r.at}|${r.title}|${r.body}`;
+    const changed = want.filter(r => had[r.id] !== sig(r));
+    const gone = Object.keys(had).filter(id => !want.some(r => r.id === id));
+    if (changed.length && !(await sync.upsertNotify(changed))) return;
+    const removed = gone.filter(id => { const at = had[id]?.split('|')[0]; return !at || new Date(at) > new Date(); });
+    if (removed.length) await sync.deleteNotify(removed);
+    const next = {}; for (const r of want) next[r.id] = sig(r);
+    await db.setKV('sched', next);
+  } finally { schedBusy = false; }
+}
+
+// כרטיס ההגדרות
+const PUSH_CATS = [['msg', '💬 הודעות ותגובות מהמשפחה'], ['task', '⏰ הגיע הזמן של משימה'], ['conflict', '⚠️ התנגשות חדשה'], ['summary', '☀️🌙 סיכום בוקר וערב'], ['shabbat', '🕯️ לפני שבת וחג']];
+async function drawPush() {
+  const el = $('#pushCard'); if (!el) return;
+  const st = await sync.pushState(), prefs = S.settings.push || {};
+  const ios = /iPhone|iPad/.test(navigator.userAgent), standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  el.innerHTML = `<h4>🔔 התראות לטלפון <small>${st === 'on' ? 'פעיל ✓' : ''}</small></h4>
+    ${!S.uid ? '<p class="note">צריך להיות מחובר למשפחה.</p>'
+      : st === 'unsupported' ? `<p class="note">${ios && !standalone ? 'באייפון: קודם מוסיפים את האפליקציה למסך הבית (כפתור השיתוף ⬆️ ← "הוסף למסך הבית"), פותחים משם, ואז חוזרים לכאן.' : 'הדפדפן הזה לא תומך בהתראות.'}</p>`
+      : st === 'denied' ? '<p class="note">ההתראות חסומות. אפשר לאשר אותן בהגדרות הטלפון ← אפליקציות ← Chrome (או זמן בכיף) ← התראות.</p>'
+      : st === 'off' ? '<button class="btn pri" id="pushOn">🔔 להפעיל התראות בטלפון הזה</button>'
+      : `${PUSH_CATS.map(([k, l]) => `<label class="set-row" style="cursor:pointer"><span>${l}</span><input type="checkbox" data-cat="${k}" ${prefs[k] !== false ? 'checked' : ''}></label>`).join('')}
+        <button class="btn" id="pushTest">🧪 שלח לי התראת ניסיון</button><button class="btn danger" id="pushOff">לכבות התראות בטלפון הזה</button>
+        <p class="note" style="margin-top:6px">בשבת ובחג לא נשלחות התראות. באנדרואיד אפשר לבחור צליל מיוחד: הגדרות הטלפון ← התראות ← Chrome ← זמן בכיף ← צליל.</p>`}`;
+  $('#pushOn')?.addEventListener('click', async () => { try { await sync.enablePush(S.settings.push || {}); toast('🔔 ההתראות הופעלו'); await syncSchedule(); } catch (e) { toast(e.message, true); } drawPush(); });
+  $('#pushOff')?.addEventListener('click', async () => { await sync.disablePush(); toast('ההתראות כובו בטלפון הזה'); drawPush(); });
+  $('#pushTest')?.addEventListener('click', async () => { await queueNotify(S.uid, 'msg', '🧪 התראת ניסיון', 'אם רואים את זה — ההתראות עובדות! אפשר גם לנעול את הטלפון ולנסות שוב.', 'test'); toast('📨 נשלח. תוך דקה תקפוץ התראה'); });
+  el.querySelectorAll('[data-cat]').forEach(c => c.onchange = async () => {
+    S.settings.push = { ...(S.settings.push || {}), [c.dataset.cat]: c.checked }; await db.setKV('settings', S.settings); await sync.savePrefs(S.settings.push); toast('נשמר ✓');
+  });
+}
+
+// ---------- הודעות והזמנות בין בני הבית ----------
+const REACT = { heart: '❤️', yes: '✅', no: '❌', alt: '🕐', like: '👍', text: '💬' };
+const otherSide = m => m.from === S.myP ? m.forP : m.from;
+function inviteOf(text) {
+  const p = parse(text);
+  if (p.intent !== 'item' || !p.due) return null;
+  return { due: p.due.toISOString(), hasTime: p.hasTime, dur: p.dur ?? (p.hasTime ? 60 : null), title: p.text };
+}
+async function sendMessage(f) {
+  const to = person(f.forP);
+  if (!S.uid || !sync.household()) return bot('🔒', 'var(--card2)', 'צריך להיות מחובר כדי לשלוח הודעות', 'היכנס בהגדרות ← משפחה');
+  if (!to?.uid) return bot('🤔', 'var(--card2)', `ל${to?.name || 'מי שכתבת'} אין עדיין חשבון באפליקציה`, 'אפשר לשלוח לו/לה הזמנה מההגדרות ← משפחה');
+  const zm = Z.findZman(f.text);
+  const pl = C.findPlace(zm ? zm.rest : f.text, knownPlaces());
+  const inv = inviteOf(pl.text);
+  if (inv) {
+    if (zm) { const at = await Z.zmanTime(S.settings.city, zm); if (at) { inv.due = at.toISOString(); inv.hasTime = true; } }
+    inv.place = pl.place;
+  }
+  const m = { id: db.newId(), kind: 'msg', text: f.text, from: S.myP, forP: to.id, forU: to.uid, private: true, status: 'open',
+    invite: inv, replies: [], created: new Date().toISOString() };
+  S.items.push(m); await save(m);
+  await queueNotify(to.uid, 'msg', `💌 ${person(S.myP)?.name || ''}`, f.text + (inv ? `\n📅 ${whenLabel(inv)}` : ''), m.id);
+  return bot('💌', 'var(--g6)', `נשלח ל${to.name}`, `${f.text}${inv ? `\n📅 ${whenLabel(inv)}${inv.dur ? ' · ⏱️ ' + durLbl(inv.dur) : ''}` : ''}\nאעדכן אותך כש${to.name} יגיב/תגיב`,
+    [{ l: '↩️ בטל שליחה', op: 'unsend', a: [m.id] }]);
+}
+// הודעה שהגיעה אליי
+async function showIncoming(m) {
+  const from = person(m.from), inv = m.invite;
+  let sub = m.text;
+  if (inv) {
+    sub += `\n📅 ${whenLabel(inv)}${inv.dur ? ' · ⏱️ ' + durLbl(inv.dur) : ''}${inv.place ? ' · 📍 ' + inv.place : ''}`;
+    const clash = inviteClashes(inv);
+    if (clash.length) sub += `\n⚠️ מתנגש אצלך עם: ${clash.map(x => `${x.text} (${C.span(x)})`).join(', ')}`;
+    const q = inv.hasTime && Z.quietAt(new Date(inv.due)); if (q) sub += `\n🕯️ שים/י לב: זה ב${q.name}`;
+  }
+  const acts = inv
+    ? [{ l: '✅ מאושר', op: 'react', a: [m.id, 'yes'], pri: true }, { l: '❤️', op: 'react', a: [m.id, 'heart'] }, { l: '❌ לא יכול/ה', op: 'replyNo', a: [m.id, 'no'] },
+      { l: '🕐 זמן אחר', op: 'replyNo', a: [m.id, 'alt'] }, { l: '✍️ לענות', op: 'replyText', a: [m.id] }]
+    : [{ l: '❤️', op: 'react', a: [m.id, 'heart'], pri: true }, { l: '👍', op: 'react', a: [m.id, 'like'] }, { l: '✍️ לענות', op: 'replyText', a: [m.id] }];
+  await bot(from?.e || '💌', 'var(--g6)', `💌 ${from?.name || 'הודעה'}`, sub, acts);
+  buzz();
+}
+function inviteClashes(inv) {
+  if (!inv?.hasTime) return [];
+  const probe = { id: 'probe', due: inv.due, dur: inv.dur || 60, hasTime: true };
+  return S.items.filter(x => x.status === 'open' && isTask(x) && isMine(x) && x.due && x.hasTime && x.dur > 0 &&
+    C.startOf(x) < C.endOf(probe) && C.startOf(probe) < C.endOf(x));
+}
+// תגובה חדשה להודעה שאני חלק ממנה
+async function showReply(m, r) {
+  const p = person(r.p), n = p?.name || 'מישהו';
+  const ic = p?.e || REACT[r.r] || '💬';
+  if (r.r === 'heart' || r.r === 'like') return bot(ic, 'var(--g6)', `${n} ${REACT[r.r]}`, m.text);
+  if (r.r === 'yes') return bot(ic, 'var(--g3)', `${n} אישר/ה ✅`, `${m.text}${r.alt || m.invite ? `\n📅 ${whenLabel(r.alt || m.invite)} · נכנס ללוח של שניכם` : ''}`), confetti(60);
+  if (r.r === 'no') return bot(ic, 'linear-gradient(135deg,#F43F5E,#F97316)', `${n} לא יכול/ה ❌`, `${m.text}${r.text ? `\n"${r.text}"` : ''}`,
+    [{ l: '🕐 להציע זמן אחר', op: 'replyNo', a: [m.id, 'alt'] }, { l: '✍️ לענות', op: 'replyText', a: [m.id] }]);
+  if (r.r === 'alt') return bot(ic, 'var(--g4)', `${n} מציע/ה זמן אחר 🕐`, `${m.text}\n📅 ${whenLabel(r.alt)}${r.text ? `\n"${r.text}"` : ''}`,
+    [{ l: '✅ מאשר/ת', op: 'acceptAlt', a: [m.id, m.replies.indexOf(r)], pri: true }, { l: '🕐 זמן אחר', op: 'replyNo', a: [m.id, 'alt'] }, { l: '✍️ לענות', op: 'replyText', a: [m.id] }]);
+  return bot(ic, 'var(--g6)', `${n}:`, r.text, [{ l: '❤️', op: 'react', a: [m.id, 'heart'] }, { l: '✍️ לענות', op: 'replyText', a: [m.id] }]);
+}
+async function addReply(m, r) {
+  m.replies = [...(m.replies || []), { p: S.myP, at: new Date().toISOString(), ...r }];
+  await save(m); renderAll();
+  const to = person(otherSide(m));
+  const txt = { heart: '❤️', like: '👍', yes: 'אישר/ה ✅', no: 'לא יכול/ה ❌', alt: 'מציע/ה זמן אחר 🕐', text: '' }[r.r];
+  if (to?.uid) await queueNotify(to.uid, 'msg', `${person(S.myP)?.e || ''} ${person(S.myP)?.name || ''} ${txt}`.trim(), r.text || m.text, m.id);
+}
+// אירוע משותף: נכנס ללוח של שנינו
+async function createShared(m, inv) {
+  const other = person(otherSide(m)), title = (inv.title || m.text).replace(/^(קבעתי|קבענו)\s+(לנו|לשנינו)\s*/, '') || m.text;
+  for (const forP of [null, other?.id]) {
+    const it = { id: db.newId(), kind: 'meeting', text: title, due: inv.due, hasTime: !!inv.hasTime, dur: inv.dur ?? null, place: inv.place || null,
+      repeat: null, status: 'open', created: new Date().toISOString(), forP, forU: forP ? other?.uid || null : null, linked: m.id, private: false };
+    S.items.push(it); await save(it);
+  }
+  renderAll(); scanConflicts();
+}
+// חלון "לא יכול/ה" / "זמן אחר": סיבה + שעות ששנינו פנויים
+function openReplyNo(id, mode) {
+  const m = item(id); if (!m) return toast('ההודעה כבר לא קיימת', true);
+  const inv = m.invite, other = otherSide(m);
+  const slots = [];
+  if (inv?.hasTime) {
+    const dur = (inv.dur || 60) * 60e3, base = { due: inv.due, dur: inv.dur || 60 };
+    const freeFor = (o, t) => S.items.concat(S.busy).filter(x => x.status === 'open' && x.due && x.hasTime && x.dur > 0 && (ownerOf(x) === o)).every(y => !(t < C.endOf(y) && C.startOf(y) < t + dur));
+    let from = C.startOf(base);
+    for (let i = 0; i < 3; i++) {
+      const d = freeWhen({ ...base, due: new Date(from).toISOString() }, t => t !== C.startOf(base) && !slots.some(s => Math.abs(s - t) < 2 * 3600e3) && freeFor(meId(), t) && freeFor(other, t) && !Z.quietAt(t) && !Z.quietAt(t + dur));
+      if (!d) break; slots.push(+d); from = +d;
+    }
+  }
+  sheet(`<h3>${mode === 'no' ? '❌ לא יכול/ה' : '🕐 להציע זמן אחר'}</h3>
+    <p class="note" style="margin-bottom:8px">${esc(m.text)}${inv ? ' · ' + esc(whenLabel(inv)) : ''}</p>
+    <label>${mode === 'no' ? 'למה? (לא חובה)' : 'הערה (לא חובה)'}</label><input id="rText" placeholder="${mode === 'no' ? 'למשל: יש לי אסיפת הורים' : 'למשל: רק אם נחזור עד 10'}">
+    ${inv ? `<label>${slots.length ? 'שעות ששניכם פנויים בהן' : 'זמן אחר'}</label><div id="rSlots">${slots.map((t, i) => `<div class="pick" data-t="${t}"><div class="ck"></div>${esc(whenLabel({ due: new Date(t).toISOString(), hasTime: true }))}<small>שניכם פנויים</small></div>`).join('')}</div>
+    <div class="two"><div><label>או תאריך</label><input type="date" id="rDate"></div><div><label>שעה</label><input type="time" id="rTime"></div></div>` : ''}
+    <button class="btn pri" id="rSend" style="margin-top:14px">📨 שלח</button>`);
+  let pick = null;
+  $('#rSlots')?.addEventListener('click', e => { const el = e.target.closest('.pick'); if (!el) return; pick = +el.dataset.t; [...$('#rSlots').children].forEach(x => { x.classList.toggle('on', x === el); x.querySelector('.ck').textContent = x === el ? '✓' : ''; }); });
+  $('#rSend').onclick = async () => {
+    let alt = null;
+    const ds = $('#rDate')?.value, ts = $('#rTime')?.value;
+    if (ds) { const d = new Date(ds + 'T' + (ts || '00:00')); alt = { due: d.toISOString(), hasTime: !!ts, dur: inv?.dur || null, title: inv?.title, place: inv?.place }; }
+    else if (pick) alt = { due: new Date(pick).toISOString(), hasTime: true, dur: inv?.dur || 60, title: inv?.title, place: inv?.place };
+    if (mode === 'alt' && !alt) return toast('בחר/י זמן', true);
+    closeSheet();
+    const r = alt ? { r: 'alt', alt, text: $('#rText').value.trim() || (mode === 'no' ? 'לא יכול/ה בזמן הזה' : '') } : { r: 'no', text: $('#rText').value.trim() };
+    await addReply(m, r);
+    await bot('📨', 'var(--g2)', alt ? `הצעת: ${whenLabel(alt)}` : 'נשלח', r.text || '');
+  };
+}
+function openReplyText(id) {
+  const m = item(id); if (!m) return;
+  sheet(`<h3>✍️ תשובה</h3><p class="note" style="margin-bottom:8px">${esc(m.text)}</p><input id="tText" placeholder="כתוב/כתבי כאן…"><button class="btn pri" id="tSend" style="margin-top:12px">📨 שלח</button>`);
+  setTimeout(() => $('#tText').focus(), 300);
+  $('#tSend').onclick = async () => { const t = $('#tText').value.trim(); if (!t) return; closeSheet(); await addReply(m, { r: 'text', text: t }); await bot('📨', 'var(--g2)', 'נשלח', t); };
 }
 
 // ---------- התנגשויות ----------
@@ -525,7 +748,23 @@ const ownerOf = x => x.busy ? (x.forP || personOfUid(x.forU)?.id || personOfUid(
 const adults = () => { const a = S.people.filter(p => p.uid).map(p => p.id); return a.length ? a : [S.myP || 'me']; };
 const meId = () => S.myP || 'me';
 const ctx = () => ({ items: S.items, busy: S.busy, owner: ownerOf, adults: adults(), resources: S.resources, travel: S.travel });
-const allConflicts = () => C.detect(ctx());
+const allConflicts = () => C.detect(ctx()).concat(shabbatConflicts());
+// משהו שנקבע בשבת/חג, או שמסתיים פחות משעה לפני הכניסה
+function shabbatConflicts() {
+  const out = [], now = Date.now();
+  for (const it of S.items) {
+    if (it.status !== 'open' || !['task', 'meeting'].includes(it.kind) || !it.due || !it.hasTime || it.repeat || !(it.dur > 0 || it.kind === 'meeting')) continue;
+    const st = C.startOf(it), en = Math.max(C.endOf(it), st + 15 * 60e3);
+    if (en < now || st > now + 21 * 864e5) continue;
+    const w = Z.windows().find(w => st < +new Date(w.end) && en > +new Date(w.start) - 60 * 60e3);
+    if (!w) continue;
+    const okId = 'shabbat:' + w.start;
+    if ((it.ok || []).includes(okId)) continue;
+    const inside = st < +new Date(w.end) && en > +new Date(w.start);
+    out.push({ key: `shab:${it.id}:${it.due}:${it.dur}:${w.start}`, type: inside ? 'shabbat' : 'preShabbat', a: it, b: null, okId, w });
+  }
+  return out;
+}
 function concerns(c) {
   const mine = [c.a, c.b].some(x => x && !x.busy && ownerOf(x) === meId());
   if (c.type === 'nobody' || c.type === 'res') return mine || adults().includes(meId());
@@ -540,6 +779,8 @@ function describe(c) {
     case 'both': return ['⚠️', 'var(--g4)', `התנגשות עם ${person(c.who.find(x => x !== meId()))?.name || 'בן משפחה'}`, `${day}, שניכם תפוסים:\n${lineOf(c.a)}\n${lineOf(c.b)}`];
     case 'res': return [c.res?.e || '⚠️', 'var(--g4)', `${c.res?.n || 'משהו משותף'} דרוש פעמיים באותו זמן`, `${day}:\n${lineOf(c.a)}\n${lineOf(c.b)}`];
     case 'nobody': return ['🚨', 'linear-gradient(135deg,#F43F5E,#F97316)', 'אף אחד לא פנוי!', `${c.a.text} · ${whenLabel(c.a)}\nכולם תפוסים: ${c.blockers.map(lineOf).join(', ')}`];
+    case 'shabbat': return ['🕯️', 'linear-gradient(135deg,#F59E0B,#FACC15)', `"${c.a.text}" נופל ב${c.w.name}`, `${whenLabel(c.a)}\n${c.w.name} נכנס/ת ב-${hm(new Date(c.w.start))} ויוצא/ת ב-${hm(new Date(c.w.end))}`];
+    case 'preShabbat': return ['🕯️', 'linear-gradient(135deg,#F59E0B,#FACC15)', `"${c.a.text}" קרוב מדי לכניסת ${c.w.name}`, `מסתיים ב-${hm(new Date(C.endOf(c.a)))}, והדלקת נרות ב-${hm(new Date(c.w.start))}`];
     case 'travel': return ['🚗', 'var(--g4)', 'אין מספיק זמן להגיע', `${c.a.text} ב${c.a.place} עד ${hm(new Date(C.endOf(c.a)))}\n${c.b.text} ב${c.b.place} ב-${hm(new Date(C.startOf(c.b)))}\nהנסיעה לוקחת בערך ${durLbl(c.need)}, ויש רק ${durLbl(Math.max(0, Math.round(c.gap)))}`];
   }
 }
@@ -566,14 +807,17 @@ async function scanConflicts() {
         continue;
       }
       const [ic, bg, title, sub] = describe(c);
-      await bot(ic, bg, title, sub, [{ l: '👀 לראות ומה אפשר לעשות', op: 'conflict', a: [c.a.id, c.b?.id], pri: true }, { l: '✅ זה בסדר', op: 'okConf', a: [c.a.id, c.b?.id] }]);
+      for (const o of new Set([c.a, c.b, ...(c.blockers || [])].filter(Boolean).map(ownerOf)))
+        if (['both', 'res', 'nobody'].includes(c.type) && o !== meId() && person(o)?.uid && [c.a, c.b].some(x => x && !x.busy && byMe(x) && Date.now() - new Date(x.created) < 10 * 60e3))
+          await queueNotify(person(o).uid, 'conflict', c.type === 'both' ? `⚠️ התנגשות עם ${person(meId())?.name || 'בן משפחה'}` : `${ic} ${title}`, sub, c.key);
+      await bot(ic, bg, title, sub, [{ l: '👀 לראות ומה אפשר לעשות', op: 'conflict', a: [c.a.id, c.b?.id || c.okId], pri: true }, { l: '✅ זה בסדר', op: 'okConf', a: [c.a.id, c.b?.id || c.okId] }]);
       buzz();
     }
     S.alerted = S.alerted.slice(-400); await db.setKV('alerted', S.alerted);
     renderTasks();
   } finally { scanning = false; }
 }
-const findConflict = (aId, bId) => allConflicts().find(c => c.type !== 'travelAsk' && [c.a.id, c.b?.id].includes(aId) && (!bId || [c.a.id, c.b?.id].includes(bId)));
+const findConflict = (aId, bId) => allConflicts().find(c => c.type !== 'travelAsk' && [c.a.id, c.b?.id, c.okId].includes(aId) && (!bId || [c.a.id, c.b?.id, c.okId].includes(bId)));
 
 // חלון "במה זה מתנגש": ציר שעות + עצות
 function openConflict(aId, bId) {
@@ -595,7 +839,7 @@ function openConflict(aId, bId) {
     <div id="tips">${tips.map((t, i) => `<button class="btn${i === 0 ? ' pri' : ''}" data-i="${i}" style="margin-top:8px">${esc(t.l)}</button>`).join('')}</div>
     <button class="btn" id="cOk" style="margin-top:8px">✅ זה בסדר, להשאיר כך</button>`);
   $('#tips').onclick = async e => { const b = e.target.closest('[data-i]'); if (!b) return; closeSheet(); await tips[+b.dataset.i].run(); renderAll(); await scanConflicts(); };
-  $('#cOk').onclick = async () => { closeSheet(); await OPS.okConf(c.a.id, c.b?.id); };
+  $('#cOk').onclick = async () => { closeSheet(); await OPS.okConf(c.a.id, c.b?.id || c.okId); };
 }
 
 function suggestions(c) {
@@ -612,6 +856,15 @@ function suggestions(c) {
     if (x.res?.length) list = list.concat(S.items.filter(y => y.status === 'open' && y.due && y.hasTime && y.dur > 0 && (y.res || []).some(r => x.res.includes(r))));
     return list.filter(y => y.id !== x.id);
   };
+  if (c.type === 'shabbat' || c.type === 'preShabbat') {
+    const it = c.a, dur = Math.max(it.dur || 0, 15) * 60e3, ws = +new Date(c.w.start), we = +new Date(c.w.end);
+    const freeMe = t => busyFor(ownerOf(it)).every(y => y.id === it.id || !(t < C.endOf(y) && C.startOf(y) < t + dur));
+    const before = freeWhen({ ...it, dur: dur / 60e3 }, t => t + dur <= ws - 60 * 60e3 && t > ws - 3 * 864e5 && freeMe(t));
+    if (before) out.push({ l: `🕐 להקדים ל${dayLbl(before)}`, run: move(it, before) });
+    const after = freeWhen({ ...it, due: new Date(we + 30 * 60e3).toISOString(), dur: dur / 60e3 }, t => t >= we + 30 * 60e3 && freeMe(t));
+    if (after) out.push({ l: `🕐 להזיז ל${dayLbl(after)} (אחרי ${c.w.name === 'שבת' ? 'השבת' : 'החג'})`, run: move(it, after) });
+    return out;
+  }
   if (c.type === 'travel') {
     const f = C.travelFix(c);
     out.push({ l: `🕐 להזיז את "${c.b.text}" ל-${hm(f.moveTo)}`, run: move(c.b, f.moveTo) });
@@ -728,7 +981,7 @@ function renderTasks() {
     ['📆 בהמשך', open.filter(x => x.due && new Date(x.due) >= t2 && !x.repeat)],
     ['🔁 קבועות', open.filter(x => x.repeat && !isLate(x))],
     ['📝 בלי תאריך', open.filter(x => !x.due)],
-    ['✅ בוצעו היום', S.items.filter(x => pass(x) && x.status !== 'deleted' && x.kind !== 'thought' && ((x.status === 'done' && isToday(x.doneAt)) || (x.repeat && isToday(x.lastDone))))],
+    ['✅ בוצעו היום', S.items.filter(x => pass(x) && x.status !== 'deleted' && isTask(x) && ((x.status === 'done' && isToday(x.doneAt)) || (x.repeat && isToday(x.lastDone))))],
   ].filter(g => g[1].length);
   $('#taskList').innerHTML = groups.length ? groups.map(([h, l]) => `<div class="card"><h4>${h}<small>${l.length}</small></h4>${l.map(rowHtml).join('')}</div>`).join('')
     : `<div class="empty-state"><span class="em">🌤️</span>אין משימות כרגע.<br>כתוב לי בשיחה, למשל: "תזכיר לי מחר ב-10 להתקשר לבנק"</div>`;
@@ -870,6 +1123,7 @@ function openPicker(mustSwapFor) {
 
 // ---------- ניווט ותצוגה ----------
 function showView(v) {
+  if (v === 'settings') drawPush();
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
   $('#composer').style.display = v === 'chat' ? 'flex' : 'none';
@@ -957,7 +1211,23 @@ $('#resList').onclick = async e => {
 };
 
 // ---------- הגדרות וגיבוי ----------
-async function saveSettings() { S.settings = { morning: $('#setMorning').value || '07:00', evening: $('#setEvening').value || '20:00' }; await db.setKV('settings', S.settings); toast('נשמר ✓'); }
+async function saveSettings() {
+  Object.assign(S.settings, { morning: $('#setMorning').value || '07:00', evening: $('#setEvening').value || '20:00',
+    city: $('#setCity').value, candleMin: +$('#setCandle').value || 20, melody: $('#setMelody').value,
+    shabbatAlerts: [...document.querySelectorAll('#setShAlerts .on')].map(b => +b.dataset.m) });
+  await db.setKV('settings', S.settings); toast('נשמר ✓');
+  await Z.loadCalendar(S.settings.city, S.settings.candleMin); renderZman(); syncSchedule();
+}
+function drawShabbatSettings() {
+  $('#setCity').innerHTML = Z.CITIES.map(c => `<option>${c[0]}</option>`).join('');
+  $('#setCity').value = S.settings.city; $('#setCandle').value = S.settings.candleMin;
+  $('#setMelody').innerHTML = Object.entries(Z.MELODIES).map(([k, v]) => `<option value="${k}">${v}</option>`).join(''); $('#setMelody').value = S.settings.melody;
+  $('#setShAlerts').innerHTML = [[180, '3 שעות'], [120, 'שעתיים'], [60, 'שעה'], [30, 'חצי שעה'], [15, 'רבע שעה']].map(([m, l]) => `<button class="chip ${(S.settings.shabbatAlerts || []).includes(m) ? 'on' : ''}" data-m="${m}">${l}</button>`).join('');
+}
+$('#setCity').onchange = () => { const c = Z.cityOf($('#setCity').value); $('#setCandle').value = c[3]; saveSettings(); };
+$('#setCandle').onchange = saveSettings; $('#setMelody').onchange = () => { Z.play($('#setMelody').value); saveSettings(); };
+$('#setShAlerts').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; b.classList.toggle('on'); saveSettings(); };
+$('#testMelody').onclick = () => Z.play($('#setMelody').value);
 $('#setMorning').onchange = saveSettings; $('#setEvening').onchange = saveSettings;
 $('#backupBtn').onclick = async () => {
   const data = await db.exportAll();
@@ -992,7 +1262,8 @@ async function load() {
   S.settings = await db.getKV('settings', S.settings);
   S.travel = await db.getKV('travel', {}); S.alerted = await db.getKV('alerted', []);
   S.resources = C.DEFAULT_RES.concat(await db.getKV('resources', []));
-  $('#setMorning').value = S.settings.morning; $('#setEvening').value = S.settings.evening;
+  S.settings = { morning: '07:00', evening: '20:00', city: 'ירושלים', candleMin: 40, shabbatAlerts: [60], melody: 'bells', ...S.settings };
+  $('#setMorning').value = S.settings.morning; $('#setEvening').value = S.settings.evening; drawShabbatSettings();
   // השאלה האחרונה שעוד לא נענתה — כדי ש"כן" / "עוד לא" יתייחסו אליה
   const lastQ = [...S.msgs].reverse().find(m => m.role === 'bot' && m.acts?.some(a => a.op === 'done'));
   S.pending = lastQ && !lastQ.used ? lastQ.acts.find(a => a.op === 'done').a[0] : null;
@@ -1002,18 +1273,65 @@ async function load() {
 
 async function tick() {
   if (S.day !== today()) { S.day = today(); renderAll(); }
+  await Z.loadCalendar(S.settings.city, S.settings.candleMin);
+  renderZman();
+  await shabbatAlerts();
+  if (Z.quietAt(Date.now())) return; // 🕯️ מצב שבת/חג: בלי שאלות, סיכומים או התראות
   const m = nowMin();
   if (m >= minutes(S.settings.morning) && m < minutes(S.settings.evening)) await morning();
   if (m >= minutes(S.settings.evening)) await evening();
   await followUps();
   await scanConflicts();
+  syncSchedule();
+}
+
+// ---------- שבת וחגים ----------
+async function shabbatAlerts() {
+  const w = Z.nextWindow(); if (!w) return;
+  const start = +new Date(w.start), now = Date.now();
+  if (now >= start) return;
+  for (const off of [...(S.settings.shabbatAlerts || [])].sort((a, b) => a - b)) {
+    const key = `sh:${w.start}:${off}`;
+    if (now >= start - off * 60e3 && !S.alerted.includes(key)) {
+      // מסמנים גם את ההתראות המוקדמות יותר — שלא יקפצו כולן ביחד
+      for (const o of S.settings.shabbatAlerts) if (o >= off) S.alerted.push(`sh:${w.start}:${o}`);
+      await db.setKV('alerted', S.alerted);
+      const left = Math.round((start - now) / 60e3);
+      await bot('🕯️', 'linear-gradient(135deg,#F59E0B,#FACC15)', `עוד ${durLbl(left)} ${w.name === 'שבת' ? 'נכנסת שבת' : 'נכנס ' + w.name}`,
+        `הדלקת נרות ב-${hm(new Date(start))} · ${w.name === 'שבת' ? 'צאת שבת' : 'צאת החג'} ${hm(new Date(w.end))}\nבזמן הזה לא יהיו תזכורות. ${w.name === 'שבת' ? 'שבת שלום! 🕊️' : 'חג שמח!'}`);
+      Z.play(S.settings.melody); buzz(true);
+      break;
+    }
+  }
+}
+let zLine = '';
+async function renderZman() {
+  const el = $('#hzman'); if (!el) return;
+  const w = Z.nextWindow(), now = Date.now();
+  if (w && +new Date(w.start) - now < 2.2 * 864e5) {
+    const inIt = now >= +new Date(w.start);
+    zLine = `🕯️ ${w.name}${inIt ? ' (עכשיו)' : ''}: כניסה ${hm(new Date(w.start))} · יציאה ${hm(new Date(w.end))}`;
+  } else {
+    const t = await Z.zmanim(S.settings.city);
+    zLine = t ? `☀️ הנץ ${hm(new Date(t.sunrise))} · סוף ק"ש ${hm(new Date(t.sofZmanShma))} · שקיעה ${hm(new Date(t.sunset))}` : '';
+  }
+  el.textContent = zLine;
 }
 
 // ---------- משפחה: שינויים שהגיעו מטלפון אחר ----------
 async function onRemoteItem(local, next, live) {
   const i = S.items.findIndex(x => x.id === next.id);
   if (i >= 0) S.items[i] = next; else S.items.push(next);
-  if (!live || !S.uid) return;
+  if (!S.uid) return;
+  if (next.kind === 'msg') {
+    if (next.status !== 'open') return;
+    const fresh = Date.now() - new Date(next.created) < 3 * 864e5;
+    if (!local) return next.forP === S.myP && fresh && !(next.replies || []).some(r => r.p === S.myP) ? showIncoming(next) : undefined;
+    const before = local?.replies?.length || 0;
+    for (const r of (next.replies || []).slice(before)) if (r.p !== S.myP) await showReply(next, r);
+    return;
+  }
+  if (!live) return;
   const fromOther = next.doneBy && next.doneBy !== S.myP;
   const wasOpen = local && local.status === 'open' && !(local.repeat && isToday(local.lastDone));
   const nowDone = next.status === 'done' || (next.repeat && isToday(next.lastDone));
@@ -1168,4 +1486,4 @@ async function boot() {
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 // לבדיקות מהדפדפן
-window.__zman = { S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts };
+window.__zman = { S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule };

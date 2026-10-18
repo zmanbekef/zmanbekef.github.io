@@ -233,3 +233,47 @@ export async function connected(first = true) {
   await refresh();
   subscribe(); listen();
 }
+
+// ---------- התראות לטלפון (Web Push) ----------
+export const VAPID_PUBLIC = 'BK8gkzX2KR60Q1uYUvrda0VHsqfpig72_Z1Uy2jhytvKl5uu3HbIYx93G_k53UQznMpv9bLfcPqepKRYUtGWsvI';
+const b64u = s => { const p = '='.repeat((4 - s.length % 4) % 4); const raw = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, c => c.charCodeAt(0)); };
+export const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+export async function pushState() {
+  if (!pushSupported()) return 'unsupported';
+  if (Notification.permission === 'denied') return 'denied';
+  const reg = await navigator.serviceWorker.getRegistration();
+  const sub = await reg?.pushManager.getSubscription();
+  return sub ? 'on' : 'off';
+}
+export async function enablePush(prefs) {
+  if (!hh || !me) throw new Error('צריך להיות מחובר');
+  if (!pushSupported()) throw new Error('הדפדפן הזה לא תומך בהתראות. באייפון צריך קודם להוסיף את האפליקציה למסך הבית');
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') throw new Error('לא ניתן אישור להתראות. אפשר לאשר בהגדרות הטלפון');
+  const reg = await navigator.serviceWorker.ready;
+  const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUBLIC) });
+  const json = sub.toJSON();
+  const { error } = await (await client()).from('zman_push_subs').upsert({ endpoint: json.endpoint, user_id: me.id, household_id: hh.id, sub: json, prefs: prefs || {}, updated_at: new Date().toISOString() });
+  if (error) throw new Error(nice(error));
+}
+export async function disablePush() {
+  const reg = await navigator.serviceWorker.getRegistration();
+  const sub = await reg?.pushManager.getSubscription();
+  if (sub) { await (await client()).from('zman_push_subs').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); }
+}
+export async function savePrefs(prefs) {
+  if (!me) return;
+  try { await (await client()).from('zman_push_subs').update({ prefs }).eq('user_id', me.id); } catch { /* */ }
+}
+// תור ההתראות בענן
+export async function upsertNotify(rows) {
+  if (!hh || !me || !rows.length || !navigator.onLine) return false;
+  const { error } = await (await client()).from('zman_notify').upsert(rows.map(r => ({ household_id: hh.id, created_by: me.id, sent_at: null, ...r })));
+  if (error) { console.warn('notify', error); return false; }
+  return true;
+}
+export async function deleteNotify(ids) {
+  if (!hh || !me || !ids.length || !navigator.onLine) return false;
+  const { error } = await (await client()).from('zman_notify').delete().in('id', ids).is('sent_at', null);
+  return !error;
+}

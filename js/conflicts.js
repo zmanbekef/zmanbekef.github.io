@@ -39,7 +39,7 @@ const travelKey = (a, b) => [a, b].sort().join('|');
 export function detect(ctx) {
   const { items, busy = [], owner, adults, resources, travel = {} } = ctx;
   const from = ctx.from ?? Date.now(), to = ctx.to ?? from + 14 * 864e5;
-  const live = items.filter(it => it.status === 'open' && it.kind !== 'thought' && it.due && it.hasTime && endOf(it) > from && startOf(it) < to);
+  const live = items.filter(it => it.status === 'open' && (it.kind === 'task' || it.kind === 'meeting') && it.due && it.hasTime && endOf(it) > from && startOf(it) < to);
   const T = live.filter(timed).concat(busy.filter(b => endOf(b) > from && startOf(b) < to));
   const ok = (a, b) => (a.ok || []).includes(b.id) || (b.ok || []).includes(a.id);
   const out = [];

@@ -181,3 +181,7 @@ nav .badge{top:0;left:6px}
 .tl-ticks span{position:absolute;transform:translateX(50%)}
 .res-row{display:flex;gap:8px;align-items:center;margin-top:8px}
 .res-row input{flex:1;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--card2);color:#fff;font:inherit;padding:0 12px}
+.hzman{color:#FCD34D;margin-top:1px}
+.hzman:empty{display:none}
+.sel,.num{background:var(--card2);border:1px solid var(--line);color:#fff;border-radius:10px;padding:6px 8px;font:inherit;color-scheme:dark}
+.num{width:64px;text-align:center}
