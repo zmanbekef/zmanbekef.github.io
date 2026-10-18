@@ -591,7 +591,8 @@ async function query(day) {
 }
 
 // ---------- משוב: מגיע ישר למייל של מוישי ----------
-const FEEDBACK_TO = 'mvindish@gmail.com';
+const FEEDBACK_TO = 'mvindish@gmail.com';            // רק לגיבוי (mailto) כשאין רשת
+const FEEDBACK_FORM = 'afe845b5ff6d0c2cd899d08390663e7c'; // הכינוי של FormSubmit — המייל לא מופיע בבקשה
 const FEEDBACK_RE = /^(משוב|פידבק|הערה|הערות|הצעה|הצעת שיפור|יש לי הערה|יש לי הצעה|רעיון לאפליקציה|יש לי רעיון לאפליקציה|באג|תקלה|בעיה באפליקציה|דיווח|feedback)(?=[\s:,-]|$)[\s:,-]*/i;
 const FKINDS = { idea: '💡 רעיון', bug: '🐞 משהו לא עובד', love: '❤️ מחמאה', other: '💬 אחר' };
 function openFeedback(text = '', hint = text) {
@@ -618,7 +619,7 @@ function openFeedback(text = '', hint = text) {
     const cloud = sync.saveFeedback({ kind, message, contact, device }).catch(() => false);
     let mailed = false;
     try {
-      const r = await fetch(`https://formsubmit.co/ajax/${FEEDBACK_TO}`, {
+      const r = await fetch(`https://formsubmit.co/ajax/${FEEDBACK_FORM}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ _subject: `💌 משוב חדש — זמן בכיף (${FKINDS[kind]})`, _template: 'table', _captcha: 'false',
           'אפליקציה': 'זמן בכיף ⏰', 'סוג': FKINDS[kind], 'משוב': message, 'פרטים לחזרה': contact || '—', 'מכשיר': device || '—' }),
