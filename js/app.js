@@ -660,13 +660,14 @@ async function drawPush() {
   const st = await sync.pushState(), prefs = S.settings.push || {};
   const ios = /iPhone|iPad/.test(navigator.userAgent), standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   el.innerHTML = `<h4>🔔 התראות לטלפון <small>${st === 'on' ? 'פעיל ✓' : ''}</small></h4>
-    ${!S.uid ? '<p class="note">צריך להיות מחובר למשפחה.</p>'
+    ${!S.uid ? '<p class="note">כדי לקבל התראות צריך קודם להיכנס.</p><button class="btn pri" id="pushLogin">🔑 כניסה / יצירת קבוצה</button>'
       : st === 'unsupported' ? `<p class="note">${ios && !standalone ? 'באייפון: קודם מוסיפים את האפליקציה למסך הבית (כפתור השיתוף ⬆️ ← "הוסף למסך הבית"), פותחים משם, ואז חוזרים לכאן.' : 'הדפדפן הזה לא תומך בהתראות.'}</p>`
       : st === 'denied' ? '<p class="note">ההתראות חסומות. אפשר לאשר אותן בהגדרות הטלפון ← אפליקציות ← Chrome (או זמן בכיף) ← התראות.</p>'
       : st === 'off' ? '<button class="btn pri" id="pushOn">🔔 להפעיל התראות בטלפון הזה</button>'
       : `${PUSH_CATS.map(([k, l]) => `<label class="set-row" style="cursor:pointer"><span>${l}</span><input type="checkbox" data-cat="${k}" ${prefs[k] !== false ? 'checked' : ''}></label>`).join('')}
         <button class="btn" id="pushTest">🧪 שלח לי התראת ניסיון</button><button class="btn danger" id="pushOff">לכבות התראות בטלפון הזה</button>
         <p class="note" style="margin-top:6px">בשבת ובחג לא נשלחות התראות. באנדרואיד אפשר לבחור צליל מיוחד: הגדרות הטלפון ← התראות ← Chrome ← זמן בכיף ← צליל.</p>`}`;
+  $('#pushLogin')?.addEventListener('click', () => showGate());
   $('#pushOn')?.addEventListener('click', async () => { try { await sync.enablePush(S.settings.push || {}); toast('🔔 ההתראות הופעלו'); await syncSchedule(); } catch (e) { toast(e.message, true); } drawPush(); });
   $('#pushOff')?.addEventListener('click', async () => { await sync.disablePush(); toast('ההתראות כובו בטלפון הזה'); drawPush(); });
   $('#pushTest')?.addEventListener('click', async () => { await queueNotify(S.uid, 'msg', '🧪 התראת ניסיון', 'אם רואים את זה — ההתראות עובדות! אפשר גם לנעול את הטלפון ולנסות שוב.', 'test'); toast('📨 נשלח. תוך דקה תקפוץ התראה'); });
@@ -1680,10 +1681,12 @@ function renderProfile() {
       <div class="me-txt"><b>${esc(p?.name || 'עוד לא בחרת שם')}</b><span dir="ltr">${esc(u.email || '')}</span>
       <span>${hh ? `👨‍👩‍👧 ${esc(hh.name)} · ${sync.isParent() ? '👨‍👩 הורה' : '🧒 ילד'}` : 'עוד לא במשפחה'}</span></div></div>
     <div class="me-stats">${stat('🔥 ' + streak(), 'ימים ברצף')}${stat(doneWeek, 'בוצעו השבוע')}${stat(tasksOpen().length, 'פתוחות שלי')}${stat(openItems().filter(x => x.kind === 'thought' && byMe(x)).length, 'מחשבות')}</div>
+    ${hh ? '' : '<button class="btn pri" id="pGroup" style="margin-top:10px">👥 יצירת קבוצה / הצטרפות עם קוד</button>'}
     <div class="two" style="margin-top:10px"><button class="btn" id="pEdit" style="margin:0">✏️ שם ואייקון</button><button class="btn danger" id="pOut" style="margin:0">יציאה</button></div>`;
   $('#pEdit').onclick = () => p ? openEditMe() : showGate();
   $('#pFace').onclick = () => p ? openEditMe() : showGate();
   $('#pOut').onclick = signOut;
+  $('#pGroup')?.addEventListener('click', () => showGate());
 }
 function renderMe() {
   renderProfile();
