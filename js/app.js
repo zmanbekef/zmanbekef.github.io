@@ -100,7 +100,7 @@ function think(ms = 450) {
 }
 
 // כפתורים שלא "נועלים" את ההודעה (אפשר ללחוץ עליהם שוב)
-const KEEP = new Set(['edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
+const KEEP = new Set(['editMe', 'edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
 async function onAct(m, i, box) {
   const a = m.acts[i];
   if (!KEEP.has(a.op)) {
@@ -243,6 +243,8 @@ const OPS = {
   },
   reviewLeftovers: () => reviewOpen('leftovers'),
   goto: v => showView(v),
+  editMe: () => openEditMe(),
+  switchUser: () => signOut(),
   async dur(id, m) {
     const it = item(id); if (!it) return;
     it.dur = m; await save(it); renderAll();
@@ -354,7 +356,7 @@ async function createItem(p, raw) {
   const fp = p.forP && p.forP !== 'any' ? person(p.forP) : null;
   const it = {
     id: db.newId(), kind: p.kind === 'thought' && fp ? 'task' : p.kind, text: p.text || raw, due: p.due ? p.due.toISOString() : null, hasTime: !!p.hasTime,
-    repeat: p.repeat, status: 'open', created: new Date().toISOString(), askAt: null, askedKey: null,
+    repeat: p.repeat, status: 'open', created: new Date().toISOString(), askAt: null, askedKey: null, raw: raw || null,
     forP: p.forP === 'any' ? 'any' : fp?.id || null, forU: fp?.uid || null, private: !!p.private,
     dur: p.dur ?? null, place: p.place || null, res: p.res?.length ? p.res : null,
   };
@@ -1082,7 +1084,7 @@ function openEdit(id, focus, forceKind) {
   const mineToLock = !it.by || it.by === S.uid;
   sheet(`<h3>✏️ עריכה</h3>
     <label>סוג</label><div class="seg" id="eKind">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
-    <label>מה</label><input id="eText" value="${esc(it.text)}">
+    <label>מה</label><input id="eText" value="${esc(it.text)}">${it.raw && it.raw !== it.text ? `<p class="note" style="margin-top:4px">✍️ במקור כתבת: "${esc(it.raw)}"</p>` : ''}
     <div id="eWhen"><div class="two"><div><label>תאריך</label><input type="date" id="eDate" value="${d ? ymd(d) : ''}"></div>
     <div><label>שעה (לא חובה)</label><input type="time" id="eTime" value="${d && it.hasTime ? hm(d) : ''}"></div></div>
     <label>חוזר</label><select id="eRep"><option value="">לא חוזר</option><option value="daily">כל יום</option><option value="weekly">כל שבוע</option><option value="monthly">כל חודש</option></select></div>
@@ -1396,6 +1398,7 @@ function drawLockCard() {
 }
 $('#shareAppBtn').onclick = shareApp;
 $('#helpBtn').onclick = () => openHelp();
+$('#meBtn').onclick = openEditMe;
 $('#helpBtn2').onclick = () => openHelp();
 
 // ---------- הפעלה ----------
@@ -1509,7 +1512,7 @@ async function showGate() {
   S.uid = sync.user()?.id || null;
   const step = await gateStep();
   const g = $('#gate'), body = $('#gateBody');
-  if (!step) { g.classList.remove('on'); renderAll(); renderFamily(); return true; }
+  if (!step) { g.classList.remove('on'); renderAll(); renderFamily(); renderMe(); return true; }
   g.classList.add('on');
   const err = m => { body.querySelector('.err').textContent = m; };
   const busy = (b, on) => { b.disabled = on; b.style.opacity = on ? .6 : 1; };
@@ -1592,8 +1595,8 @@ function renderFamily() {
   el.hidden = false;
   const meP = person(S.myP), email = sync.user()?.email || '';
   const head = `<h4>👨‍👩‍👧 ${esc(hh.name)}<small id="syncState">${navigator.onLine ? 'מסונכרן ✓' : 'ממתין לרשת…'}</small></h4>
-    <p class="note" style="margin-bottom:10px">${esc(email)} · ${meP ? `${meP.e} ${esc(meP.name)}` : ''} · ${sync.isParent() ? 'הורה — רואה הכל ומנהל את המשפחה' : '🧒 ילד — רואה את מה שרשמת ומה שנתנו לך'}<br>זה אותו חשבון ואותה משפחה כמו ב"כסף בכיף".</p>`;
-  if (!sync.isParent()) { el.innerHTML = head + '<button class="btn danger" id="signOutBtn">יציאה מהחשבון</button>'; $('#signOutBtn').onclick = signOut; return; }
+    <p class="note" style="margin-bottom:10px">${esc(email)} · ${meP ? `${meP.e} ${esc(meP.name)}` : ''} · ${sync.isParent() ? 'הורה — רואה הכל ומנהל את המשפחה' : '🧒 ילד — רואה את מה שרשמת ומה שנתנו לך'}<br>זה אותו חשבון ואותה משפחה כמו ב"כסף בכיף".</p><button class="act" id="editMeBtn" style="margin-bottom:10px">✏️ לשנות את השם או האייקון שלי</button>`;
+  if (!sync.isParent()) { el.innerHTML = head + '<button class="btn danger" id="signOutBtn">יציאה מהחשבון</button>'; $('#signOutBtn').onclick = signOut; $('#editMeBtn').onclick = openEditMe; return; }
   const inviteHref = (role, name) => {
     const code = role === 'parent' ? hh.invite_code : hh.child_code;
     const link = `${location.origin}${location.pathname}guide/?join=${code}${name ? '&name=' + encodeURIComponent(name) : ''}`;
@@ -1613,7 +1616,7 @@ function renderFamily() {
       <input id="pplName" placeholder="הוספת בן משפחה, למשל: יעל" class="fam-in"><button class="act pri" id="pplAdd">הוספה</button></div>
     <p class="note" style="margin-top:10px;line-height:1.6">📱 מחובר — יש לו טלפון משלו<br>✏️ רק שם — נותנים לו משימות, למשל "משימה ליעל לסדר את החדר", והשאלה "עשית?" חוזרת אליך</p>
     <button class="btn danger" id="signOutBtn">יציאה מהחשבון</button>`;
-  $('#signOutBtn').onclick = signOut;
+  $('#signOutBtn').onclick = signOut; $('#editMeBtn').onclick = openEditMe;
   el.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = '✅ הועתק'; } catch { b.textContent = b.dataset.copy; } });
   let face = 1;
   const err = m => { $('#memErr').textContent = m; };
@@ -1659,8 +1662,40 @@ function renderFamily() {
 }
 
 let started = false;
+// מי מחובר — תמיד גלוי למעלה, ובכניסה הראשונה הודעה ברורה
+function renderMe() {
+  const el = $('#meBtn'); if (!el) return;
+  const p = person(S.myP);
+  el.hidden = !p; if (p) { el.textContent = p.e; el.title = p.name; $('#hello').textContent = `שלום ${p.name} 👋 · `; } else $('#hello').textContent = '';
+}
+async function welcomeMe() {
+  renderMe();
+  const p = person(S.myP), hh = sync.household();
+  if (!p || !hh) return;
+  const key = 'welcomed:' + S.uid;
+  if (await db.getKV(key, false)) return;
+  await db.setKV(key, true);
+  const others = S.people.filter(x => x.id !== p.id).map(x => `${x.e} ${x.name}`).join(', ');
+  await bot(p.e, 'var(--g1)', `שלום ${p.name}! זיהיתי אותך 👋`, `נכנסת עם ${sync.user()?.email || 'החשבון שלך'} — אותו חשבון כמו ב"כסף בכיף".\n👨‍👩‍👧 משפחה: ${hh.name}${others ? `\nיחד איתך: ${others}` : ''}\nככה כולם רואים מי רשם מה, ואפשר לתת משימות ולשלוח הודעות אחד לשני.`,
+    [{ l: '✏️ לשנות שם או אייקון', op: 'editMe' }, { l: 'זה לא אני — להחליף חשבון', op: 'switchUser' }]);
+}
+function openEditMe() {
+  const p = person(S.myP); if (!p) return;
+  let face = Math.max(0, FACES.indexOf(p.e));
+  sheet(`<h3>🙋 השם שלי</h3><p class="note" style="margin-bottom:10px">ככה יראו אותך בני המשפחה — כאן וב"כסף בכיף"</p>
+    <div style="display:flex;gap:8px"><button class="round" id="meFace" style="background:var(--card2);border:1px solid var(--line);width:48px;height:48px">${FACES[face]}</button>
+    <input id="meName" class="fam-in" value="${esc(p.name)}"></div><button class="btn pri" id="meSave" style="margin-top:14px">💾 שמור</button>`);
+  $('#meFace').onclick = e => { face = (face + 1) % FACES.length; e.target.textContent = FACES[face]; };
+  $('#meSave').onclick = async () => {
+    const name = $('#meName').value.trim(); if (!name) return toast('צריך שם', true);
+    if (S.people.some(x => x.name === name && x.id !== p.id)) return toast('השם הזה כבר קיים', true);
+    try { S.people = await sync.savePerson({ ...p, name, e: FACES[face] }); } catch (x) { return toast(x.message, true); }
+    closeSheet(); renderAll(); renderFamily(); renderMe(); toast('✅ נשמר');
+  };
+}
 async function boot() {
   started = true;
+  await welcomeMe();
   if (!S.msgs.length) {
     const ex = family() ? `\n🙋 תזכיר ל${S.people.find(p => p.id !== S.myP)?.name || 'רחל'} מחר ב-5 לקנות חלב` : '';
     await bot('👋', 'var(--g1)', 'שלום! אני "זמן בכיף"', `כתוב או אמור לי כל דבר, ואני אסדר:\n📌 תזכיר לי מחר ב-10 להתקשר לבנק\n🔁 כל יום חמישי ב-9 לשלם לגננת\n👥 פגישה עם יוסי ביום שלישי ב-4\n💭 רעיון: לסדר את המחסן\n✅ סיימתי לשלוח הצעת מחיר${ex}\n🔒 פרטי: ... (רק אתה תראה)\n\nכשיגיע הזמן, אשאל אותך אם עשית את זה.`);
@@ -1691,4 +1726,4 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 // לבדיקות מהדפדפן
-window.__zman = { S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule };
+window.__zman = { S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };
