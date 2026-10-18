@@ -1,19 +1,37 @@
 import * as db from './db.js';
 import { parse, matchScore, whenLabel, nextOccurrence, sod, addDays, ymd, hm, DAYS } from './parse.js';
 import { hebDate } from './hebdate.js';
+import * as sync from './sync.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const today = () => ymd(new Date());
 const isToday = iso => iso && ymd(new Date(iso)) === today();
 
-const S = { items: [], msgs: [], log: [], top3: null, settings: { morning: '07:00', evening: '20:00' }, pending: null, day: today() };
+const S = { items: [], msgs: [], log: [], top3: null, settings: { morning: '07:00', evening: '20:00' }, pending: null, day: today(),
+  people: [], uid: null, myP: null, who: 'all' };
 const item = id => S.items.find(x => x.id === id && x.status !== 'deleted');
 const openItems = () => S.items.filter(x => x.status === 'open');
-const tasksOpen = () => openItems().filter(x => x.kind !== 'thought');
+const allTasksOpen = () => openItems().filter(x => x.kind !== 'thought');
+
+// ---------- בני הבית ----------
+const FACES = ['🧔', '👩', '👦', '👧', '👴', '👵', '🧑', '👶'];
+const person = pid => S.people.find(p => p.id === pid);
+const personOfUid = uid => uid && S.people.find(p => p.uid === uid);
+const family = () => S.people.length > 1;
+// מי אחראי על המשימה: מי שהיא בשבילו, ואם אין — מי שרשם
+const ownerP = it => it.forP || personOfUid(it.by)?.id || null;
+const byMe = it => !it.by || it.by === S.uid;
+// למי שאין חשבון (למשל ילד קטן) — השאלה "עשית?" חוזרת למי שרשם
+const isMine = it => !S.uid || (it.forP ? it.forP === S.myP || (!person(it.forP)?.uid && byMe(it)) : byMe(it));
+const tasksOpen = () => allTasksOpen().filter(isMine);
+const who = pid => { const p = person(pid); return p ? `${p.e} ${p.name}` : ''; };
 
 // ---------- שמירה ----------
-async function save(it) { await db.put('items', it); }
+async function save(it) {
+  if (S.uid && !it.by) { it.by = S.uid; it.byP = S.myP; }
+  await db.put('items', it); sync.queue(it);
+}
 async function addLog(it, action) {
   const l = { id: db.newId(), ts: new Date().toISOString(), itemId: it?.id || null, text: it?.text || '', action };
   S.log.push(l); await db.put('log', l);
@@ -112,6 +130,7 @@ async function markDone(id, quiet) {
     it.askAt = null; it.askedKey = null;
   } else { it.status = 'done'; it.doneAt = now.toISOString(); }
   if (it.kind === 'thought') it.kind = 'task';
+  it.doneBy = S.myP;
   await save(it); await addLog(it, 'done');
   if (S.pending === id) S.pending = null;
   renderAll();
@@ -226,7 +245,9 @@ async function send(text, voice) {
   text = text.trim(); if (!text) return;
   await me(text, voice);
   await think();
-  const p = parse(text);
+  const f = forWhom(text);
+  const p = parse(f.text);
+  p.forP = f.forP; p.private = f.private;
 
   if (p.intent === 'help') return help();
   if (p.intent === 'summary') return evening(true);
@@ -253,13 +274,42 @@ async function send(text, voice) {
   return createItem(p, text);
 }
 
+// "תזכיר לרחל מחר ב-5 לקנות חלב" / "רחל: לקנות חלב" / "משימה לרחל ..." / "פרטי: ..."
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function forWhom(text) {
+  let t = text.trim(), forP = null, priv = false, m;
+  if ((m = t.match(/^(?:פרטי|🔒)\s*[:\-–]?\s*/))) { priv = true; t = t.slice(m[0].length); }
+  if (/\(פרטי\)|\s🔒/.test(t)) { priv = true; t = t.replace(/\s*\(פרטי\)|\s*🔒/g, ''); }
+  const names = S.people.filter(p => p.name).sort((a, b) => b.name.length - a.name.length);
+  for (const p of names) {
+    const n = reEsc(p.name), E = '(?=[\\s:,]|$)';
+    const self = p.id === S.myP;
+    if ((m = t.match(new RegExp(`^(תזכיר|תזכירי|להזכיר|תגיד|תגידי|תבקש|תבקשי)\\s+(?:מ|ל|את\\s+)${n}${E}\\s*[:,]?\\s*`)))) {
+      t = 'תזכיר לי ' + t.slice(m[0].length); forP = self ? null : p.id; break;
+    }
+    if ((m = t.match(new RegExp(`^(משימה|תזכורת)\\s+(?:ל|בשביל\\s+)${n}${E}\\s*[:,]?\\s*`)))) {
+      t = 'משימה: ' + t.slice(m[0].length); forP = self ? null : p.id; break;
+    }
+    if ((m = t.match(new RegExp(`^ל?${n}\\s*:\\s*`)))) { t = t.slice(m[0].length); forP = self ? null : p.id; break; }
+    if ((m = t.match(new RegExp(`(^|\\s)בשביל\\s+${n}${E}`)))) { t = t.replace(m[0], ' ').trim(); forP = self ? null : p.id; break; }
+  }
+  return { text: t, forP, private: priv };
+}
+
 async function createItem(p, raw) {
+  const fp = p.forP ? person(p.forP) : null;
   const it = {
-    id: db.newId(), kind: p.kind, text: p.text || raw, due: p.due ? p.due.toISOString() : null, hasTime: !!p.hasTime,
+    id: db.newId(), kind: p.kind === 'thought' && fp ? 'task' : p.kind, text: p.text || raw, due: p.due ? p.due.toISOString() : null, hasTime: !!p.hasTime,
     repeat: p.repeat, status: 'open', created: new Date().toISOString(), askAt: null, askedKey: null,
+    forP: fp?.id || null, forU: fp?.uid || null, private: !!p.private,
   };
   S.items.push(it); await save(it); await addLog(it, 'created'); renderAll();
   const edit = { l: '✏️ תקן', op: 'edit', a: [it.id] }, undo = { l: '↩️ בטל', op: 'undo', a: [it.id] };
+  if (fp) {
+    const sub = `${it.due ? whenLabel(it) : 'בלי תאריך'}\n${fp.uid ? `השאלה "עשית?" תגיע לטלפון של ${fp.name}, ואעדכן אותך כשיסיים/תסיים 🎉` : `ל${fp.name} עוד אין חשבון באפליקציה, אז אשאל אותך`}`;
+    return bot(fp.e || '🙋', 'var(--g6)', `בשביל ${fp.name}: ${it.text}`, sub, [edit, undo]);
+  }
+  if (it.private) toast('🔒 פרטי — רק אתה רואה את זה');
 
   if (it.kind === 'thought') {
     return bot(KIND.thought.ic, KIND.thought.bg, 'נשמר בתיבת המחשבות', `${it.text}\nאין לזה תאריך, וזה בסדר. אפשר לטפל בזה מתי שתרצה.`, [
@@ -480,15 +530,20 @@ function rowHtml(it) {
   const d = isDoneToday(it) && !it.repeat ? ' done' : '';
   const late = it.status === 'open' && it.due && (it.hasTime ? new Date(it.due) < new Date() : overdueDays(it));
   const star = curTop3().ids.includes(it.id);
-  const meta = [it.kind === 'meeting' ? '👥 פגישה' : '', whenLabel(it)].filter(Boolean).join(' · ');
+  const owner = family() ? who(ownerP(it)) : '';
+  const meta = [it.private ? '🔒' : '', owner, it.kind === 'meeting' ? '👥 פגישה' : '', whenLabel(it)].filter(Boolean).join(' · ');
   return `<div class="row${d}" data-id="${it.id}"><button class="cb" data-op="check">${d ? '✓' : ''}</button>
     <div class="nm" data-op="edit">${esc(it.text)}${meta ? `<small class="${late ? 'late' : ''}">${esc(meta)}</small>` : ''}</div>
-    ${it.status === 'open' && it.kind === 'task' ? `<button class="star${star ? ' on' : ''}" data-op="star" aria-label="לחשובים של היום">⭐</button>` : ''}</div>`;
+    ${it.status === 'open' && it.kind === 'task' && isMine(it) ? `<button class="star${star ? ' on' : ''}" data-op="star" aria-label="לחשובים של היום">⭐</button>` : ''}</div>`;
 }
 function renderTasks() {
   const now = new Date(), t0 = sod(now), t1 = addDays(t0, 1), t2 = addDays(t0, 2);
-  const open = rankForToday(tasksOpen());
+  const pass = x => S.who === 'all' || ownerP(x) === S.who || (S.who === S.myP && isMine(x));
+  const open = rankForToday(allTasksOpen().filter(pass));
   const isLate = x => x.due && (x.hasTime ? new Date(x.due) < now : new Date(x.due) < t0);
+  $('#whoFilter').hidden = !family();
+  if (family()) $('#whoFilter').innerHTML = `<button class="chip ${S.who === 'all' ? 'on' : ''}" data-w="all">כולם</button>` +
+    S.people.map(p => `<button class="chip ${S.who === p.id ? 'on' : ''}" data-w="${p.id}">${p.e} ${esc(p.id === S.myP ? 'שלי' : p.name)}</button>`).join('');
   const groups = [
     ['⚠️ באיחור', open.filter(isLate)],
     ['☀️ היום', open.filter(x => !isLate(x) && x.due && new Date(x.due) < t1 && !x.repeat)],
@@ -496,13 +551,14 @@ function renderTasks() {
     ['📆 בהמשך', open.filter(x => x.due && new Date(x.due) >= t2 && !x.repeat)],
     ['🔁 קבועות', open.filter(x => x.repeat && !isLate(x))],
     ['📝 בלי תאריך', open.filter(x => !x.due)],
-    ['✅ בוצעו היום', S.items.filter(x => x.status !== 'deleted' && x.kind !== 'thought' && ((x.status === 'done' && isToday(x.doneAt)) || (x.repeat && isToday(x.lastDone))))],
+    ['✅ בוצעו היום', S.items.filter(x => pass(x) && x.status !== 'deleted' && x.kind !== 'thought' && ((x.status === 'done' && isToday(x.doneAt)) || (x.repeat && isToday(x.lastDone))))],
   ].filter(g => g[1].length);
   $('#taskList').innerHTML = groups.length ? groups.map(([h, l]) => `<div class="card"><h4>${h}<small>${l.length}</small></h4>${l.map(rowHtml).join('')}</div>`).join('')
     : `<div class="empty-state"><span class="em">🌤️</span>אין משימות כרגע.<br>כתוב לי בשיחה, למשל: "תזכיר לי מחר ב-10 להתקשר לבנק"</div>`;
-  const lateN = groups.find(g => g[0].includes('באיחור'))?.[1].length || 0;
+  const lateN = tasksOpen().filter(isLate).length;
   $('#lateBadge').hidden = !lateN; $('#lateBadge').textContent = lateN;
 }
+$('#whoFilter').addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (b) { S.who = b.dataset.w; renderTasks(); } });
 $('#taskList').addEventListener('click', e => {
   const op = e.target.closest('[data-op]')?.dataset.op, id = e.target.closest('.row')?.dataset.id;
   if (!op || !id) return;
@@ -539,18 +595,24 @@ function openEdit(id, focus, forceKind) {
   let kind = forceKind || it.kind;
   const d = it.due ? new Date(it.due) : null;
   const rep = it.repeat?.type || '';
+  let forP = ownerP(it) || S.myP, priv = !!it.private;
+  const mineToLock = !it.by || it.by === S.uid;
   sheet(`<h3>✏️ עריכה</h3>
     <label>סוג</label><div class="seg" id="eKind">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
     <label>מה</label><input id="eText" value="${esc(it.text)}">
     <div id="eWhen"><div class="two"><div><label>תאריך</label><input type="date" id="eDate" value="${d ? ymd(d) : ''}"></div>
     <div><label>שעה (לא חובה)</label><input type="time" id="eTime" value="${d && it.hasTime ? hm(d) : ''}"></div></div>
     <label>חוזר</label><select id="eRep"><option value="">לא חוזר</option><option value="daily">כל יום</option><option value="weekly">כל שבוע</option><option value="monthly">כל חודש</option></select></div>
+    ${family() ? `<label>בשביל מי</label><div class="seg" id="eFor">${S.people.map(p => `<button data-p="${p.id}" class="${p.id === forP ? 'on' : ''}">${p.e} ${esc(p.id === S.myP ? 'אני' : p.name)}</button>`).join('')}</div>` : ''}
+    ${S.uid && mineToLock ? `<label>מי רואה</label><div class="seg" id="ePriv"><button data-v="0" class="${it.private ? '' : 'on'}">👨‍👩‍👧 כל המשפחה</button><button data-v="1" class="${it.private ? 'on' : ''}">🔒 רק אני</button></div>` : ''}
     <button class="btn pri" id="eSave" style="margin-top:16px">💾 שמור</button>
     <div class="two"><button class="btn" id="eCancel">ביטול</button><button class="btn danger" id="eDel">🗑️ מחק</button></div>`);
   $('#eRep').value = rep;
   const syncKind = () => { $('#eWhen').style.display = kind === 'thought' ? 'none' : ''; };
   syncKind();
   $('#eKind').onclick = e => { const b = e.target.closest('button'); if (!b) return; kind = b.dataset.k; [...$('#eKind').children].forEach(x => x.classList.toggle('on', x === b)); syncKind(); };
+  if ($('#eFor')) $('#eFor').onclick = e => { const b = e.target.closest('button'); if (!b) return; forP = b.dataset.p; [...$('#eFor').children].forEach(x => x.classList.toggle('on', x === b)); };
+  if ($('#ePriv')) $('#ePriv').onclick = e => { const b = e.target.closest('button'); if (!b) return; priv = b.dataset.v === '1'; [...$('#ePriv').children].forEach(x => x.classList.toggle('on', x === b)); };
   if (focus === 'date') setTimeout(() => { try { $('#eDate').showPicker?.(); } catch { $('#eDate').focus(); } }, 350);
   $('#eCancel').onclick = closeSheet;
   $('#eDel').onclick = () => { closeSheet(); OPS.remove(id); };
@@ -569,6 +631,13 @@ function openEdit(id, focus, forceKind) {
       }
     } else hasTime = false;
     Object.assign(it, { kind, text, due: due ? due.toISOString() : null, hasTime: kind === 'thought' ? false : hasTime, repeat, askAt: null, askedKey: null });
+    if (family()) {
+      const fp = forP && forP !== S.myP ? person(forP) : null;
+      const creatorP = personOfUid(it.by)?.id || S.myP;
+      it.forP = fp && fp.id !== creatorP ? fp.id : (forP === S.myP && creatorP !== S.myP ? S.myP : null);
+      it.forU = it.forP ? person(it.forP)?.uid || null : null;
+    }
+    if (mineToLock) it.private = priv;
     await save(it); closeSheet(); renderAll();
     toast('✏️ נשמר');
     if (S.pending === id) S.pending = null;
@@ -578,7 +647,7 @@ function openEdit(id, focus, forceKind) {
 function openPicker(mustSwapFor) {
   const t3 = curTop3();
   let sel = t3.ids.filter(x => item(x));
-  const cands = rankForToday(openItems().filter(x => x.kind === 'task' && (!x.due || x.due && new Date(x.due) < addDays(sod(new Date()), 2))));
+  const cands = rankForToday(openItems().filter(x => x.kind === 'task' && isMine(x) && (!x.due || x.due && new Date(x.due) < addDays(sod(new Date()), 2))));
   if (mustSwapFor && !cands.find(x => x.id === mustSwapFor)) cands.unshift(item(mustSwapFor));
   const extra = top3Items().filter(x => !cands.includes(x));
   const all = [...extra, ...cands];
@@ -733,17 +802,161 @@ async function tick() {
   renderTasks();
 }
 
-(async () => {
-  await load();
+// ---------- משפחה: שינויים שהגיעו מטלפון אחר ----------
+async function onRemoteItem(local, next, live) {
+  const i = S.items.findIndex(x => x.id === next.id);
+  if (i >= 0) S.items[i] = next; else S.items.push(next);
+  if (!live || !S.uid) return;
+  const fromOther = next.doneBy && next.doneBy !== S.myP;
+  const wasOpen = local && local.status === 'open' && !(local.repeat && isToday(local.lastDone));
+  const nowDone = next.status === 'done' || (next.repeat && isToday(next.lastDone));
+  const involvesMe = next.by === S.uid || next.forP === S.myP;
+  if (wasOpen && nowDone && fromOther && involvesMe) {
+    await bot(person(next.doneBy)?.e || '🎉', 'var(--g3)', `${person(next.doneBy)?.name || 'מישהו מהמשפחה'} סימן/ה ✅`, next.text);
+    confetti(60);
+  } else if (!local && next.status === 'open' && next.forP === S.myP && next.by !== S.uid) {
+    const from = personOfUid(next.by);
+    await bot(from?.e || '🙋', 'var(--g6)', `משימה חדשה בשבילך${from ? ' מ' + from.name : ''}`, `${next.text}${next.due ? '\n' + whenLabel(next) : ''}`,
+      [{ l: '⭐ לחשובים של היום', op: 'star', a: [next.id] }, { l: '✏️ תקן', op: 'edit', a: [next.id] }]);
+    buzz();
+  }
+}
+
+// ---------- מסך פתיחה: כניסה ← משפחה ← שם ----------
+const joinCode = (new URLSearchParams(location.search).get('join') || '').toUpperCase();
+async function gateStep() {
+  if (!sync.user()) return 'auth';
+  if (!sync.household()) return 'family';
+  S.people = await db.getKV('people', []);
+  const mine = personOfUid(S.uid);
+  if (!mine) return 'name';
+  S.myP = mine.id;
+  return null;
+}
+async function showGate() {
+  S.uid = sync.user()?.id || null;
+  const step = await gateStep();
+  const g = $('#gate'), body = $('#gateBody');
+  if (!step) { g.classList.remove('on'); renderAll(); renderFamily(); return true; }
+  g.classList.add('on');
+  const err = m => { body.querySelector('.err').textContent = m; };
+  const busy = (b, on) => { b.disabled = on; b.style.opacity = on ? .6 : 1; };
+
+  if (step === 'auth') {
+    body.innerHTML = `<div class="g-logo">⏰</div><h2>ברוכים הבאים ל"זמן בכיף"</h2>
+      <p class="note">${joinCode ? '👋 הוזמנת למשפחה! קודם נרשמים. ' : ''}אותו מייל ואותה סיסמה כמו באפליקציית <b>כסף בכיף</b>. מי שכבר רשום שם, פשוט נכנס.</p>
+      <input id="gEmail" type="email" autocomplete="email" placeholder="מייל" dir="ltr">
+      <input id="gPass" type="password" autocomplete="current-password" placeholder="סיסמה (לפחות 6 תווים)" dir="ltr">
+      <div class="err"></div>
+      <button class="btn pri" id="gIn">כניסה</button>
+      <button class="btn" id="gUp">אין לי חשבון — הרשמה</button>`;
+    const go = async (fn, b) => {
+      const e = $('#gEmail').value.trim(), p = $('#gPass').value;
+      if (!/^\S+@\S+\.\S+$/.test(e)) return err('צריך מייל תקין');
+      if (p.length < 6) return err('הסיסמה צריכה להיות לפחות 6 תווים');
+      busy(b, true);
+      try { await fn(e, p); try { await sync.loadHousehold(); } catch { /* */ } fresh = true; await afterGate(); }
+      catch (x) { err(x.message); busy(b, false); }
+    };
+    $('#gIn').onclick = e => go(sync.signIn, e.target);
+    $('#gUp').onclick = e => go(sync.signUp, e.target);
+    body.querySelectorAll('input').forEach(i => i.oninput = () => err(''));
+    return false;
+  }
+  if (step === 'family') {
+    body.innerHTML = `<h2>👨‍👩‍👧 המשפחה</h2>
+      <p class="note">מי שמתחיל פותח משפחה ושולח קוד לבני הבית. מי שקיבל קוד מצטרף איתו.</p>
+      ${joinCode ? '' : `<input id="gName" placeholder="שם המשפחה, למשל: משפחת כהן"><button class="btn pri" id="gNew">פתיחת משפחה חדשה</button><div class="or">או</div>`}
+      <input id="gCode" placeholder="קוד הצטרפות (6 תווים)" value="${esc(joinCode)}" dir="ltr" style="text-transform:uppercase;letter-spacing:3px;text-align:center">
+      <button class="btn ${joinCode ? 'pri' : ''}" id="gJoin">🔑 הצטרפות עם קוד</button>
+      <div class="err"></div>
+      <button class="link" id="gOut">יציאה מהחשבון</button>`;
+    const run = async (fn, b) => { busy(b, true); try { await fn(); fresh = true; confetti(); await afterGate(); } catch (x) { err(x.message); busy(b, false); } };
+    $('#gNew')?.addEventListener('click', e => run(() => sync.createHousehold($('#gName').value.trim()), e.target));
+    $('#gJoin').onclick = e => { const c = $('#gCode').value.trim(); if (c.length < 6) return err('הקוד הוא 6 תווים'); run(() => sync.joinHousehold(c), e.target); };
+    $('#gOut').onclick = signOut;
+    return false;
+  }
+  // step === 'name'
+  S.people = await sync.loadPeople();
+  if (personOfUid(S.uid)) return showGate();
+  const free = S.people.filter(p => !p.uid);
+  let face = 0;
+  body.innerHTML = `<h2>🙋 איך קוראים לך?</h2>
+    <p class="note">כל מה שתרשום יופיע עם השם שלך, ואפשר יהיה לתת לך משימות.</p>
+    ${free.length ? `<p class="note">אולי זה אתה?</p><div class="chips" style="flex-wrap:wrap;padding:0 0 12px">${free.map(p => `<button class="chip" data-claim="${p.id}">אני ${p.e} ${esc(p.name)}</button>`).join('')}</div>` : ''}
+    <div style="display:flex;gap:8px"><button class="round" id="gFace" style="background:var(--card2);border:1px solid var(--line);width:48px;height:48px">${FACES[0]}</button>
+    <input id="gMe" placeholder="השם שלך" style="flex:1"></div>
+    <div class="err"></div>
+    <button class="btn pri" id="gSave">המשך</button>
+    <button class="link" id="gOut">יציאה מהחשבון</button>`;
+  const finish = async p => { try { S.people = await sync.savePerson(p); S.myP = p.id; confetti(); toast('🎉 ברוך הבא!'); await afterGate(); } catch (x) { err(x.message); } };
+  body.querySelectorAll('[data-claim]').forEach(b => b.onclick = () => finish({ ...free.find(p => p.id === b.dataset.claim), uid: S.uid }));
+  $('#gFace').onclick = e => { face = (face + 1) % FACES.length; e.target.textContent = FACES[face]; };
+  $('#gSave').onclick = () => {
+    const name = $('#gMe').value.trim(); if (!name) return err('צריך לכתוב שם');
+    if (S.people.some(p => p.name === name)) return err('השם הזה כבר קיים. אם זה אתה, לחץ עליו למעלה');
+    finish({ id: db.newId(), name, e: FACES[face], uid: S.uid });
+  };
+  $('#gOut').onclick = signOut;
+  return false;
+}
+let fresh = false;
+async function afterGate() {
+  if (!(await showGate())) return;
+  if (fresh) { fresh = false; await sync.connected(true); S.items = await db.all('items'); renderAll(); }
+  if (!started) boot();
+}
+async function signOut() {
+  if (!confirm('לצאת מהחשבון? המשימות נשארות שמורות בענן, ויחזרו כשתיכנס שוב.')) return;
+  await sync.signOut(); S.uid = null; S.myP = null; S.people = [];
+  await load(); showGate();
+}
+
+// ---------- כרטיס המשפחה בהגדרות ----------
+function renderFamily() {
+  const hh = sync.household(), el = $('#familyCard'); if (!el) return;
+  if (!hh) { el.hidden = true; return; }
+  el.hidden = false;
+  const meP = person(S.myP);
+  const url = location.origin + location.pathname;
+  const share = (code, label) => `<div class="set-row"><span>${label}</span><b dir="ltr" style="letter-spacing:2px">${esc(code)}</b></div>
+    <a class="btn" href="https://wa.me/?text=${encodeURIComponent(`הצטרפות ל"זמן בכיף" של ${hh.name}: ${url}?join=${code}`)}" target="_blank" rel="noopener" style="display:grid;place-items:center;text-decoration:none">💬 שליחת הזמנה בוואטסאפ</a>`;
+  el.innerHTML = `<h4>👨‍👩‍👧 ${esc(hh.name)}<small id="syncState">${navigator.onLine ? 'מסונכרן ✓' : 'ממתין לרשת…'}</small></h4>
+    <div class="set-row"><span>אני</span><b>${meP ? `${meP.e} ${esc(meP.name)}` : ''}</b></div>
+    <div class="set-row"><span>בני הבית</span><span>${S.people.map(p => `${p.e} ${esc(p.name)}${p.uid ? '' : ' <small style="color:var(--muted)">(בלי חשבון)</small>'}`).join('<br>')}</span></div>
+    ${sync.isParent() && hh.invite_code ? share(hh.invite_code, 'קוד להורה / בן זוג') : ''}
+    ${sync.isParent() && hh.child_code ? share(hh.child_code, 'קוד לילד (רואה רק את שלו)') : ''}
+    <p class="note" style="margin-top:8px">זה אותו חשבון ואותה משפחה כמו ב"כסף בכיף".</p>
+    <button class="btn danger" id="signOutBtn">יציאה מהחשבון</button>`;
+  $('#signOutBtn').onclick = signOut;
+}
+
+let started = false;
+async function boot() {
+  started = true;
   if (!S.msgs.length) {
-    await bot('👋', 'var(--g1)', 'שלום! אני "זמן בכיף"', 'כתוב או אמור לי כל דבר, ואני אסדר:\n📌 תזכיר לי מחר ב-10 להתקשר לבנק\n🔁 כל יום חמישי ב-9 לשלם לגננת\n👥 פגישה עם יוסי ביום שלישי ב-4\n💭 רעיון: לסדר את המחסן\n✅ סיימתי לשלוח הצעת מחיר\n\nכשיגיע הזמן, אשאל אותך אם עשית את זה.');
+    const ex = family() ? `\n🙋 תזכיר ל${S.people.find(p => p.id !== S.myP)?.name || 'רחל'} מחר ב-5 לקנות חלב` : '';
+    await bot('👋', 'var(--g1)', 'שלום! אני "זמן בכיף"', `כתוב או אמור לי כל דבר, ואני אסדר:\n📌 תזכיר לי מחר ב-10 להתקשר לבנק\n🔁 כל יום חמישי ב-9 לשלם לגננת\n👥 פגישה עם יוסי ביום שלישי ב-4\n💭 רעיון: לסדר את המחסן\n✅ סיימתי לשלוח הצעת מחיר${ex}\n🔒 פרטי: ... (רק אתה תראה)\n\nכשיגיע הזמן, אשאל אותך אם עשית את זה.`);
   }
   await tick();
   setInterval(tick, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { document.title = 'זמן בכיף'; tick(); } });
+}
+
+(async () => {
+  await load();
+  await sync.start({
+    onItem: onRemoteItem,
+    onRemote: () => { renderAll(); renderFamily(); },
+    onStatus: st => { const el = $('#syncState'); if (el) el.textContent = st === 'ok' ? 'מסונכרן ✓' : 'ממתין לרשת…'; },
+  });
+  S.people = await db.getKV('people', []);
+  S.items = await db.all('items');
+  if (await showGate()) boot();
 })();
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 // לבדיקות מהדפדפן
-window.__zman = { S, parse, send };
+window.__zman = { S, parse, send, forWhom, sync };

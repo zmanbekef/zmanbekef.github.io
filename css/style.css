@@ -151,3 +151,18 @@ nav .badge{top:0;left:6px}
 .conf{position:absolute;top:-10px;width:9px;height:14px;z-index:60;border-radius:3px;pointer-events:none;animation:fall linear forwards}
 @keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition:none!important}}
+
+/* מסך פתיחה: כניסה / משפחה / שם */
+.gate{position:absolute;inset:0;z-index:45;background:radial-gradient(circle at 80% 0%,rgba(6,182,212,.35),transparent 50%),radial-gradient(circle at 0% 60%,rgba(124,58,237,.4),transparent 55%),var(--bg);display:none;align-items:center;justify-content:center;padding:20px;overflow-y:auto}
+.gate.on{display:flex;animation:fade .25s}
+.gate-box{width:100%;max-width:380px;display:flex;flex-direction:column;gap:10px}
+.gate-box .g-logo{font-size:54px;text-align:center}
+.gate-box h2{font-size:24px;font-weight:800;text-align:center}
+.gate-box .note{font-size:14px;color:var(--muted);line-height:1.6;text-align:center}
+.gate-box input{width:100%;height:50px;border-radius:16px;border:1px solid var(--line);background:var(--card2);color:#fff;font:inherit;font-size:16px;padding:0 16px;outline:none}
+.gate-box input:focus{border-color:#7C3AED;box-shadow:0 0 0 3px rgba(124,58,237,.3)}
+.gate-box .btn{margin-top:0}
+.gate-box .err{color:#FB7185;font-size:13px;min-height:18px;text-align:center}
+.gate-box .or{text-align:center;color:var(--muted);font-size:12px}
+.link{background:none;border:none;color:var(--muted);text-decoration:underline;font-size:13px;cursor:pointer;margin-top:4px}
+.chip.on{background:var(--g2);border-color:transparent}
