@@ -108,6 +108,21 @@ export async function savePerson(p) {
   return list;
 }
 
+// דברים משותפים (רכב, עגלה…) — משותף לכל המשפחה
+export async function loadRes() {
+  if (!hh || !me) return null;
+  try {
+    const { data, error } = await (await client()).from('kv').select('value').eq('household_id', hh.id).eq('key', 'zman_resources').maybeSingle();
+    if (error) throw error;
+    return data?.value || [];
+  } catch { return null; }
+}
+export async function saveRes(list) {
+  if (!hh || !me) return;
+  const { error } = await (await client()).from('kv').upsert({ household_id: hh.id, key: 'zman_resources', value: list });
+  if (error) throw new Error(nice(error));
+}
+
 // ---------- תור שליחה (עובד גם כשאין רשת) ----------
 export async function queue(it) {
   if (!hh) return;
@@ -166,13 +181,28 @@ export async function pull() {
 function subscribe() {
   stop();
   channel = sb.channel('zman-' + hh.id)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'zman_items', filter: `household_id=eq.${hh.id}` }, async p => { if (p.new?.id) { await apply(p.new, true); cb.onRemote?.(); } })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'kv', filter: `household_id=eq.${hh.id}` }, async p => { if (p.new?.key === 'people') { await db.setKV('people', p.new.value); cb.onRemote?.(); } })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'zman_items', filter: `household_id=eq.${hh.id}` }, async p => { if (p.new?.id) { await apply(p.new, true); const b = await busy(); if (b) cb.onBusy?.(b); cb.onRemote?.(); } })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'kv', filter: `household_id=eq.${hh.id}` }, async p => { if (p.new?.key === 'people') { await db.setKV('people', p.new.value); cb.onRemote?.(); } if (p.new?.key === 'zman_resources') { cb.onRes?.(p.new.value || []); } })
     .subscribe();
 }
 function stop() { if (channel) { sb.removeChannel(channel); channel = null; } }
 
-async function refresh() { await flush(); const n = await pull().catch(() => 0); if (n) cb.onRemote?.(); }
+// זמנים תפוסים של משימות פרטיות של אחרים — רק מתי, בלי מה (להתראות על התנגשויות)
+export async function busy() {
+  if (!hh || !me || !navigator.onLine) return null;
+  try {
+    const { data, error } = await (await client()).rpc('zman_busy', { h: hh.id });
+    if (error) throw error;
+    return (data || []).map(r => ({ id: 'busy-' + r.id, busy: true, status: 'open', kind: 'task', hasTime: true, due: r.due, dur: r.dur, by: r.created_by, forU: r.assignee, forP: r.for_p }));
+  } catch (e) { console.warn('busy', e); return null; }
+}
+
+async function refresh() {
+  await flush(); const n = await pull().catch(() => 0);
+  const b = await busy(); if (b) cb.onBusy?.(b);
+  const r = await loadRes(); if (r) cb.onRes?.(r);
+  if (n || b?.length) cb.onRemote?.();
+}
 let listening = false;
 function listen() {
   if (listening) return; listening = true;

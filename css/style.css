@@ -166,3 +166,18 @@ nav .badge{top:0;left:6px}
 .gate-box .or{text-align:center;color:var(--muted);font-size:12px}
 .link{background:none;border:none;color:var(--muted);text-decoration:underline;font-size:13px;cursor:pointer;margin-top:4px}
 .chip.on{background:var(--g2);border-color:transparent}
+
+/* התנגשויות */
+.row .warn{background:none;border:none;font-size:18px;cursor:pointer;animation:pulseW 1.6s infinite}
+@keyframes pulseW{50%{transform:scale(1.2)}}
+.tl{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 10px 4px}
+.tl-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.tl-who{width:64px;font-size:12px;color:var(--muted);flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-track{flex:1;height:34px;position:relative;background:rgba(255,255,255,.04);border-radius:10px}
+.tl-bar{position:absolute;top:3px;bottom:3px;border-radius:8px;background:var(--g2);font-size:11px;padding:0 6px;display:flex;align-items:center;overflow:hidden;white-space:nowrap;opacity:.55}
+.tl-bar.hot{background:linear-gradient(135deg,#F43F5E,#F97316);opacity:1;box-shadow:0 0 12px rgba(244,63,94,.5)}
+.tl-bar.busy{background:repeating-linear-gradient(45deg,rgba(255,255,255,.25) 0 6px,rgba(255,255,255,.1) 6px 12px)}
+.tl-ticks{position:relative;height:16px;margin-right:72px;font-size:10px;color:var(--muted)}
+.tl-ticks span{position:absolute;transform:translateX(50%)}
+.res-row{display:flex;gap:8px;align-items:center;margin-top:8px}
+.res-row input{flex:1;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--card2);color:#fff;font:inherit;padding:0 12px}

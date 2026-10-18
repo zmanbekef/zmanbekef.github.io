@@ -25,7 +25,7 @@ export const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 function normalize(t) {
   return t.replace(/[״"“”]/g, '"').replace(/[׳'`]/g, "'")
     .replace(/[!?,;]+/g, ' ')
-    .replace(/(^|\s)ב-\s*/g, '$1ב').replace(/(^|\s)ל-\s*/g, '$1ל')
+    .replace(/(^|\s)ב-\s*/g, '$1ב').replace(/(^|\s)ל-\s*/g, '$1ל').replace(/(^|\s)מ-\s*/g, '$1מ').replace(/(^|\s)עד-\s*/g, '$1עד ')
     .replace(/בשעה\s+/g, 'ב').replace(/\s+/g, ' ').trim();
 }
 
@@ -38,7 +38,7 @@ function nextDow(now, dow, allowToday = true) {
 
 // מוציא מהמשפט את כל מה שקשור לזמן. מחזיר {date, hour, min, part, repeat, rest}
 function extractWhen(s, now) {
-  let date = null, hour = null, min = 0, part = null, repeat = null, rel = null, dow = false;
+  let date = null, hour = null, min = 0, part = null, repeat = null, rel = null, dow = false, endH = null, endM = 0, dur = null;
   const cut = re => { const m = s.match(re); if (m) s = (s.slice(0, m.index) + ' ' + s.slice(m.index + m[0].length)).replace(/\s+/g, ' ').trim(); return m; };
   let m;
 
@@ -109,8 +109,16 @@ function extractWhen(s, now) {
     part = { 'בבוקר': 'morning', 'בצהריים': 'noon', 'בצהרים': 'noon', 'בערב': 'evening', 'בלילה': 'night', 'לפנות ערב': 'afternoon' }[m[1]] || 'afternoon';
   }
 
+  // --- טווח: "מ-4 עד 6", "בין 4 ל-6", "10:00-11:30" ---
+  const HALF = '(?:\\s+(וחצי|ורבע))?';
+  const RANGE = new RegExp(`${S}(מ|מה|בין\\s+|ב)?(\\d{1,2})(?::(\\d{2}))?${HALF}\\s*(?:עד|ל|-|–)\\s*(?:ה|ל)?(\\d{1,2})(?::(\\d{2}))?${HALF}${E}(?!\\s*(?:לחודש|ב?(?:${MONTHS.join('|')})))`);
+  const rng = s.match(RANGE);
+  const frac = (mm, h) => mm ? +mm : h === 'וחצי' ? 30 : h === 'ורבע' ? 15 : 0;
   // --- שעה ---
-  if ((m = cut(new RegExp(`${S}(?:ב|עד |עד ה|לקראת |ב-)?(\\d{1,2}):(\\d{2})${E}`)))) { hour = +m[1]; min = +m[2]; }
+  if (rng && (rng[1] || rng[3] || rng[6])) {
+    cut(RANGE);
+    hour = +rng[2]; min = frac(rng[3], rng[4]); endH = +rng[5]; endM = frac(rng[6], rng[7]);
+  } else if ((m = cut(new RegExp(`${S}(?:ב|לקראת |ב-)?(\\d{1,2}):(\\d{2})${E}`)))) { hour = +m[1]; min = +m[2]; }
   else if ((m = cut(new RegExp(`${S}ב(\\d{1,2})(?:\\s+(וחצי|ורבע|פחות רבע))?${E}(?!\\s*(?:דקות|שעות|ימים|לחודש|ש"ח|שקל|₪|אנשים|משימות))`)))) {
     hour = +m[1]; min = m[2] === 'וחצי' ? 30 : m[2] === 'ורבע' ? 15 : 0;
     if (m[2] === 'פחות רבע') { hour -= 1; min = 45; }
@@ -120,6 +128,15 @@ function extractWhen(s, now) {
   }
   if (hour != null && hour > 23) { hour = null; min = 0; }
 
+  // --- משך: "עד 6", "חצי שעה", "שעתיים", "45 דקות" ---
+  if (hour != null && endH == null && (m = cut(new RegExp(`${S}עד\\s*(?:ה|ל|ה-|ל-)?(\\d{1,2})(?::(\\d{2}))?(?:\\s+(וחצי|ורבע))?${E}`)))) {
+    endH = +m[1]; endM = m[2] ? +m[2] : m[3] === 'וחצי' ? 30 : m[3] === 'ורבע' ? 15 : 0;
+  }
+  if ((m = cut(new RegExp(`${S}(?:למשך\\s+|במשך\\s+)?(חצי שעה|רבע שעה|שעה וחצי|שעה ורבע|שעתיים וחצי|שעתיים|שלוש שעות|ארבע שעות|(\\d+)\\s*(דקות|דק'|שעות))${E}`)))) {
+    dur = { 'חצי שעה': 30, 'רבע שעה': 15, 'שעה וחצי': 90, 'שעה ורבע': 75, 'שעתיים וחצי': 150, 'שעתיים': 120, 'שלוש שעות': 180, 'ארבע שעות': 240 }[m[1]]
+      ?? (/דק/.test(m[3]) ? +m[2] : +m[2] * 60);
+  }
+
   // שעה בלי "בבוקר/בערב": 1–6 זה אחרי הצהריים, 7–11 בבוקר
   if (hour != null && hour <= 12) {
     if (part === 'evening' || part === 'afternoon') { if (hour < 12) hour += 12; }
@@ -128,8 +145,13 @@ function extractWhen(s, now) {
     else if (part !== 'morning' && hour >= 1 && hour <= 6) hour += 12;
   }
   if (hour == null && part) { hour = { morning: 9, noon: 13, afternoon: 16, evening: 20, night: 22 }[part]; min = 0; }
+  if (hour != null && endH != null && endH <= 24) {
+    if (endH * 60 + endM <= hour * 60 + min && endH < 12) endH += 12;
+    const d = endH * 60 + endM - (hour * 60 + min);
+    if (d > 0) dur = d;
+  }
 
-  return { date, hour, min, repeat, rel, dow, rest: s };
+  return { date, hour, min, repeat, rel, dow, dur, rest: s };
 }
 
 // מחשב את המועד הבא של משימה קבועה (אחרי from)
@@ -215,7 +237,7 @@ export function parse(raw, now = new Date()) {
   if (kind === 'thought' && (due || w.repeat)) kind = 'task';
   if (!text) text = tidy(s0.replace(REMIND_RE, ''));
 
-  return { intent: 'item', kind, text, due, hasTime, repeat: w.repeat || null, remind, bare, needsWhen: (remind || kind === 'meeting') && !due };
+  return { intent: 'item', kind, text, due, hasTime, repeat: w.repeat || null, dur: w.dur ?? null, remind, bare, needsWhen: (remind || kind === 'meeting') && !due };
 }
 
 // ---------- התאמה בין "סיימתי X" לבין משימה פתוחה ----------
