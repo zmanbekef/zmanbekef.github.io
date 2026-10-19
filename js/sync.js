@@ -1,12 +1,14 @@
 // סנכרון בין הטלפונים דרך Supabase — אותו חשבון כמו "כסף בכיף", עם קבוצות משלנו (משפחה / שותפים / צוות / קשר פרטי).
 // הנתונים נשמרים קודם כל במכשיר (עובד גם בלי אינטרנט), ונשלחים לענן ברקע.
 import * as db from './db.js';
+import * as track from './track.js';
 
 const CONFIG = {
   url: 'https://dmhxovlepdoobkoiyjhj.supabase.co',
   // מפתח ציבורי (anon) — האבטחה נשמרת ע"י הרשאות בשרת (RLS): כל משפחה רואה רק את עצמה
   key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtaHhvdmxlcGRvb2Jrb2l5amhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzNDUxNDIsImV4cCI6MjEwNzkyMTE0Mn0.qao1CRL1QWJhMnWsAaPXKt-WxbgySqIlH68iIdCYH1o',
 };
+track.init({ app: 'zman', url: CONFIG.url, key: CONFIG.key });
 const LOCAL_ONLY = ['askedKey']; // "כבר שאלתי" — שייך לטלפון הזה בלבד
 
 let sb = null, hh = null, me = null, channel = null, flushing = false, cb = {};
@@ -60,7 +62,7 @@ export async function currentUser() {
 export async function signIn(email, password) {
   const { error } = await (await client()).auth.signInWithPassword({ email, password });
   if (error) throw new Error(nice(error));
-  await currentUser();
+  await currentUser(); track.ping(sb);
 }
 // שכחתי סיסמה: מייל עם קישור שחוזר לאפליקציה, ושם בוחרים סיסמה חדשה
 export async function resetPassword(email) {
@@ -81,7 +83,7 @@ export async function signUp(email, password) {
   const { data, error } = await (await client()).auth.signUp({ email, password });
   if (error) throw new Error(nice(error));
   if (!data.session) throw new Error(HEB_ERR['Email not confirmed']);
-  await currentUser();
+  await currentUser(); track.ping(sb);
 }
 /** יציאה: קודם מעלים לענן את מה שעוד לא עלה. אם אי אפשר — זורקים 'pending' (אלא אם force) */
 export async function pendingCount() { return (await db.getKV('outbox', [])).length; }
@@ -325,7 +327,7 @@ let listening = false;
 function listen() {
   if (listening) return; listening = true;
   addEventListener('online', refresh);
-  document.addEventListener('visibilitychange', async () => { if (!document.hidden) { await loadGroups(); cb.onGroups?.(); refresh(); } });
+  document.addEventListener('visibilitychange', async () => { if (!document.hidden) { if (me) track.ping(sb); await loadGroups(); cb.onGroups?.(); refresh(); } });
 }
 
 /** מופעל בעליית האפליקציה. מחזיר { user } */
@@ -336,6 +338,7 @@ export async function start(callbacks) {
   cb = callbacks;
   try { await currentUser(); } catch (e) { console.warn('sync start', e); }
   if (!me) return { user: null };
+  track.ping(sb);
   hh = await db.getKV('household', null); groups = await db.getKV('groups', []) || []; profile = await db.getKV('profile', null);
   ready = (async () => {
     try {
