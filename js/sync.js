@@ -169,6 +169,21 @@ const rpc = async (fn, args) => {
 export const createGroup = async (name, kind, nick, emo) => { const g = await rpc('zman_create_group', { gname: name, gkind: kind, nick, emo }); await loadGroups(); return g; };
 export const joinGroup = async (code, nick, emo) => { const g = await rpc('zman_join_group', { jcode: code, nick, emo }); if (!g) throw new Error(HEB_ERR['bad code']); await loadGroups(); return g; };
 export const setNickname = async (g, nick, emo) => { await rpc('zman_set_nickname', { g, nick, emo }); await loadGroups(); };
+// קטגוריות: של הקבוצות שלי + "רק שלי"
+export async function loadCategories() {
+  if (!me || !navigator.onLine) return db.getKV('cats', []);
+  try {
+    const { data, error } = await (await client()).from('zman_categories').select('*');
+    if (error) throw error;
+    const rows = (data || []).map(r => ({ ...r, name: cleanT(r.name), icon: cleanE(r.icon) || '🏷️' }));
+    await db.setKV('cats', rows); return rows;
+  } catch (e) { console.warn('cats', e); return db.getKV('cats', []); }
+}
+export async function saveCategory(row) {
+  const { error } = await (await client()).from('zman_categories').upsert({ ...row, owner: row.owner || me.id });
+  if (error) throw new Error(nice(error));
+  const rows = (await db.getKV('cats', [])).filter(r => r.id !== row.id); rows.push(row); await db.setKV('cats', rows);
+}
 // יומן: מי בקבוצה רואה את היומן שלי ('all' / 'busy' / 'none'), והיומן של מישהו אחר לפי מה שהוא הרשה
 export const setCalShare = async (g, v) => { await rpc('zman_set_cal_share', { g, v }); await loadGroups(); };
 export async function calendarOf(uid) {
@@ -285,6 +300,7 @@ function subscribe() {
   channel = sb.channel('zman-' + me.id)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'zman_tasks' }, async p => { if (p.new?.id) { await apply(p.new, true); const b = await busy(); if (b) cb.onBusy?.(b); cb.onRemote?.(); } })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'zman_members' }, async () => { await loadGroups(); cb.onGroups?.(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'zman_categories' }, async () => { cb.onCats?.(await loadCategories()); })
     .subscribe();
 }
 function stop() { if (channel) { sb.removeChannel(channel); channel = null; } }
@@ -339,6 +355,7 @@ export async function connected(first = true) {
     await loadProfile(); await loadGroups();
   }
   await loadPeople();
+  cb.onCats?.(await loadCategories());
   await refresh();
   subscribe(); listen();
 }

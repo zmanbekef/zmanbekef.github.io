@@ -24,6 +24,7 @@
     <div><div class="logo">זמן בכיף ⏰</div><div class="hdate"><span id="hello"></span><span id="hdate"></span></div><div class="hdate hzman" id="hzman"></div></div>
     <div style="display:flex;gap:8px">
       <button class="icon-btn" id="meBtn" aria-label="אני" hidden style="font-size:22px"></button>
+      <button class="icon-btn" id="bellBtn" aria-label="התראות" style="position:relative">🔔<i class="badge" id="bellBadge" hidden></i></button>
       <button class="icon-btn" id="helpBtn" aria-label="עזרה">❓</button>
       <button class="icon-btn" id="todayBtn" aria-label="מה יש לי היום">📋</button>
     </div>
@@ -65,6 +66,7 @@
       <div class="seg tabs2"><button class="on" data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button></div>
       <div class="h2">המשימות 📋</div>
       <div class="chips" id="whoFilter" style="padding:0 16px 12px" hidden></div>
+      <div class="chips" id="catFilter" style="padding:0 16px 12px" hidden></div>
       <div class="cards" id="taskList"></div>
     </section>
 
@@ -91,6 +93,7 @@
           <p class="note">בשבת ובחג אין שום תזכורת או התראה, ומה שנופל בהם עובר למוצאי שבת או חג. הזמנים מגיעים מ-Hebcal, לוח שנה יהודי חינמי. הצליל הזה מושמע כשהאפליקציה פתוחה.</p>
         </div>
         <div class="card" id="calCard"></div>
+        <div class="card" id="catCard"></div>
         <div class="card">
           <h4>סיכומים בשיחה</h4>
           <div class="set-row"><span>☀️ סיכום בוקר, מהשעה</span><input type="time" id="setMorning"></div>

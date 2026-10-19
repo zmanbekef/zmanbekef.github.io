@@ -186,7 +186,7 @@ nav .badge{top:0;left:6px}
 .sel,.num{background:var(--card2);border:1px solid var(--line);color:#fff;border-radius:10px;padding:6px 8px;font:inherit;color-scheme:dark}
 .num{width:64px;text-align:center}
 .code-box{text-align:center;border:1px solid;border-radius:18px;padding:12px 6px;min-width:0;overflow:hidden}
-.code-box .code{font-size:clamp(20px,6vw,28px);font-weight:800;letter-spacing:2px;direction:ltr;margin:4px 0 8px;white-space:nowrap}
+.code-box .code{font-size:clamp(16px,4.6vw,24px);font-weight:800;letter-spacing:1px;direction:ltr;margin:4px 0 8px;white-space:nowrap}
 .fam-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px 10px;margin-bottom:6px;font-size:14px;color:#fff}
 .fam-in{flex:1;min-width:0;height:44px;border-radius:14px;border:1px solid var(--line);background:var(--card2);color:#fff;padding:0 12px;outline:none;font:inherit;font-size:16px}
 input,select,textarea{font-size:16px}
@@ -314,3 +314,27 @@ nav button.plus:active b{transform:scale(.9)}
 .cal-color{width:44px;height:32px;border:none;background:none;padding:0;cursor:pointer}
 .toast-act{margin-inline-start:10px;padding:6px 12px;border-radius:12px;border:none;background:rgba(255,255,255,.25);color:#fff;font:inherit;font-weight:700;cursor:pointer}
 .lock{overflow-y:auto}
+/* QR להצטרפות */
+.qr{width:140px;max-width:100%;aspect-ratio:1;margin:6px auto;background:#fff;border-radius:12px;padding:6px;box-sizing:border-box}
+.qr svg{width:100%;height:100%;display:block}
+.qr-big{width:min(300px,80vw);margin:8px auto 10px;padding:12px}
+/* 🔔 פעמון */
+.bell-list{display:flex;flex-direction:column;gap:6px}
+.bell-row{display:flex;gap:10px;align-items:flex-start;text-align:start;width:100%;padding:10px;border-radius:14px;border:1px solid var(--line);background:var(--card);color:#fff;font:inherit;cursor:pointer}
+.bell-row.new{background:rgba(124,58,237,.18);border-color:rgba(167,139,250,.5)}
+.bell-ic{font-size:20px;flex:none;width:28px;text-align:center}
+.bell-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.bell-tx b{font-size:14px}
+.bell-tx small{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.bell-tx i{font-style:normal;font-size:12px;color:var(--muted)}
+/* 🏷️ קטגוריות */
+.cat-chips{padding:0!important;flex-wrap:wrap}
+.cat-chips .chip.on{background:color-mix(in srgb,var(--c) 45%,transparent);border-color:var(--c)}
+#catFilter .chip.on[style]{background:color-mix(in srgb,var(--c) 45%,transparent);border-color:var(--c)}
+.cat-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-inline-end:8px;vertical-align:middle}
+.ic-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+.ic-grid button{aspect-ratio:1;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:20px;cursor:pointer;padding:0}
+.ic-grid button.on{border-color:#A78BFA;background:rgba(124,58,237,.35);box-shadow:0 0 0 2px #7C3AED}
+.col-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
+.col-grid button{aspect-ratio:1;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;min-width:0}
+.col-grid button.on{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.4)}
