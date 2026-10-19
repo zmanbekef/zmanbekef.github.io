@@ -45,8 +45,24 @@
       <div class="chips" id="chips"></div>
     </section>
 
+    <!-- יומן -->
+    <section class="view" id="v-cal">
+      <div class="cal-top">
+        <div class="seg" id="calMode"><button data-m="day" class="on">יומי</button><button data-m="week">שבועי</button><button data-m="month">חודשי</button></div>
+        <div class="cal-nav">
+          <button class="icon-btn" id="calPrev" aria-label="הקודם">▶</button>
+          <div class="cal-title" id="calTitle" aria-live="polite"></div>
+          <button class="icon-btn" id="calNext" aria-label="הבא">◀</button>
+          <button class="chip" id="calToday">היום</button>
+        </div>
+        <div class="chips cal-who" id="calWho" hidden></div>
+      </div>
+      <div id="calBody"></div>
+    </section>
+
     <!-- משימות -->
     <section class="view" id="v-tasks">
+      <div class="seg tabs2"><button class="on" data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button></div>
       <div class="h2">המשימות 📋</div>
       <div class="chips" id="whoFilter" style="padding:0 16px 12px" hidden></div>
       <div class="cards" id="taskList"></div>
@@ -54,6 +70,7 @@
 
     <!-- מחשבות -->
     <section class="view" id="v-thoughts">
+      <div class="seg tabs2"><button data-v="tasks">📋 משימות</button><button class="on" data-v="thoughts">💭 מחשבות</button></div>
       <div class="h2">תיבת מחשבות 💭</div>
       <div class="cards" id="thoughtList"></div>
     </section>
@@ -73,6 +90,7 @@
           <div class="set-row"><span>🎵 צליל ההתראות</span><span style="display:flex;gap:6px"><select id="setMelody" class="sel"></select><button class="act" id="testMelody">▶️</button></span></div>
           <p class="note">בשבת ובחג אין שום תזכורת או התראה, ומה שנופל בהם עובר למוצאי שבת או חג. הזמנים מגיעים מ-Hebcal, לוח שנה יהודי חינמי. הצליל הזה מושמע כשהאפליקציה פתוחה.</p>
         </div>
+        <div class="card" id="calCard"></div>
         <div class="card">
           <h4>סיכומים בשיחה</h4>
           <div class="set-row"><span>☀️ סיכום בוקר, מהשעה</span><input type="time" id="setMorning"></div>
@@ -132,9 +150,9 @@
 
   <nav>
     <button class="on" data-v="chat"><span>💬</span>שיחה</button>
-    <button data-v="tasks"><span>📋</span>משימות<i class="badge" id="lateBadge" hidden></i></button>
+    <button data-v="cal"><span>📅</span>יומן</button>
     <button class="plus" id="plusBtn" aria-label="הוספה מהירה"><b>➕</b></button>
-    <button data-v="thoughts"><span>💭</span>מחשבות</button>
+    <button data-v="tasks"><span>📋</span>משימות<i class="badge" id="lateBadge" hidden></i></button>
     <button data-v="settings"><span>⚙️</span>הגדרות</button>
   </nav>
 

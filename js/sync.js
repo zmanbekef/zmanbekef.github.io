@@ -141,6 +141,13 @@ const rpc = async (fn, args) => {
 export const createGroup = async (name, kind, nick, emo) => { const g = await rpc('zman_create_group', { gname: name, gkind: kind, nick, emo }); await loadGroups(); return g; };
 export const joinGroup = async (code, nick, emo) => { const g = await rpc('zman_join_group', { jcode: code, nick, emo }); await loadGroups(); return g; };
 export const setNickname = async (g, nick, emo) => { await rpc('zman_set_nickname', { g, nick, emo }); await loadGroups(); };
+// יומן: מי בקבוצה רואה את היומן שלי ('all' / 'busy' / 'none'), והיומן של מישהו אחר לפי מה שהוא הרשה
+export const setCalShare = async (g, v) => { await rpc('zman_set_cal_share', { g, v }); await loadGroups(); };
+export async function calendarOf(uid) {
+  if (!me || !uid || !navigator.onLine) return db.getKV('cal:' + uid, []);
+  try { const rows = await rpc('zman_calendar', { target: uid }); await db.setKV('cal:' + uid, rows || []); return rows || []; }
+  catch { return db.getKV('cal:' + uid, []); }
+}
 export const addName = async (g, nick, emo) => { const m = await rpc('zman_add_name', { g, nick, emo }); await loadGroups(); return m; };
 export const setRole = async (mid, role) => { await rpc('zman_set_role', { mid, new_role: role }); await loadGroups(); };
 export const removeMember = async mid => { await rpc('zman_remove_member', { mid }); await loadGroups(); };

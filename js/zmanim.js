@@ -47,6 +47,28 @@ export async function loadCalendar(city, minutes) {
   return CAL;
 }
 
+/** ליומן: חגים, הדלקת נרות והבדלה לחודש מסוים → { 'YYYY-MM-DD': { hol: [שמות], candles: Date, havdalah: Date } } */
+export async function monthEvents(city, minutes, y, m) {
+  const c = cityOf(city), key = `hol:${c[0]}|${minutes}|${y}-${m}`;
+  const cached = await db.getKV(key, null);
+  if (cached && (Date.now() - cached.at < 7 * 864e5 || !navigator.onLine)) return cached.days;
+  if (!navigator.onLine) return {};
+  try {
+    const start = new Date(y, m, 1), end = new Date(y, m + 1, 0);
+    const url = `https://www.hebcal.com/hebcal?v=1&cfg=json&maj=on&min=on&mod=on&nx=on&mf=off&ss=off&s=off&c=on&M=on&i=on&lg=he&b=${minutes}&${q(c)}&start=${ymd(start)}&end=${ymd(end)}`;
+    const data = await fetch(url).then(r => r.json());
+    const days = {};
+    for (const e of data.items || []) {
+      const d = e.date.slice(0, 10), x = days[d] ||= { hol: [] };
+      if (e.category === 'candles') x.candles = e.date;
+      else if (e.category === 'havdalah') x.havdalah = e.date;
+      else if (['holiday', 'roshchodesh'].includes(e.category) && !x.hol.includes(e.hebrew)) x.hol.push(e.hebrew);
+    }
+    await db.setKV(key, { at: Date.now(), days });
+    return days;
+  } catch (e) { console.warn('hebcal month', e); return cached?.days || {}; }
+}
+
 // החלון (שבת/חג) שהזמן הזה נופל בו, או null
 export function quietAt(t) {
   const x = +t;
