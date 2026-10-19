@@ -739,6 +739,17 @@ async function syncSchedule() {
 
 // כרטיס ההגדרות
 const PUSH_CATS = [['msg', '💬 הודעות ותגובות מהמשפחה'], ['task', '⏰ הגיע הזמן של משימה'], ['conflict', '⚠️ התנגשות חדשה'], ['summary', '☀️🌙 סיכום בוקר וערב'], ['shabbat', '🕯️ לפני שבת וחג']];
+function drawMonthly() {
+  const el = $('#monthlyRow'); if (!el) return;
+  if (!S.uid) { el.innerHTML = '<p class="note" style="margin-top:8px">📧 אחרי כניסה אפשר לקבל ב-1 לכל חודש מייל עם סיכום החודש.</p>'; return; }
+  const on = sync.myProfile()?.monthly_email !== false, mail = sync.user()?.email || '';
+  el.innerHTML = `<label class="set-row" style="cursor:pointer"><span>📧 מייל סיכום חודשי ב-1 לחודש</span><input type="checkbox" id="setMonthly" ${on ? 'checked' : ''}></label>
+    <p class="note">נשלח אל ${esc(mail)}: כמה משימות סיימת, מה נשאר פתוח ומה מחכה בחודש הבא.</p>`;
+  $('#setMonthly').onchange = async e => {
+    try { await sync.setMonthly(e.target.checked); toast(e.target.checked ? '📧 המייל החודשי הופעל' : 'המייל החודשי כובה'); }
+    catch (x) { e.target.checked = !e.target.checked; toast(x.message, true); }
+  };
+}
 async function drawPush() {
   const el = $('#pushCard'); if (!el) return;
   const st = await sync.pushState(), prefs = S.settings.push || {};
@@ -1162,8 +1173,72 @@ $('#thoughtList').addEventListener('click', e => {
 
 // ---------- חלון עריכה ----------
 function sheet(html) { $('#sheet').innerHTML = html; $('#sheetBg').classList.add('on'); }
-function closeSheet() { $('#sheetBg').classList.remove('on'); }
+function closeSheet() { $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = ''; }
 $('#sheetBg').addEventListener('click', e => { if (e.target.id === 'sheetBg') closeSheet(); });
+
+// משיכה כלפי מטה: בחלון — סוגרת אותו; במסך (משימות, מחשבות, הגדרות) — חוזרת לשיחה
+function pullDown(el, scroller, ok, close) {
+  let y0 = null, x0 = 0, dy = 0;
+  el.addEventListener('touchstart', e => {
+    if (!ok() || scroller().scrollTop > 2 || e.touches.length > 1) { y0 = null; return; }
+    y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; dy = 0; el.style.transition = 'none';
+  }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    if (y0 == null) return;
+    const d = e.touches[0].clientY - y0, dx = Math.abs(e.touches[0].clientX - x0);
+    if (dy === 0 && (d < 0 || dx > Math.abs(d))) { y0 = null; el.style.transform = ''; return; } // גלילה רגילה / הצידה
+    if (scroller().scrollTop > 2) { y0 = null; el.style.transform = ''; return; }
+    dy = Math.max(0, d); if (e.cancelable) e.preventDefault();
+    el.style.transform = `translateY(${dy * .6}px)`;
+    $('#pullHint').classList.toggle('on', dy > 40);
+    $('#pullHint').textContent = dy > 110 ? '⬆️ עזוב כדי לסגור' : '⬇️ המשך למשוך כדי לסגור';
+  }, { passive: false });
+  el.addEventListener('touchend', () => {
+    if (y0 == null) return; y0 = null; $('#pullHint').classList.remove('on');
+    el.style.transition = 'transform .2s'; el.style.transform = '';
+    if (dy > 110) close();
+  });
+}
+document.body.insertAdjacentHTML('beforeend', '<div class="pull-hint" id="pullHint"></div>');
+pullDown($('#sheet'), () => $('#sheet'), () => $('#sheetBg').classList.contains('on'), closeSheet);
+pullDown($('#main'), () => $('#main'), () => !$('#v-chat').classList.contains('on'), () => showView('chat'));
+
+// ➕ הוספה מהירה בלי צ'אט
+function openQuick() {
+  let kind = 'task';
+  sheet(`<h3>➕ הוספה מהירה</h3>
+    <div class="seg" id="qKind">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <label>מה</label><input id="qText" placeholder="למשל: לקנות מתנה לאמא" enterkeyhint="done">
+    <div id="qWhen"><label>מתי</label><div class="chips" id="qDay" style="padding:0;flex-wrap:wrap">${[['0', 'היום'], ['1', 'מחר'], ['x', '📅 תאריך'], ['', 'בלי תאריך']].map(([k, l]) => `<button class="chip ${k === '0' ? 'on' : ''}" data-d="${k}">${l}</button>`).join('')}</div>
+    <input type="date" id="qDate" hidden style="margin-top:8px">
+    <div class="two"><div><label>שעה (לא חובה)</label><input type="time" id="qTime"></div>
+    <div><label>כמה זמן</label><select id="qDur"><option value="">לא ידוע</option><option value="0">רק תזכורת</option>${[15, 30, 45, 60, 90, 120, 180].map(m => `<option value="${m}">${durLbl(m)}</option>`).join('')}</select></div></div></div>
+    <button class="btn pri" id="qSave" style="margin-top:16px">➕ הוסף</button>
+    <button class="btn" id="qCancel">ביטול</button>`);
+  let day = '0';
+  const syncKind = () => { $('#qWhen').style.display = kind === 'thought' ? 'none' : ''; };
+  $('#qKind').onclick = e => { const b = e.target.closest('button'); if (!b) return; kind = b.dataset.k; [...$('#qKind').children].forEach(x => x.classList.toggle('on', x === b)); syncKind(); };
+  $('#qDay').onclick = e => {
+    const b = e.target.closest('[data-d]'); if (!b) return; day = b.dataset.d;
+    [...$('#qDay').children].forEach(x => x.classList.toggle('on', x === b));
+    $('#qDate').hidden = day !== 'x'; if (day === 'x') { $('#qDate').value ||= ymd(addDays(new Date(), 2)); try { $('#qDate').showPicker?.(); } catch { /* */ } }
+  };
+  $('#qCancel').onclick = closeSheet;
+  setTimeout(() => $('#qText')?.focus(), 300);
+  $('#qSave').onclick = async () => {
+    const text = $('#qText').value.trim(); if (!text) return toast('צריך לכתוב מה', true);
+    const ts = $('#qTime').value; let due = null;
+    if (kind !== 'thought' && day !== '') {
+      due = day === 'x' ? new Date(($('#qDate').value || ymd(new Date())) + 'T00:00') : sod(addDays(new Date(), +day));
+      if (ts) { const [h, m] = ts.split(':'); due.setHours(+h, +m); }
+    }
+    const dv = $('#qDur').value;
+    closeSheet(); showView('chat');
+    await createItem({ kind, text, due, hasTime: !!(due && ts), repeat: null, dur: dv === '' ? null : +dv, forP: null, private: false, group: null }, null);
+    toast('✅ נוסף');
+  };
+}
+$('#plusBtn').onclick = () => openQuick();
 
 function openEdit(id, focus, forceKind) {
   const it = item(id); if (!it) return toast('המשימה הזאת כבר לא קיימת', true);
@@ -1297,13 +1372,13 @@ function openPicker(mustSwapFor) {
 
 // ---------- ניווט ותצוגה ----------
 function showView(v) {
-  if (v === 'settings') { renderProfile(); drawPush(); drawLockCard(); }
-  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
+  if (v === 'settings') { renderProfile(); drawPush(); drawLockCard(); drawMonthly(); }
+  document.querySelectorAll('nav button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === v));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
   $('#composer').style.display = v === 'chat' ? 'flex' : 'none';
   if (v === 'chat') { renderChat(); $('#main').scrollTop = $('#main').scrollHeight; } else $('#main').scrollTop = 0;
 }
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => showView(b.dataset.v));
+document.querySelectorAll('nav button[data-v]').forEach(b => b.onclick = () => showView(b.dataset.v));
 $('#todayBtn').onclick = () => { showView('chat'); send('מה יש לי היום?'); };
 $('#t3edit').onclick = () => openPicker();
 
@@ -1340,26 +1415,86 @@ inp.addEventListener('input', updateMic);
 function updateMic() { $('#mic').textContent = inp.value.trim() ? '➤' : '🎤'; }
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+// הקלטה: לחיצה קצרה = מקליט עד ⏹️ · החזקה = מקליט ונשלח כשעוזבים · החזקה וגרירה למעלה = נעילה · גרירה הצידה = ביטול
 let rec = null;
-$('#mic').onclick = () => {
-  if (inp.value.trim()) { const v = inp.value; inp.value = ''; updateMic(); send(v); return; }
-  if (rec) { rec.stop(); return; }
-  if (!SR) { toast('🎤 הדפדפן הזה לא תומך בהקלטה. אפשר ללחוץ על המיקרופון במקלדת של הטלפון'); inp.focus(); return; }
-  rec = new SR(); rec.lang = 'he-IL'; rec.interimResults = true; rec.continuous = false;
-  let finalText = '';
-  $('#mic').classList.add('rec'); inp.placeholder = '🎤 מקשיב… דבר עכשיו';
-  rec.onresult = e => {
-    let txt = ''; for (const r of e.results) txt += r[0].transcript;
-    inp.value = txt; if (e.results[e.results.length - 1].isFinal) finalText = txt;
+const R = { on: false, hold: false, locked: false, cancel: false, stopping: false, skip: false, text: '', cur: '', mid: '', t0: 0, timer: null, sx: 0, sy: 0, down: 0 };
+const mic = $('#mic');
+function recBegin() {
+  if (!SR) { toast('🎤 הדפדפן הזה לא תומך בהקלטה. אפשר ללחוץ על המיקרופון במקלדת של הטלפון'); inp.focus(); return false; }
+  Object.assign(R, { on: true, hold: false, locked: false, cancel: false, stopping: false, text: '', cur: '', mid: '', t0: Date.now() });
+  $('#composer').classList.add('recording'); $('#recBar').hidden = false; mic.classList.add('rec');
+  clearInterval(R.timer); R.timer = setInterval(drawRec, 250); drawRec();
+  recRun(); return true;
+}
+function recRun() {
+  rec = new SR(); rec.lang = 'he-IL'; rec.interimResults = true; rec.continuous = true;
+  rec.onresult = e => { let fin = '', mid = ''; for (const r of e.results) r.isFinal ? fin += r[0].transcript : mid += r[0].transcript; R.cur = fin; R.mid = mid; drawRec(); };
+  rec.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { R.cancel = true; toast('🎤 צריך לאשר גישה למיקרופון', true); }
+    else if (e.error === 'network') { R.stopping = true; toast('🎤 ההקלטה צריכה אינטרנט', true); }
+    else if (!['no-speech', 'aborted'].includes(e.error)) toast('🎤 לא הצלחתי לשמוע, נסה שוב', true);
   };
-  rec.onerror = e => { if (e.error === 'not-allowed') toast('🎤 צריך לאשר גישה למיקרופון', true); else if (e.error !== 'no-speech' && e.error !== 'aborted') toast('🎤 לא הצלחתי לשמוע, נסה שוב', true); };
   rec.onend = () => {
-    $('#mic').classList.remove('rec'); inp.placeholder = 'כתוב או אמור… למשל: תזכיר לי מחר ב-10'; rec = null;
-    const t = (finalText || inp.value).trim(); inp.value = ''; updateMic();
-    if (t) send(t, true);
+    R.text = [R.text, R.cur, R.mid].map(x => x.trim()).filter(Boolean).join(' '); R.cur = R.mid = ''; rec = null;
+    // הדפדפן עוצר לבד אחרי שקט, אז כל עוד ההקלטה פתוחה ממשיכים להקשיב (עד 5 דקות)
+    if (R.on && !R.stopping && !R.cancel && Date.now() - R.t0 < 300e3) { try { return recRun(); } catch { /* */ } }
+    recFinish();
   };
   rec.start();
+}
+function recStop(cancel) {
+  if (!R.on) return;
+  R.cancel = R.cancel || !!cancel; R.stopping = true; R.hold = false; drawRec();
+  if (rec) { try { cancel ? rec.abort() : rec.stop(); } catch { recFinish(); } } else recFinish();
+}
+function recFinish() {
+  if (!R.on) return;
+  R.on = false; clearInterval(R.timer);
+  $('#composer').classList.remove('recording'); $('#recBar').hidden = true; $('#recLock').hidden = true; mic.classList.remove('rec'); updateMic();
+  const t = R.text.trim();
+  if (R.cancel) return;
+  if (t) send(t, true); else toast('🎤 לא שמעתי כלום. נסה שוב, קרוב יותר לטלפון');
+}
+function drawRec() {
+  if (!R.on) return;
+  const sec = Math.floor((Date.now() - R.t0) / 1000);
+  $('#recTime').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  const said = [R.text, R.cur, R.mid].filter(Boolean).join(' ').trim();
+  $('#recTxt').textContent = said || (R.hold ? '⬆️ למעלה לנעילה · ↔️ הצידה לביטול' : 'מקשיב… דבר עכשיו');
+  $('#recLock').hidden = !R.hold;
+  mic.textContent = R.hold ? '🎙️' : '➤';
+}
+mic.addEventListener('contextmenu', e => e.preventDefault());
+mic.addEventListener('pointerdown', e => {
+  if (inp.value.trim() || R.on) return; // שליחת טקסט / עצירה — בלחיצה רגילה
+  e.preventDefault(); R.skip = true;
+  if (!recBegin()) return;
+  Object.assign(R, { hold: true, sx: e.clientX, sy: e.clientY, down: Date.now() });
+  try { mic.setPointerCapture(e.pointerId); } catch { /* */ }
+  drawRec();
+});
+mic.addEventListener('pointermove', e => {
+  if (!R.hold) return;
+  const dx = e.clientX - R.sx, dy = e.clientY - R.sy;
+  $('#recLock').classList.toggle('hot', dy < -30);
+  if (dy < -60) { R.hold = false; R.locked = true; navigator.vibrate?.(25); drawRec(); toast('🔒 ההקלטה נעולה. אפשר לעזוב ולדבר'); }
+  else if (Math.abs(dx) > 90) { recStop(true); toast('🗑️ ההקלטה בוטלה'); }
+});
+const recUp = () => {
+  if (!R.hold) return;
+  R.hold = false;
+  if (Date.now() - R.down < 400) { R.locked = true; drawRec(); return; } // לחיצה קצרה — ממשיכים להקליט עד ⏹️
+  recStop(false);
 };
+mic.addEventListener('pointerup', recUp);
+mic.addEventListener('pointercancel', () => { if (R.hold) { R.hold = false; R.locked = true; drawRec(); } });
+mic.addEventListener('click', () => {
+  if (R.skip) { R.skip = false; return; }
+  if (R.on) return recStop(false);
+  if (inp.value.trim()) { const v = inp.value; inp.value = ''; updateMic(); send(v); }
+});
+$('#recStop').onclick = () => recStop(false);
+$('#recCancel').onclick = () => { recStop(true); toast('🗑️ ההקלטה בוטלה'); };
 
 const CHIPS = ['מה יש לי היום?', 'מה יש מחר?', 'סיכום', 'עזרה'];
 $('#chips').innerHTML = CHIPS.map(c => `<button class="chip">${c}</button>`).join('');
@@ -1432,7 +1567,7 @@ function openInstallSheet() {
   if (installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; drawInstallBanner(); }); return; }
   sheet(`<h3>📲 התקנה על המסך</h3><p class="note" style="margin-bottom:12px">ככה "זמן בכיף" יופיע עם אייקון במסך הבית, כמו וואטסאפ — ייפתח במסך מלא, יעבוד גם בלי אינטרנט, ויוכל לשלוח התראות</p>
     ${isIOS() ? `<div class="card"><p class="note"><b>🍏 באייפון (Safari):</b><br>1. כפתור השיתוף <b>⬆️</b> בתחתית המסך<br>2. <b>"הוסף למסך הבית"</b><br>3. <b>"הוסף"</b> — וזהו!</p></div>`
-      : `<div class="card" style="margin-bottom:10px"><p class="note"><b>🤖 באנדרואיד (Chrome):</b><br>1. <b>⋮</b> (שלוש נקודות) למעלה<br>2. <b>"התקנת אפליקציה"</b> או <b>"הוספה למסך הבית"</b><br>3. מאשרים — וזהו!</p></div>
+      : `<div class="card" style="margin-bottom:10px"><p class="note"><b>🤖 באנדרואיד:</b><br>1. פותחים את הקישור ב-<b>Chrome</b><br>2. <b>⋮</b> (שלוש הנקודות למעלה)<br>3. גוללים למטה ← <b>"התקנת אפליקציה"</b><br>4. מאשרים — וזהו!</p></div>
          <div class="card"><p class="note"><b>💻 במחשב (Chrome / Edge):</b> סמל ההתקנה בשורת הכתובת, או ⋮ ← "התקנה".</p></div>`}`);
 }
 function drawInstallBanner() {

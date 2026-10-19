@@ -226,3 +226,30 @@ input,select,textarea{font-size:16px}
 .code-box .chip{display:inline-block;margin-top:2px}
 a.chip{color:#fff}
 .fb-txt{width:100%;border-radius:16px;border:1px solid var(--line);background:var(--card2);color:#fff;font:inherit;font-size:16px;padding:12px 14px;outline:none;resize:vertical}
+
+/* הקלטה קולית: פס אדום עם שעון, עצירה וביטול, ונעילה בגרירה למעלה */
+html,body{overscroll-behavior:none}
+main{overscroll-behavior:none}
+.mic{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.composer.recording #inp{display:none}
+.rec-bar{flex:1;min-width:0;height:48px;border-radius:24px;background:linear-gradient(135deg,#DC2626,#E11D48);display:flex;align-items:center;gap:8px;padding:0 6px;color:#fff;box-shadow:0 6px 24px rgba(225,29,72,.45);animation:fade .2s}
+.rec-bar[hidden]{display:none!important}
+.rec-bar button{width:36px;height:36px;border-radius:50%;border:none;background:rgba(255,255,255,.18);color:#fff;font-size:16px;display:grid;place-items:center;cursor:pointer;flex:none}
+.rec-dot{width:10px;height:10px;border-radius:50%;background:#fff;flex:none;animation:blink 1s infinite}
+.rec-bar b{font-variant-numeric:tabular-nums;font-size:15px;flex:none}
+#recTxt{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92}
+.rec-lock{position:absolute;bottom:72px;left:12px;width:48px;padding:8px 0;border-radius:24px;background:var(--card2);border:1px solid var(--line);backdrop-filter:blur(14px);display:flex;flex-direction:column;align-items:center;gap:2px;font-size:18px;animation:fade .2s}
+.rec-lock small{font-size:14px;animation:nudge 1s infinite}
+.rec-lock.hot{background:#7C3AED;border-color:#7C3AED}
+@keyframes blink{50%{opacity:.25}}
+@keyframes nudge{50%{transform:translateY(-4px)}}
+
+/* כפתור הוספה גדול באמצע הסרגל */
+nav button.plus{padding:0;margin-top:-22px}
+nav button.plus b{width:56px;height:56px;border-radius:50%;background:var(--g1);display:grid;place-items:center;font-size:24px;box-shadow:0 8px 26px rgba(236,72,153,.55);border:3px solid #0A0A12;transition:transform .15s}
+nav button.plus:active b{transform:scale(.9)}
+
+/* משיכה למטה סוגרת */
+.sheet{touch-action:pan-y}
+.pull-hint{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:30;padding:6px 14px;border-radius:16px;background:var(--card2);border:1px solid var(--line);font-size:13px;pointer-events:none;opacity:0;transition:opacity .15s}
+.pull-hint.on{opacity:1}

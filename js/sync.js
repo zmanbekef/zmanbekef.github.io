@@ -102,10 +102,16 @@ export async function loadProfile() {
   } catch { profile = await db.getKV('profile', null); }
   return profile;
 }
+/** מייל סיכום חודשי (ב-1 לחודש) — דלוק או כבוי */
+export async function setMonthly(on) {
+  const { error } = await (await client()).from('zman_profiles').update({ monthly_email: !!on }).eq('user_id', me.id);
+  if (error) throw new Error(nice(error));
+  profile = { ...(profile || {}), monthly_email: !!on }; await db.setKV('profile', profile);
+}
 export async function saveProfile(full_name, emoji) {
   const { error } = await (await client()).from('zman_profiles').upsert({ user_id: me.id, full_name, emoji, updated_at: new Date().toISOString() });
   if (error) throw new Error(nice(error));
-  profile = { user_id: me.id, full_name, emoji }; await db.setKV('profile', profile);
+  profile = { ...(profile || {}), user_id: me.id, full_name, emoji }; await db.setKV('profile', profile);
   return profile;
 }
 

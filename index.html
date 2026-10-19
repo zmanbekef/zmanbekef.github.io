@@ -78,6 +78,7 @@
           <div class="set-row"><span>☀️ סיכום בוקר, מהשעה</span><input type="time" id="setMorning"></div>
           <div class="set-row"><span>🌙 סיכום ערב, מהשעה</span><input type="time" id="setEvening"></div>
           <p class="note">הסיכום מופיע בשיחה בפעם הראשונה שפותחים את האפליקציה אחרי השעה הזאת.</p>
+          <div id="monthlyRow"></div>
         </div>
         <div class="card">
           <h4>דברים משותפים <small>שרק אחד יכול להשתמש בהם</small></h4>
@@ -106,7 +107,7 @@
         </div>
         <div class="card">
           <h4>התקנה על הטלפון</h4>
-          <p class="note"><b>אנדרואיד (Chrome):</b> תפריט ⋮ ← "הוספה למסך הבית" / "התקנת אפליקציה".<br><b>אייפון (Safari):</b> כפתור השיתוף ⬆️ ← "הוסף למסך הבית".<br><b>מחשב (Chrome):</b> האייקון של ההתקנה בצד שורת הכתובת.</p>
+          <p class="note"><b>אנדרואיד:</b> פותחים את הקישור ב-Chrome ← ⋮ (שלוש הנקודות למעלה) ← גוללים למטה ← "התקנת אפליקציה".<br><b>אייפון (Safari):</b> כפתור השיתוף ⬆️ ← "הוסף למסך הבית".<br><b>מחשב (Chrome):</b> האייקון של ההתקנה בצד שורת הכתובת.</p>
           <button class="btn" id="installBtn" hidden>📲 התקן עכשיו</button>
         </div>
         <div class="card">
@@ -120,12 +121,19 @@
 
   <div class="composer" id="composer">
     <input id="inp" placeholder="כתוב או אמור… למשל: תזכיר לי מחר ב-10" autocomplete="off" enterkeyhint="send">
+    <div class="rec-bar" id="recBar" hidden>
+      <button class="rec-x" id="recCancel" aria-label="ביטול ההקלטה">✖️</button>
+      <i class="rec-dot"></i><b id="recTime">0:00</b><span id="recTxt"></span>
+      <button class="rec-stop" id="recStop" aria-label="עצירה ושליחה">⏹️</button>
+    </div>
+    <div class="rec-lock" id="recLock" hidden>🔒<small>⬆️</small></div>
     <button class="round mic" id="mic" aria-label="הקלטה קולית">🎤</button>
   </div>
 
   <nav>
     <button class="on" data-v="chat"><span>💬</span>שיחה</button>
     <button data-v="tasks"><span>📋</span>משימות<i class="badge" id="lateBadge" hidden></i></button>
+    <button class="plus" id="plusBtn" aria-label="הוספה מהירה"><b>➕</b></button>
     <button data-v="thoughts"><span>💭</span>מחשבות</button>
     <button data-v="settings"><span>⚙️</span>הגדרות</button>
   </nav>
