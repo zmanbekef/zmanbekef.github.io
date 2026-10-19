@@ -187,6 +187,16 @@ export async function saveCategory(row) {
   const rows = (await db.getKV('cats', [])).filter(r => r.id !== row.id); rows.push(row); await db.setKV('cats', rows);
 }
 // יומן: מי בקבוצה רואה את היומן שלי ('all' / 'busy' / 'none'), והיומן של מישהו אחר לפי מה שהוא הרשה
+// 📆 יומן גוגל
+export const GCAL_FN = CONFIG.url + '/functions/v1/zman-gcal';
+export const gcalStatus = async () => (await rpc('zman_gcal_status'))?.[0] || null;
+export const gcalStart = () => rpc('zman_gcal_start');
+export const gcalPrefs = p => rpc('zman_gcal_prefs', { p });
+export const gcalDisconnect = () => rpc('zman_gcal_disconnect');
+export async function gcalSync() {
+  const { data, error } = await (await client()).functions.invoke('zman-gcal', { body: { action: 'sync' } });
+  if (error) throw new Error(nice(error)); return data;
+}
 export const setColor = async (mid, c) => { await rpc('zman_set_color', { mid, c }); await loadGroups(); };
 export const setCalShare = async (g, v) => { await rpc('zman_set_cal_share', { g, v }); await loadGroups(); };
 export async function calendarOf(uid) {

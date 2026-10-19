@@ -1685,6 +1685,53 @@ function deepLinkTask() {
   $('#dlY').onclick = async () => { closeSheet(); showView('chat'); await createItem({ kind: 'task', text, due, hasTime: !!(due && okT), repeat: null, dur: okT ? 0 : null }, null); };
 }
 
+// ---------- 📆 יומן גוגל (סנכרון דו־כיווני דרך הענן) ----------
+async function drawGcal() {
+  const el = $('#gcalCard'); if (!el) return;
+  if (!S.uid) { el.innerHTML = '<h4>📆 יומן גוגל</h4><p class="note">אחרי כניסה אפשר לחבר את יומן גוגל: מה שכאן מופיע שם, ומה ששם מופיע כאן.</p>'; return; }
+  el.innerHTML = '<h4>📆 יומן גוגל</h4><p class="note">בודק…</p>';
+  let st = null; try { st = await sync.gcalStatus(); } catch { el.innerHTML = '<h4>📆 יומן גוגל</h4><p class="note">צריך אינטרנט כדי לראות את מצב החיבור.</p>'; return; }
+  if (!st?.connected) {
+    el.innerHTML = `<h4>📆 יומן גוגל</h4><p class="note">מחברים פעם אחת, ומאז: פגישות ואירועים מכאן מופיעים ביומן גוגל, ומה שמוסיפים ביומן גוגל מופיע כאן — כל 10 דקות, לבד.</p>
+      ${st && !st.connected && st.last_error ? '<p class="note" style="color:#FCA5A5">החיבור הקודם פג. צריך לחבר שוב.</p>' : ''}
+      <button class="btn pri" id="gcOn">🔗 לחבר את יומן גוגל</button>
+      <p class="note" style="margin-top:6px">בחלון של גוגל תופיע אזהרה "Google hasn't verified this app" — זה תקין (אפליקציה פרטית שלנו): לוחצים <b>Advanced</b> ← <b>Go to זמן בכיף</b>.</p>`;
+    $('#gcOn').onclick = async () => { try { const n = await sync.gcalStart(); location.href = `${sync.GCAL_FN}?auth=${n}`; } catch (x) { toast(x.message, true); } };
+    return;
+  }
+  const p = st.prefs || {};
+  el.innerHTML = `<h4>📆 יומן גוגל <small>מחובר ✓</small></h4>
+    <p class="note">${st.email ? `היומן של <b dir="ltr">${esc(st.email)}</b>. ` : ''}${st.last_sync ? `סונכרן ${ago(st.last_sync)}.` : 'הסנכרון הראשון בדרך…'}</p>
+    ${st.last_error ? `<p class="note" style="color:#FCA5A5">⚠️ בעיה בסנכרון האחרון. ננסה שוב לבד.</p>` : ''}
+    <p class="note" style="margin-top:8px">מה לשלוח ליומן גוגל:</p>
+    ${[['events', '👥 פגישות ואירועים (משמרות, חוגים…)', p.events !== false], ['tasks', '⏰ משימות עם שעה', !!p.tasks], ['family', '👨‍👩‍👧 גם מה שבני המשפחה נתנו לי', !!p.family]].map(([k, l, on]) => `<label class="set-row" style="cursor:pointer"><span>${l}</span><input type="checkbox" data-gp="${k}" ${on ? 'checked' : ''}></label>`).join('')}
+    <p class="note">ומה שביומן גוגל (90 יום קדימה) מופיע ביומן כאן עם 📆.</p>
+    <div class="two" style="margin-top:10px"><button class="btn pri" id="gcSync" style="margin:0">🔄 לסנכרן עכשיו</button><button class="btn danger" id="gcOff" style="margin:0">🔌 לנתק</button></div>`;
+  el.querySelectorAll('[data-gp]').forEach(c => c.onchange = async () => {
+    const np = { events: p.events !== false, tasks: !!p.tasks, family: !!p.family, [c.dataset.gp]: c.checked };
+    try { await sync.gcalPrefs(np); toast('נשמר ✓ — יעודכן בסנכרון הבא'); } catch (x) { toast(x.message, true); }
+  });
+  $('#gcSync').onclick = async e => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = '🔄 מסנכרן…';
+    try { const r = await sync.gcalSync(); toast(`📆 סונכרן: ${r?.pushed || 0} נשלחו, ${r?.pulled || 0} הגיעו`); }
+    catch (x) { toast('הסנכרון לא הצליח. ננסה שוב עוד מעט', true); }
+    drawGcal();
+  };
+  $('#gcOff').onclick = async e => {
+    if (!tapAgain(e.currentTarget, '🔌 בטוח? לחץ שוב')) return;
+    try { await sync.gcalDisconnect(); toast('🔌 נותק. מה שכבר ביומן גוגל נשאר'); } catch (x) { toast(x.message, true); }
+    drawGcal();
+  };
+}
+// חזרה מגוגל: ?gcal=ok / cancel / ...
+function gcalReturn() {
+  const r = new URLSearchParams(location.search).get('gcal'); if (!r) return;
+  history.replaceState(null, '', location.pathname);
+  const msg = { ok: ['📆 יומן גוגל חובר! הסנכרון הראשון כבר רץ', false], cancel: ['החיבור בוטל. אפשר לנסות שוב בהגדרות', true], expired: ['עבר יותר מדי זמן. לוחצים שוב "לחבר"', true],
+    norefresh: ['גוגל לא נתן הרשאה מלאה. מנתקים את "זמן בכיף" בחשבון גוגל ומחברים שוב', true], setup: ['החיבור לגוגל עוד לא מוכן. עוד רגע', true] }[r] || ['משהו השתבש בחיבור. נסה שוב', true];
+  setTimeout(() => { showView('settings'); toast(msg[0], msg[1]); if (r === 'ok') confetti(90); $('#gcalCard')?.scrollIntoView({ block: 'center' }); }, 1200);
+}
+
 // ---------- 🧠 צ'אט חכם: משפט אחד → כמה אירועים ביומן ----------
 const SHIFTS_DEF = { morning: ['07:00', '15:00'], evening: ['15:00', '23:00'], night: ['23:00', '07:00'] };
 const shiftHours = () => ({ ...SHIFTS_DEF, ...(S.settings.shifts || {}) });
@@ -2413,7 +2460,7 @@ function openPicker(mustSwapFor) {
 
 // ---------- ניווט ותצוגה ----------
 function showView(v) {
-  if (v === 'settings') { renderProfile(); drawPush(); drawLockCard(); drawMonthly(); drawCalCard(); drawCatCard(); drawViewCard(); }
+  if (v === 'settings') { renderProfile(); drawPush(); drawLockCard(); drawMonthly(); drawCalCard(); drawCatCard(); drawViewCard(); drawGcal(); }
   document.querySelectorAll('nav button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === (['thoughts', 'shop', 'kids'].includes(v) ? 'tasks' : v)));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
   enterAnim($('#v-' + v));
@@ -3208,7 +3255,7 @@ async function boot() {
     sync.whenReady().then(async () => { await migrateToGroups(); buildPeople(); renderAll(); renderFamily(); renderMe(); });
   }
   if (RECOVERY && sync.user()) openNewPassword();
-  else setTimeout(deepLinkTask, 800);
+  else { setTimeout(deepLinkTask, 800); gcalReturn(); }
   try { navigator.storage?.persist?.(); } catch { /* */ } // שהדפדפן לא ימחק את הנתונים כשחסר מקום
 })();
 
