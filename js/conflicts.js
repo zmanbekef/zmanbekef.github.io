@@ -28,7 +28,7 @@ export const startOf = it => it.due ? new Date(it.due).getTime() : null;
 export const endOf = it => startOf(it) + (it.dur || 0) * 60e3;
 const timed = it => it.due && it.hasTime && it.dur > 0;
 const overlap = (a, b) => startOf(a) < endOf(b) && startOf(b) < endOf(a);
-export const span = it => `${hm(new Date(startOf(it)))}–${hm(new Date(endOf(it)))}`;
+export const span = it => `\u2066${hm(new Date(startOf(it)))}–${hm(new Date(endOf(it)))}\u2069`; // תמיד משמאל לימין, גם בתוך עברית
 const travelKey = (a, b) => [a, b].sort().join('|');
 
 /**

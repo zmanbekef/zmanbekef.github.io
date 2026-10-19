@@ -6,6 +6,7 @@ import * as C from './conflicts.js';
 import * as Z from './zmanim.js';
 import * as help from './help.js';
 import * as lock from './lock.js';
+import { smartParse, iconFor } from './smart.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -122,7 +123,7 @@ function think(ms = 450) {
 }
 
 // כפתורים שלא "נועלים" את ההודעה (אפשר ללחוץ עליהם שוב)
-const KEEP = new Set(['assign', 'newGroup', 'shareGroup', 'editMe', 'edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
+const KEEP = new Set(['calDay', 'pickShifts', 'quickFor', 'bump', 'assign', 'newGroup', 'shareGroup', 'editMe', 'edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
 async function onAct(m, i, box) {
   const a = m.acts[i];
   if (!KEEP.has(a.op)) {
@@ -177,6 +178,13 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 const OPS = {
   bump: id => bumpTask(id),
+  calDay(iso) { CAL.day = sod(new Date(iso)); CAL.mode = 'day'; showView('cal'); },
+  async undoMany(...ids) {
+    for (const id of ids) { const it = item(id); if (!it) continue; it.status = 'deleted'; await save(it); }
+    renderAll(); toast(`↩️ בוטל (${ids.length})`);
+  },
+  pickShifts: (whoP, nm) => openShiftPicker(whoP || null, nm),
+  quickFor: (title, whoP) => openQuick({ text: title, kind: 'meeting', forP: whoP || null }),
   async bumpDone(id) { const m = item(id); if (!m) return; if (item(m.bump)?.status === 'open') await markDone(m.bump, true); await addReply(m, { r: 'done' }); toast('✅ נשלח שסיימת'); },
   done: id => markDone(id),
   async undoDone(id) {
@@ -314,6 +322,9 @@ async function send(text, voice) {
   const pi = parse(text).intent;
   if (!['query', 'summary', 'morning', 'yes', 'no', 'done'].includes(pi) && help.isHelpRequest(text)) { $('#inp').blur(); return openHelp(text, help.wantsGuide(text) && !help.answer(text).length); }
   if (/^(?:תקפיץ|תקפיצי|להקפיץ|הקפץ|הקפיצי)\s/.test(text) && await bumpByText(text)) return;
+  // משפט "ליומן" (כמה ימים / משמרות / "תכניס ל...") → אירועים ביומן
+  const sm = smartParse(text, { names: smartNames(), shifts: shiftHours(), now: new Date() });
+  if (sm) { await me(text, voice); await think(); return createEvents(sm); }
   await me(text, voice);
   await think();
   const f = forWhom(text);
@@ -484,6 +495,7 @@ async function followUps() {
   try {
     const now = new Date();
     // פגישה בעוד חצי שעה
+    await closePastEvents();
     for (const it of tasksOpen().filter(x => x.kind === 'meeting' && x.hasTime && x.due)) {
       const d = new Date(it.due), key = 'pre:' + it.due;
       if (d > now && d - now <= 30 * 60e3 && it.askedKey !== key) {
@@ -493,6 +505,7 @@ async function followUps() {
       }
     }
     const due = tasksOpen().filter(x => {
+      if (x.event) return false; // אירוע ביומן — לא שואלים "עשית?"
       const t = x.askAt || (x.hasTime && x.due);
       return t && new Date(t) <= now && x.askedKey !== String(t);
     }).sort((a, b) => new Date(a.askAt || a.due) - new Date(b.askAt || b.due)).slice(0, 3);
@@ -1134,7 +1147,7 @@ function rowHtml(it) {
   const g = groupOf(it.group_id);
   const owner = !S.uid ? '' : it.forP && it.forP !== S.myP ? whoIn(it.forP, it.group_id) : g ? gLabel(g) : (it.by && it.by !== S.uid ? whoIn(personOfUid(it.by)?.id, null) : '');
   const ct = catOf(it);
-  const meta = [ct ? `${ct.icon} ${ct.name}` : '', owner, it.kind === 'meeting' ? '👥 פגישה' : '', whenLabel(it) + (it.hasTime && it.dur ? `–${hm(new Date(C.endOf(it)))}` : ''), it.place ? '📍 ' + it.place : '', ...(it.res || []).map(r => resOf(r)?.e || '')].filter(Boolean).join(' · ');
+  const meta = [ct ? `${ct.icon} ${ct.name}` : '', owner, it.kind === 'meeting' ? '👥 פגישה' : '', (it.hasTime && it.dur ? whenLabel(it).replace(/(\d{1,2}:\d{2})$/, x => `\u2066${x}–${hm(new Date(C.endOf(it)))}\u2069`) : whenLabel(it)), it.place ? '📍 ' + it.place : '', ...(it.res || []).map(r => resOf(r)?.e || '')].filter(Boolean).join(' · ');
   const warn = S.conflictIds?.has(it.id) && it.status === 'open' ? '<button class="warn" data-op="conf" aria-label="התנגשות">⚠️</button>' : '';
   return `<div class="row${d}" data-id="${it.id}"><button class="cb" data-op="check">${d ? '✓' : ''}</button>${warn}
     <div class="nm" data-op="edit">${esc(it.text)}${meta ? `<small class="${late ? 'late' : ''}">${esc(meta)}</small>` : ''}</div>
@@ -1181,6 +1194,82 @@ $('#taskList').addEventListener('click', e => {
   if (op === 'assign') return openAssign(id);
   if (op === 'bump') return bumpTask(id);
 });
+
+// ---------- 🧠 צ'אט חכם: משפט אחד → כמה אירועים ביומן ----------
+const SHIFTS_DEF = { morning: ['07:00', '15:00'], evening: ['15:00', '23:00'], night: ['23:00', '07:00'] };
+const shiftHours = () => ({ ...SHIFTS_DEF, ...(S.settings.shifts || {}) });
+const smartNames = () => S.people.filter(p => p.id !== S.myP).flatMap(p => [{ id: p.id, name: p.name }, ...p.nicks.map(n => ({ id: p.id, name: n.nick }))]);
+const dmy = d => `${d.getDate()}.${d.getMonth() + 1}`;
+// מי בתוך "לנו": אני + המבוגרים האחרים בקבוצה הראשית (או בקשר הישיר)
+function usTargets() {
+  const g = defGroup() || sync.myGroups().find(x => x.kind === 'pair');
+  const adults = (g?.members || []).filter(m => m.user_id && m.user_id !== S.uid && m.role !== 'child').map(m => 'u:' + m.user_id);
+  return { list: [S.myP || null, ...adults], gid: g?.id || null };
+}
+async function createEvents(sm) {
+  const whoP = sm.who === 'me' || !sm.who ? S.myP : sm.who;
+  if (sm.missing === 'when') {
+    const nm = whoP && whoP !== S.myP ? sm.whoName || pName(whoP) : '';
+    if (sm.isShift) return bot('🏥', 'var(--g2)', `באילו ימים ואיזו משמרת${nm ? ' ל' + nm : ''}?`, 'בוחרים ימים ומשמרות, או כותבים למשל: "ראשון ערב, שני לילה"', [{ l: '📅 לבחור משמרות', op: 'pickShifts', a: [whoP || '', nm], pri: true }]);
+    return bot(iconFor(sm.title), 'var(--g2)', `מתי ${sm.title}?`, nm ? `ייכנס ליומן של ${nm}` : 'ייכנס ליומן',
+      [{ l: '📅 לבחור מתי', op: 'quickFor', a: [sm.title, whoP || ''], pri: true }]);
+  }
+  const us = sm.who === 'us' ? usTargets() : null;
+  const targets = us ? us.list : [whoP];
+  const ids = [];
+  for (const tp of targets) for (const e of sm.events) {
+    const other = tp && tp !== S.myP ? person(tp) : null;
+    const it = { id: db.newId(), kind: 'meeting', event: true, icon: iconFor(e.title), text: e.title, due: e.due.toISOString(), hasTime: e.hasTime, dur: e.dur, repeat: e.repeat,
+      status: 'open', created: new Date().toISOString(), askAt: null, askedKey: null, raw: null, forP: other?.id || null, forU: other?.uid || null, private: false,
+      group_id: us ? us.gid : other ? (sharedGroup(other.id)?.id || null) : null, place: null, res: null, cat: null };
+    S.items.push(it); await save(it); await addLog(it, 'created'); ids.push(it.id);
+  }
+  renderAll();
+  const n = sm.events.length, noun = sm.isShift ? (n === 1 ? 'משמרת' : 'משמרות') : (n === 1 ? 'אירוע' : 'אירועים');
+  const whose = us && targets.length > 1 ? (targets.length === 2 ? 'של שניכם' : 'של כולכם') : whoP && whoP !== S.myP ? `של ${sm.whoName || pName(whoP)}` : 'שלך';
+  // הודעה אחת לטלפון של מי שזה בשבילו (לא שלוש)
+  for (const tp of targets) { const p = tp && tp !== S.myP ? person(tp) : null; if (p?.uid) await queueNotify(p.uid, 'share', `📥 ${nameIn(S.myP, sharedGroup(p.id)?.id)} הכניס/ה ליומן שלך ${n === 1 ? noun : n + ' ' + noun}`, sm.events.map(e => `${e.title} · ${DAYS[e.due.getDay()]} ${dmy(e.due)}`).join(', '), ids[0]); }
+  const lines = sm.events.map(e => `${iconFor(e.title)} ${e.title} · ${e.repeat ? 'כל ' + e.repeat.dows.map(d => DAYS[d]).join(' ו') : `${DAYS[e.due.getDay()]} ${dmy(e.due)}`}${e.hasTime ? ` · \u2066${hm(e.due)}${e.dur ? '–' + hm(new Date(+e.due + e.dur * 60e3)) : ''}\u2069` : ''}`).join('\n');
+  await bot('📅', 'var(--g3)', `נכנס${n === 1 ? '' : 'ו'} ${n === 1 ? noun : n + ' ' + noun} ליומן ${whose}`, lines, [
+    { l: '📅 לראות ביומן', op: 'calDay', a: [sm.events[0].due.toISOString()], pri: true },
+    n === 1 && ids.length === 1 ? { l: '✏️ לתקן', op: 'edit', a: [ids[0]] } : { l: '✏️ לתקן ביומן', op: 'calDay', a: [sm.events[0].due.toISOString()] },
+    { l: '↩️ לבטל הכל', op: 'undoMany', a: ids }]);
+  scanConflicts();
+}
+// בחירת משמרות בלחיצות: שבועיים קדימה, לכל יום בוקר / ערב / לילה
+function openShiftPicker(whoP, name) {
+  const days = Array.from({ length: 14 }, (_, i) => addDays(sod(new Date()), i + 1)), pick = {};
+  const nm = whoP && whoP !== S.myP ? name || pName(whoP) : '';
+  sheet(`<h3>🏥 משמרות${nm ? ' ל' + esc(nm) : ''}</h3><p class="note">לכל יום בוחרים משמרת (לחיצה נוספת מבטלת).</p>
+    <div class="shift-pick">${days.map((d, i) => `<div class="set-row"><span>${DAYS[d.getDay()]} ${dmy(d)}</span><span class="chips" style="padding:0;gap:4px">${[['morning', 'בוקר'], ['evening', 'ערב'], ['night', 'לילה']].map(([k, l]) => `<button class="chip" data-d="${i}" data-s="${k}">${l}</button>`).join('')}</span></div>`).join('')}</div>
+    <button class="btn pri" id="spSave" style="margin-top:12px">📅 להכניס ליומן</button>`);
+  $('#sheet').querySelector('.shift-pick').onclick = e => {
+    const b = e.target.closest('[data-s]'); if (!b) return;
+    const i = b.dataset.d, on = pick[i] !== b.dataset.s;
+    $('#sheet').querySelectorAll(`[data-d="${i}"]`).forEach(x => x.classList.remove('on'));
+    if (on) { pick[i] = b.dataset.s; b.classList.add('on'); } else delete pick[i];
+  };
+  $('#spSave').onclick = async () => {
+    const sh = shiftHours(), keys = Object.keys(pick).sort((a, b) => a - b);
+    if (!keys.length) return toast('צריך לבחור לפחות משמרת אחת', true);
+    const lbl = { morning: 'בוקר', evening: 'ערב', night: 'לילה' };
+    const events = keys.map(i => { const d = new Date(days[i]), [s, e] = sh[pick[i]], [h, m] = s.split(':').map(Number); d.setHours(h, m, 0, 0);
+      const toM = x => +x.split(':')[0] * 60 + +x.split(':')[1]; return { title: `משמרת ${lbl[pick[i]]}`, due: d, hasTime: true, dur: ((toM(e) - toM(s)) + 1440) % 1440 || 480, repeat: null }; });
+    closeSheet(); showView('chat');
+    await createEvents({ who: whoP || 'me', whoName: name || null, title: 'משמרת', isShift: true, events });
+  };
+}
+// אירוע שהזמן שלו עבר — נסגר לבד (בלי "התקיים?"), ואירוע קבוע עובר לפעם הבאה
+async function closePastEvents() {
+  const now = Date.now();
+  for (const it of S.items.filter(x => x.event && x.status === 'open' && x.due)) {
+    const end = +new Date(it.due) + (it.dur || 60) * 60e3;
+    if (end > now) continue;
+    if (it.repeat) { const d = new Date(it.due); it.due = nextOccurrence(it.repeat, d.getHours(), d.getMinutes(), new Date(now))?.toISOString() || null; it.lastDone = new Date(end).toISOString(); }
+    else { it.status = 'done'; it.doneAt = new Date(end).toISOString(); }
+    await save(it);
+  }
+}
 
 // ---------- 🏷️ קטגוריות (זהה לכסף בכיף: 24 אייקונים, 10 צבעים) ----------
 const CAT_ICONS = ['🏠', '💼', '🧒', '🛒', '❤️', '📦', '🎓', '🚗', '💰', '🍽️', '🏋️', '📚', '🕍', '🎉', '✈️', '🧹', '🩺', '🐶', '🌱', '🎨', '💻', '📞', '🎁', '⭐'];
@@ -1394,7 +1483,7 @@ const holOf = d => CAL.hol[`${d.getFullYear()}-${d.getMonth()}`]?.[ymd(d)] || nu
 const hebDay = d => { try { const n = +new Intl.DateTimeFormat('he-u-ca-hebrew', { day: 'numeric' }).format(d); return gematria(n); } catch { return ''; } };
 const hebMonth = d => { try { return new Intl.DateTimeFormat('he-u-ca-hebrew', { month: 'long' }).format(d).replace('חשון', 'חשוון'); } catch { return ''; } };
 const evLabel = e => `${e.kind === 'meeting' ? 'פגישה' : e.kind === 'thought' ? 'מחשבה' : 'משימה'}: ${e.busy ? 'תפוס' : e.text}${e.hasTime ? `, ${hm(e.start)}${e.dur ? ' עד ' + hm(e.end) : ''}` : ''}${e.owner !== S.myP ? ', של ' + pName(e.owner) : ''}${e.done ? ', בוצע' : ''}`;
-const evIcon = e => e.busy ? '⛔' : e.done ? '✅' : e.kind === 'meeting' ? '👥' : e.kind === 'thought' ? '💭' : e.it?.repeat ? '🔁' : '📌';
+const evIcon = e => e.busy ? '⛔' : e.done ? '✅' : e.it?.icon ? e.it.icon : e.kind === 'meeting' ? '👥' : e.kind === 'thought' ? '💭' : e.it?.repeat ? '🔁' : '📌';
 
 async function renderCal(force) {
   if (!$('#v-cal').classList.contains('on')) return;
@@ -1441,7 +1530,7 @@ function drawDay(d, ev, jump) {
       ${timed.map(e => { const top = y(+e.start), ht = Math.max(e.dur ? y(+e.end) - top : 0, 26);
         return `<button class="cal-ev${e.done ? ' done' : ''}${e.busy ? ' busy' : ''}" data-ev="${e.id}" data-t="${+e.start}" aria-label="${esc(evLabel(e))}"
           style="--c:${e.color};${e.cat ? `box-shadow:inset -5px 0 0 ${e.cat.color};` : ''}top:${top}px;height:${ht - 2}px;right:calc(52px + (100% - 56px) * ${e.col / e.n});width:calc((100% - 56px) / ${e.n} - 3px)">
-          <b>${hm(e.start)}${e.dur && e.n === 1 ? '–' + hm(e.end) : ''}</b> ${e.cat ? esc(e.cat.icon) : evIcon(e)} ${esc(e.busy ? 'תפוס/ה' : e.text)}${e.owner !== S.myP ? ` <small>· ${esc(pName(e.owner))}</small>` : ''}</button>`; }).join('')}
+          <b dir="ltr">${hm(e.start)}${e.dur && e.n === 1 ? '–' + hm(e.end) : ''}</b> ${e.cat ? esc(e.cat.icon) : evIcon(e)} ${esc(e.busy ? 'תפוס/ה' : e.text)}${e.owner !== S.myP ? ` <small>· ${esc(pName(e.owner))}</small>` : ''}</button>`; }).join('')}
       ${isT ? `<div class="cal-now" style="top:${y(Date.now())}px"><i></i></div>` : ''}
     </div>`;
   // נפתח על השעה של עכשיו (או 7:00 ביום אחר / על הדבר הראשון)
@@ -1544,8 +1633,14 @@ function drawCalCard() {
       .map(([k, l]) => `<label class="set-row" style="cursor:pointer"><span>${l}</span><input type="checkbox" data-show="${k}" ${sh[k] ? 'checked' : ''}></label>`).join('')}
     <p class="note" style="margin-top:10px">צבע לכל אחד:</p>
     ${[S.people.find(p => p.id === S.myP) || { id: null, e: '🙋', name: 'אני' }, ...others().filter(p => p.uid)].map(p => `<label class="set-row"><span>${esc(p.e)} ${esc(p.id === S.myP || !p.id ? 'אני' : nameIn(p.id, p.nicks?.[0]?.g))}</span><input type="color" data-col="${p.id || ''}" value="${colorOf(p.id)}" class="cal-color" aria-label="הצבע של ${esc(p.name)}"></label>`).join('')}
+    <p class="note" style="margin-top:10px">🏥 שעות משמרות (בשביל "תכניס לפסי משמרות בראשון ערב…"):</p>
+    ${[['morning', 'בוקר'], ['evening', 'ערב'], ['night', 'לילה']].map(([k, l]) => `<div class="set-row"><span>${l}</span><span style="display:flex;gap:6px;align-items:center"><input type="time" data-sh="${k}" data-i="0" value="${shiftHours()[k][0]}">–<input type="time" data-sh="${k}" data-i="1" value="${shiftHours()[k][1]}"></span></div>`).join('')}
     <p class="note">את מי עוד רואים ביומן בוחרים בראש מסך היומן. מי רואה את היומן <b>שלך</b> נקבע בכל קבוצה, ב"👥 הקבוצות שלי".</p>`;
   el.querySelectorAll('[data-show]').forEach(c => c.onchange = async () => { S.settings.calShow = { ...calShow(), [c.dataset.show]: c.checked }; await db.setKV('settings', S.settings); toast('נשמר ✓'); });
+  el.querySelectorAll('[data-sh]').forEach(c => c.onchange = async () => {
+    const sh = shiftHours(); sh[c.dataset.sh] = [...sh[c.dataset.sh]]; sh[c.dataset.sh][+c.dataset.i] = c.value || sh[c.dataset.sh][+c.dataset.i];
+    S.settings.shifts = sh; await db.setKV('settings', S.settings); toast('🏥 נשמר');
+  });
   el.querySelectorAll('[data-col]').forEach(c => c.onchange = async () => { S.settings.calColors = { ...(S.settings.calColors || {}), [c.dataset.col || S.myP]: c.value }; await db.setKV('settings', S.settings); toast('🎨 נשמר'); });
 }
 
@@ -1600,10 +1695,10 @@ pullDown($('#main'), () => $('#main'), () => !$('#v-chat').classList.contains('o
 
 // ➕ הוספה מהירה בלי צ'אט
 function openQuick(pre = {}) {
-  let kind = 'task';
+  let kind = pre.kind || 'task';
   sheet(`<h3>➕ הוספה מהירה</h3>
     <div class="seg" id="qKind">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
-    <label>מה</label><input id="qText" placeholder="למשל: לקנות מתנה לאמא" enterkeyhint="done">
+    <label>מה</label><input id="qText" placeholder="למשל: לקנות מתנה לאמא" enterkeyhint="done" value="${esc(pre.text || '')}">
     <div id="qWhen"><label>מתי</label><div class="chips" id="qDay" style="padding:0;flex-wrap:wrap">${[['0', 'היום'], ['1', 'מחר'], ['x', '📅 תאריך'], ['', 'בלי תאריך']].map(([k, l]) => `<button class="chip ${k === '0' ? 'on' : ''}" data-d="${k}">${l}</button>`).join('')}</div>
     <input type="date" id="qDate" hidden style="margin-top:8px">
     <div class="two"><div><label>שעה (לא חובה)</label><input type="time" id="qTime" value="${pre.time || ''}"></div>
@@ -1640,7 +1735,7 @@ function openQuick(pre = {}) {
     const dv = $('#qDur').value;
     const back = pre.day ? 'cal' : 'chat';
     closeSheet(); if (back === 'chat') showView('chat');
-    await createItem({ kind, text, due, hasTime: !!(due && ts), repeat: null, dur: dv === '' ? null : +dv, forP: null, private: false, group: null, cat: qcat || null }, null);
+    await createItem({ kind, text, due, hasTime: !!(due && ts), repeat: null, dur: dv === '' ? null : +dv, forP: pre.forP && pre.forP !== S.myP ? pre.forP : null, private: false, group: pre.forP && pre.forP !== S.myP ? sharedGroup(pre.forP)?.id || null : null, cat: qcat || null }, null);
     toast('✅ נוסף');
   };
 }

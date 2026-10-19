@@ -280,7 +280,7 @@ nav button.plus:active b{transform:scale(.9)}
 .cal-hr:first-child span{top:2px}
 .cal-shade{position:absolute;left:0;right:52px;background:rgba(250,204,21,.08);border-inline-start:3px solid rgba(250,204,21,.5);pointer-events:none}
 .cal-shade span{position:absolute;bottom:4px;left:8px;font-size:12px;color:#FDE68A}
-.cal-ev{position:absolute;min-height:24px;overflow:hidden;text-align:start;border:none;border-inline-start:4px solid var(--c);border-radius:10px;background:color-mix(in srgb,var(--c) 30%,#14141F);color:#fff;font:inherit;font-size:13px;line-height:1.25;padding:3px 7px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.cal-ev{position:absolute;min-height:24px;overflow:hidden;text-align:start;display:flex;flex-wrap:wrap;align-content:flex-start;align-items:baseline;gap:0 4px;border:none;border-inline-start:4px solid var(--c);border-radius:10px;background:color-mix(in srgb,var(--c) 30%,#14141F);color:#fff;font:inherit;font-size:13px;line-height:1.25;padding:3px 7px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 .cal-ev b{font-variant-numeric:tabular-nums;font-size:12px}
 .cal-ev small{opacity:.8}
 .cal-ev.done,.cal-pill.done,.cal-wi.done{opacity:.55;text-decoration:line-through}
