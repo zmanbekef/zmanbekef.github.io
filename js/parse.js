@@ -23,7 +23,7 @@ export const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.get
 export const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
 function normalize(t) {
-  return t.replace(/[״"“”]/g, '"').replace(/[׳'`]/g, "'")
+  return t.replace(/[\u05BE–—]/g, '-').replace(/[״"“”]/g, '"').replace(/[׳'`]/g, "'")
     .replace(/[!?,;]+/g, ' ')
     .replace(/(^|\s)ב-\s*/g, '$1ב').replace(/(^|\s)ל-\s*/g, '$1ל').replace(/(^|\s)מ-\s*/g, '$1מ').replace(/(^|\s)עד-\s*/g, '$1עד ')
     .replace(/בשעה\s+/g, 'ב').replace(/\s+/g, ' ').trim();
@@ -96,6 +96,10 @@ function extractWhen(s, now) {
   if (!date && (m = cut(new RegExp(`${S}(היום|הערב|הלילה|הבוקר|בצהריים היום)${E}`)))) {
     date = sod(now);
     if (m[1] === 'הערב') part = part || 'evening'; else if (m[1] === 'הלילה') part = part || 'night'; else if (m[1] === 'הבוקר') part = part || 'morning';
+  }
+  // "בשבוע הבא ביום שני" / "ביום שני בשבוע הבא" → יום שני של השבוע הבא
+  if (!date && !repeat && ((m = cut(new RegExp(`${S}(?:ב)?שבוע\\s+הבא\\s+(?:ב?יום\\s+|ב)(${DAY_RE})${E}`))) || (m = cut(new RegExp(`${S}(?:ב?יום\\s+|ב)(${DAY_RE})\\s+(?:ב|של\\s+)?(?:ה)?שבוע\\s+הבא${E}`))))) {
+    date = addDays(addDays(sod(now), 7 - now.getDay()), DAYS.indexOf(m[1])); dow = true;
   }
   if (!date && !repeat && (m = cut(new RegExp(`${S}(?:ב?יום\\s+(${DAY_RE})(?:\\s+הבא)?|ב(${DAY_RE})(?:\\s+הבא)?)${E}`)))) {
     date = nextDow(now, DAYS.indexOf(m[1] || m[2]), !/הבא/.test(m[0]));
@@ -207,7 +211,8 @@ export function parse(raw, now = new Date()) {
   s = s.replace(/^לי\s+/, '');
 
   const w = extractWhen(s, now);
-  const meeting = MEETING_RE.test(w.rest);
+  // "לקבוע תור" / "לבטל פגישה" — זו משימה, לא הפגישה עצמה
+  const meeting = MEETING_RE.test(w.rest) && !/(^|\s)(?:לקבוע|לבטל|להזיז|לתאם|להזמין|לאשר)\s+(?:את\s+ה?)?(?:תור|פגישה|ישיבה)/.test(w.rest);
   let text = tidy(w.rest);
   const bare = !text; // נשאר רק זמן, בלי תוכן ("תזכיר אחרי הצהריים")
 

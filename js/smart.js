@@ -47,7 +47,7 @@ export function smartParse(text, ctx) {
   // מילים
   const toks = t.replace(/[,;]/g, ' , ').replace(/:(?!\d)/g, ' , ').replace(/\s+-\s+/g, ' ').split(/\s+/).filter(Boolean);
   const slots = [], title = [];
-  let pendingPart = null, pendingTime = null, range = null;
+  let pendingPart = null, pendingTime = null, range = null, lastTimed = [];
   const timeTok = (w, next) => {
     // ב-5 / ב5 / בשעה 17:30 / 17:30 / ב-10:15
     const m = w.match(/^(?:ו?ב-?|ו?בשעה|ו?ב־)?(\d{1,2})(?::(\d{2}))?$/);
@@ -62,13 +62,16 @@ export function smartParse(text, ctx) {
     if (w === 'בשעה' && toks[i + 1]) { w = 'ב' + toks[++i]; }
     if (w === 'ביום' && toks[i + 1] && DAY_NAMES.includes(toks[i + 1].replace(/^ו?ב?/, ''))) { w = 'ב' + toks[++i]; }
     const dm = w.match(DAY_RE);
-    if (dm) { slots.push({ dow: DAY_NAMES.indexOf(dm[1]), part: pendingPart, time: pendingTime }); pendingPart = null; pendingTime = null; continue; }
+    if (dm) { lastTimed = []; slots.push({ dow: DAY_NAMES.indexOf(dm[1]), part: pendingPart, time: pendingTime }); pendingPart = null; pendingTime = null; continue; }
     const dateM = w.match(/^(?:ו?ב-?)?(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?$/);
     if (dateM) { slots.push({ date: { d: +dateM[1], m: +dateM[2] - 1, y: dateM[3] ? +(dateM[3].length === 2 ? '20' + dateM[3] : dateM[3]) : null }, part: pendingPart, time: pendingTime }); pendingPart = null; pendingTime = null; continue; }
     const rel = { 'היום': 0, 'מחר': 1, 'מחרתיים': 2, 'ומחר': 1, 'והיום': 0 }[w];
     if (rel != null) { slots.push({ rel, part: pendingPart, time: pendingTime }); pendingPart = null; pendingTime = null; continue; }
     const pw = PARTS[w.replace(/^ו/, '')];
-    if (pw) { const last = slots[slots.length - 1]; if (last && !last.part && !last.time) last.part = pw; else pendingPart = pw; continue; }
+    if (pw) {
+      if (lastTimed.length) { lastTimed.forEach(x => { if (!x.part) x.part = pw; }); lastTimed = []; continue; } // "בשמונה בערב" — לכל הימים של השעה הזאת
+      const last = slots[slots.length - 1]; if (last && !last.part && !last.time) last.part = pw; else pendingPart = pw; continue;
+    }
     if (/^(?:אחר|ואחר)$/.test(w) && /^הצהריים|^הצהרים/.test(toks[i + 1] || '')) { i++; const last = slots[slots.length - 1]; if (last && !last.part && !last.time) last.part = 'after'; else pendingPart = 'after'; continue; }
     // טווח: מ-9 עד 13
     const fr = w.match(/^(?:ו?מ-?|ו?משעה)(\d{1,2})(?::(\d{2}))?$/);
@@ -80,15 +83,22 @@ export function smartParse(text, ctx) {
       open.forEach(x => { x.range = range; });
       continue;
     }
+    // שעה במילים: "בשמונה", "בשבע וחצי"
+    const nw = w.match(/^(?:ו?ב)(אחת|שתיים|שתים|שלוש|ארבע|חמש|שש|שבע|שמונה|תשע|עשר|אחת-עשרה|שתים-עשרה)$/);
+    if (nw) {
+      const NW = { 'אחת': 1, 'שתיים': 2, 'שתים': 2, 'שלוש': 3, 'ארבע': 4, 'חמש': 5, 'שש': 6, 'שבע': 7, 'שמונה': 8, 'תשע': 9, 'עשר': 10, 'אחת-עשרה': 11, 'שתים-עשרה': 12 };
+      let mi = 0; if (/^וחצי$/.test(toks[i + 1] || '')) { mi = 30; i++; } else if (/^ורבע$/.test(toks[i + 1] || '')) { mi = 15; i++; }
+      w = 'ב' + NW[nw[1]] + (mi ? ':' + mi : '');
+    }
     const tm = /^(?:ו?ב-?|ו?ב־)\d|^\d{1,2}:\d{2}$/.test(w) ? timeTok(w) : null;
     if (tm) {
       // שעה אחרי רשימת ימים בלי שעה — לכולם ("בשלישי וחמישי ב-5")
       const open = [];
       for (let k = slots.length - 1; k >= 0 && !slots[k].time && !slots[k].part && !slots[k].range; k--) open.push(slots[k]);
-      if (open.length) open.forEach(s => { s.time = tm; }); else pendingTime = tm;
+      if (open.length) { open.forEach(s => { s.time = tm; }); lastTimed = open; } else pendingTime = tm;
       continue;
     }
-    title.push(w);
+    title.push(w); lastTimed = [];
   }
   if (pendingPart && slots.length) slots.filter(s => !s.part && !s.time).forEach(s => { s.part = pendingPart; });
   if (pendingTime && slots.length) slots.filter(s => !s.part && !s.time).forEach(s => { s.time = pendingTime; });
@@ -99,7 +109,7 @@ export function smartParse(text, ctx) {
   const isEvent = verb || isShift || slots.length >= 2;
   if (!isEvent) return null;
   if (!name) name = isShift ? 'משמרת' : 'אירוע';
-  if (!slots.length) return { who, whoName, title: name, isShift, events: [], missing: 'when' };
+  if (!slots.length) return isShift ? { who, whoName, title: name, isShift, events: [], missing: 'when' } : null; // בלי מתי — משימה רגילה ("תכניס לנתנאל לסדר את החדר")
 
   // תאריכים: ימים לפי הסדר, כל אחד אחרי הקודם
   const start = weekOffset ? addDays(sod(now), 7 - sod(now).getDay()) : sod(now);
@@ -129,7 +139,7 @@ export function smartParse(text, ctx) {
   }
   // "כל ראשון וחמישי ב-5" עם אותה שעה → אירוע קבוע אחד
   if (every && events.length > 1 && events.every(e => e.repeat && e.title === events[0].title && e.due.getHours() === events[0].due.getHours() && e.due.getMinutes() === events[0].due.getMinutes())) {
-    events[0].repeat = { type: 'weekly', dows: events.map(e => e.repeat.dows[0]) }; events.length = 1;
+    events[0].repeat = { type: 'weekly', dows: events.map(e => e.repeat.dows[0]).sort() }; events[0].due = new Date(Math.min(...events.map(e => +e.due))); events.length = 1;
   }
   return { who, whoName, title: name, isShift, events, missing: null };
 }

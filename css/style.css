@@ -383,3 +383,36 @@ html.no-anim *,html.no-anim *::before,html.no-anim *::after{animation:none!impor
 .sh-by{width:10px;height:10px;border-radius:50%;flex:none}
 .set-row{flex-wrap:wrap;gap:6px 10px}.set-row input[type=time]{min-width:0;max-width:110px}
 .res-row input{min-width:0}
+/* ⭐ ילדים */
+.kid{border-inline-start:5px solid var(--c)}
+.kid-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.kid-face{font-size:30px}
+.kid-h>b{flex:1;font-size:18px}
+.kid-stars{font-size:22px;font-weight:800;color:#FACC15}
+.kid .h{font-size:12px;color:var(--muted);margin:10px 0 2px}
+.st-n{color:#FACC15;font-size:13px}
+.kid-hist{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:var(--muted)}
+.kid-hist b{color:#86EFAC}.kid-hist b.neg{color:#FCA5A5}
+.tabs2 button{padding:9px 4px;font-size:13px}
+/* 🔥 הרגלים */
+.habits h4{display:flex;align-items:center;gap:8px}
+.hb-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.hb-row:last-child{border-bottom:none}
+.hb-row .cb{width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.45);background:none;display:grid;place-items:center;font-size:14px;cursor:pointer;flex:none;color:#fff}
+.hb-row.done .cb{background:linear-gradient(135deg,#F97316,#FACC15);border-color:transparent}
+.hb-row.off{opacity:.55}
+.hb-row small{color:var(--muted);font-size:12px}
+.hb-st{font-size:15px;color:#FDBA74;flex:none}
+/* ⏱️ פוקוס */
+.focus{position:absolute;inset:0;z-index:38;background:radial-gradient(circle at 50% 30%,#2E1065,#05050A 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;animation:fade .3s}
+.focus.brk{background:radial-gradient(circle at 50% 30%,#064E3B,#05050A 70%)}
+.fc-phase{font-size:15px;color:#C4B5FD}.focus.brk .fc-phase{color:#6EE7B7}
+.fc-title{font-size:22px;font-weight:800;max-width:90%;overflow-wrap:anywhere}
+.fc-ring{position:relative;width:min(240px,64vw);aspect-ratio:1}
+.fc-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.fc-ring circle{fill:none;stroke-width:12}
+.fc-ring .bg{stroke:rgba(255,255,255,.1)}
+.fc-ring .fg{stroke:#A78BFA;stroke-linecap:round;stroke-dasharray:565.5;transition:stroke-dashoffset 1s linear}
+.focus.brk .fc-ring .fg{stroke:#34D399}
+.fc-ring b{position:absolute;inset:0;display:grid;place-items:center;font-size:48px;font-weight:800;font-variant-numeric:tabular-nums;direction:ltr}
+.focus-pill{position:absolute;top:calc(70px + env(safe-area-inset-top,0px));left:12px;z-index:30;border:none;border-radius:20px;padding:8px 14px;background:linear-gradient(135deg,#7C3AED,#EC4899);color:#fff;font:inherit;font-weight:700;font-variant-numeric:tabular-nums;box-shadow:0 6px 20px rgba(124,58,237,.5);cursor:pointer;animation:popin .3s both}

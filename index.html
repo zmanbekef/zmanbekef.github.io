@@ -64,7 +64,7 @@
 
     <!-- משימות -->
     <section class="view" id="v-tasks">
-      <div class="seg tabs2"><button class="on" data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button><button data-v="shop">🛒 קניות</button></div>
+      <div class="seg tabs2"><button class="on" data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button><button data-v="shop">🛒 קניות</button><button data-v="kids" hidden>⭐ ילדים</button></div>
       <div class="h2">המשימות 📋</div>
       <div class="chips" id="whoFilter" style="padding:0 16px 12px" hidden></div>
       <div class="chips" id="catFilter" style="padding:0 16px 12px" hidden></div>
@@ -73,16 +73,23 @@
 
     <!-- קניות -->
     <section class="view" id="v-shop">
-      <div class="seg tabs2"><button data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button><button class="on" data-v="shop">🛒 קניות</button></div>
+      <div class="seg tabs2"><button data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button><button class="on" data-v="shop">🛒 קניות</button><button data-v="kids" hidden>⭐ ילדים</button></div>
       <div class="h2">רשימת קניות 🛒</div>
       <div class="chips" id="shopWho" style="padding:0 16px 10px" hidden></div>
       <div class="shop-add"><input id="shopIn" placeholder="למשל: חלב, ביצים, עגבניות" enterkeyhint="done" autocomplete="off"><button class="round mic" id="shopAdd" aria-label="הוספה" style="width:46px;height:46px;font-size:20px">＋</button></div>
       <div class="cards" id="shopList"></div>
     </section>
 
+    <!-- ילדים -->
+    <section class="view" id="v-kids">
+      <div class="seg tabs2"><button data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button><button data-v="shop">🛒 קניות</button><button class="on" data-v="kids">⭐ ילדים</button></div>
+      <div class="h2">כוכבים ופרסים ⭐</div>
+      <div class="cards" id="kidList"></div>
+    </section>
+
     <!-- מחשבות -->
     <section class="view" id="v-thoughts">
-      <div class="seg tabs2"><button data-v="tasks">📋 משימות</button><button class="on" data-v="thoughts">💭 מחשבות</button><button data-v="shop">🛒 קניות</button></div>
+      <div class="seg tabs2"><button data-v="tasks">📋 משימות</button><button class="on" data-v="thoughts">💭 מחשבות</button><button data-v="shop">🛒 קניות</button><button data-v="kids" hidden>⭐ ילדים</button></div>
       <div class="h2">תיבת מחשבות 💭</div>
       <div class="cards" id="thoughtList"></div>
     </section>
@@ -186,6 +193,15 @@
       <button class="btn pri" id="lockRecGo" style="margin:0">🔓 לפתוח עם הסיסמה</button>
     </div>
   </div>
+  <!-- ⏱️ טיימר פוקוס -->
+  <div class="focus" id="focus" hidden>
+    <div class="fc-phase" id="fcPhase"></div>
+    <div class="fc-title" id="fcTitle"></div>
+    <div class="fc-ring"><svg viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="90" class="bg"/><circle cx="100" cy="100" r="90" class="fg" id="fcRing"/></svg><b id="fcTime" aria-live="polite"></b></div>
+    <button class="btn pri" id="fcDone" style="width:min(300px,90%)">✅ סיימתי</button>
+    <div class="two" style="width:min(300px,90%)"><button class="btn" id="fcHide">🔽 להקטין</button><button class="btn danger" id="fcStop">⏹️ לעצור</button></div>
+  </div>
+  <button class="focus-pill" id="focusPill" hidden aria-label="טיימר פוקוס"></button>
   <div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet"></div></div>
 </div>
 <script type="module" src="js/app.js"></script>

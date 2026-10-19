@@ -122,6 +122,18 @@ footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
 .animd .r{opacity:0;animation:popc 5s infinite}.animd .r:nth-child(2){animation-delay:.25s}.animd .r:nth-child(3){animation-delay:.5s}
 .animd .num{font-size:28px;font-weight:800;color:#7C3AED;text-align:center}
 @media (prefers-reduced-motion: reduce){.demo *{animation:none!important;opacity:1!important}}
+.stard{align-items:center;text-align:center}.stard .big2{font-size:40px;font-weight:800;color:#CA8A04}
+@keyframes starfly{0%{opacity:0;transform:translateY(20px) scale(.6)}30%{opacity:1;transform:none}70%{opacity:1}100%{opacity:0;transform:translateY(-20px)}}
+.stard .fly{animation:starfly 3s infinite;font-size:22px}
+.stard .bar{height:10px;border-radius:9px;background:#FEF3C7;overflow:hidden;width:100%}.stard .bar i{display:block;height:100%;background:linear-gradient(90deg,#FACC15,#F97316);animation:fillw 6s infinite}
+.habd .r b{margin-inline-start:auto;color:#EA580C}
+@keyframes fire{50%{transform:scale(1.3) rotate(-8deg)}}.habd .r b{animation:fire 1.2s infinite}
+.habd .r:nth-child(2) .ck{animation:dk 5s infinite .4s}.habd .r:nth-child(3) .ck{animation:dk 5s infinite 1.4s}
+.focd{align-items:center}.focd svg{width:120px;height:120px;transform:rotate(-90deg)}.focd circle{fill:none;stroke-width:12}.focd .bg{stroke:#EDE9FE}
+@keyframes ring{from{stroke-dashoffset:0}to{stroke-dashoffset:339}}.focd .fg{stroke:#7C3AED;stroke-dasharray:339;stroke-linecap:round;animation:ring 8s linear infinite}
+.focd .t{margin-top:-80px;margin-bottom:46px;font-size:26px;font-weight:800;direction:ltr}
+@keyframes typing{from{width:0}to{width:100%}}.parsed .q{white-space:nowrap;overflow:hidden;border-inline-end:2px solid #7C3AED;animation:typing 3s steps(30) infinite alternate;font-size:12.5px}
+.parsed .r{opacity:0;animation:popc 6s infinite 2s}.parsed .r:nth-child(3){animation-delay:2.3s}.parsed .r:nth-child(4){animation-delay:2.6s}
 </style>
 </head>
 <body>
@@ -146,7 +158,7 @@ footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
 <section class="ig" id="features">
   <h2>כל מה שהזמן שלכם היה צריך 🔥</h2>
   <p class="sub2">גוללים כמו באינסטגרם — ומגלים מה זמן בכיף יודע לעשות</p>
-  <div class="stories"><a class="story" href="#f-chat"><div class="ring"><span>💬</span></div>שיחה</a><a class="story" href="#f-shop"><div class="ring"><span>🛒</span></div>קניות</a><a class="story" href="#f-steps"><div class="ring"><span>📋</span></div>תבניות</a><a class="story" href="#f-comments"><div class="ring"><span>💬</span></div>תגובות</a><a class="story" href="#f-colors"><div class="ring"><span>🎨</span></div>צבעים</a><a class="story" href="#f-font"><div class="ring"><span>🎨</span></div>תצוגה</a><a class="story" href="#f-smart"><div class="ring"><span>🧠</span></div>צ'אט חכם</a><a class="story" href="#f-bell"><div class="ring"><span>🔔</span></div>פעמון</a><a class="story" href="#f-cal"><div class="ring"><span>📅</span></div>יומן</a><a class="story" href="#f-plus"><div class="ring"><span>➕</span></div>הוספה</a><a class="story" href="#f-ask"><div class="ring"><span>⏰</span></div>עשית?</a><a class="story" href="#f-top3"><div class="ring"><span>⭐</span></div>3 חשובים</a><a class="story" href="#f-thoughts"><div class="ring"><span>💭</span></div>מחשבות</a><a class="story" href="#f-family"><div class="ring"><span>👥</span></div>קבוצות</a><a class="story" href="#f-assign"><div class="ring"><span>📎</span></div>שיוך</a><a class="story" href="#f-msg"><div class="ring"><span>💌</span></div>הודעות</a><a class="story" href="#f-clash"><div class="ring"><span>⚠️</span></div>התנגשויות</a><a class="story" href="#f-shabbat"><div class="ring"><span>🕯️</span></div>שבת</a><a class="story" href="#f-push"><div class="ring"><span>🔔</span></div>התראות</a><a class="story" href="#f-lock"><div class="ring"><span>🔒</span></div>נעילה</a><a class="story" href="#f-me"><div class="ring"><span>👤</span></div>אזור אישי</a></div>
+  <div class="stories"><a class="story" href="#f-chat"><div class="ring"><span>💬</span></div>שיחה</a><a class="story" href="#f-kids"><div class="ring"><span>⭐</span></div>ילדים</a><a class="story" href="#f-habits"><div class="ring"><span>🔥</span></div>הרגלים</a><a class="story" href="#f-focus"><div class="ring"><span>⏱️</span></div>פוקוס</a><a class="story" href="#f-shop"><div class="ring"><span>🛒</span></div>קניות</a><a class="story" href="#f-steps"><div class="ring"><span>📋</span></div>תבניות</a><a class="story" href="#f-comments"><div class="ring"><span>💬</span></div>תגובות</a><a class="story" href="#f-colors"><div class="ring"><span>🎨</span></div>צבעים</a><a class="story" href="#f-font"><div class="ring"><span>🎨</span></div>תצוגה</a><a class="story" href="#f-smart"><div class="ring"><span>🧠</span></div>צ'אט חכם</a><a class="story" href="#f-bell"><div class="ring"><span>🔔</span></div>פעמון</a><a class="story" href="#f-cal"><div class="ring"><span>📅</span></div>יומן</a><a class="story" href="#f-plus"><div class="ring"><span>➕</span></div>הוספה</a><a class="story" href="#f-ask"><div class="ring"><span>⏰</span></div>עשית?</a><a class="story" href="#f-top3"><div class="ring"><span>⭐</span></div>3 חשובים</a><a class="story" href="#f-thoughts"><div class="ring"><span>💭</span></div>מחשבות</a><a class="story" href="#f-family"><div class="ring"><span>👥</span></div>קבוצות</a><a class="story" href="#f-assign"><div class="ring"><span>📎</span></div>שיוך</a><a class="story" href="#f-msg"><div class="ring"><span>💌</span></div>הודעות</a><a class="story" href="#f-clash"><div class="ring"><span>⚠️</span></div>התנגשויות</a><a class="story" href="#f-shabbat"><div class="ring"><span>🕯️</span></div>שבת</a><a class="story" href="#f-push"><div class="ring"><span>🔔</span></div>התראות</a><a class="story" href="#f-lock"><div class="ring"><span>🔒</span></div>נעילה</a><a class="story" href="#f-me"><div class="ring"><span>👤</span></div>אזור אישי</a></div>
   <div class="feed">
     <article class="post" id="f-chat">
       <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
@@ -177,6 +189,30 @@ footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
       <div class="pic p6"><div class="big">👀</div><h3>היומן של פסי, בוורוד</h3><span class="tag">#יחד</span></div>
       <div class="acts">❤️ 💬 ➤</div>
       <div class="cap"><b>zmanbekef</b> בראש היומן לוחצים על הפרצוף של מי שבקבוצה איתכם, ורואים גם את היומן שלו, כל אחד בצבע שלו. <b>כל אחד מחליט מי רואה את היומן שלו</b>: ⚙️ ← הקבוצות שלי ← "📅 מי רואה את היומן שלי": 👀 הכל / ⛔ רק "תפוס/ה" / 🚫 לא. מה שסומן 🔒 פרטי תמיד מופיע אצל אחרים רק כ"תפוס/ה". צבעים ומה מוצג: ⚙️ ← 📅 יומן. <span class="h">#בלי_הפתעות</span></div>
+    </article>
+    <article class="post" id="f-kids">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p2"><div class="demo stard"><div class="fly" dir="ltr">+3 ⭐</div><div class="big2">⭐ 12</div><div class="bar"><i></i></div><div class="h">עוד 3 ⭐ ל🍦 גלידה</div></div><h3>⭐ מטלות לילדים</h3></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> כותבים <b>"תכניס לנתנאל לסדר את החדר 3 כוכבים"</b> — וכשהמטלה מסומנת ✅, נכנסים לו 3 ⭐. הורים מגדירים <b>🎁 פרסים</b> (גלידה = 15⭐), נותנים <b>✨ בונוס</b>, ו<b>⭐ ממירים לשקלים בכסף בכיף</b> — לקופה של הילד. נמצא ב-📋 משימות ← <b>⭐ ילדים</b>. <span class="h">#אלופי_הבית</span></div>
+    </article>
+    <article class="post" id="f-habits">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p4"><div class="demo habd"><div class="h">🔥 הרגלים · היום</div><div class="r"><i class="ck"></i><span>💧 לשתות מים</span><b>🔥7</b></div><div class="r"><i class="ck"></i><span>📖 לקרוא 10 דק׳</span><b>🔥3</b></div></div><h3>🔥 הרגלים ורצף</h3></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> כותבים <b>"הרגל: לשתות 8 כוסות מים"</b> (או ➕ הרגל במסך המשימות). כל יום מסמנים ✓ — והרצף 🔥 גדל. ב-3, 7, 14, 30 ימים — קונפטי 🎉. אפשר לבחור ימים מסוימים (למשל רק א׳–ה׳). <span class="h">#יום_אחרי_יום</span></div>
+    </article>
+    <article class="post" id="f-focus">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p3"><div class="demo focd"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="54" class="bg"/><circle cx="60" cy="60" r="54" class="fg"/></svg><div class="t">25:00</div><div class="h">⏱️ לשלוח הצעת מחיר</div></div><h3>⏱️ טיימר פוקוס</h3></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> לוחצים על משימה ← <b>"⏱️ פוקוס 25 דק׳"</b> (או בשאלה "עשית?"). 25 דקות רק על זה, ובסוף היא שואלת <b>"סיימת?"</b> — ✅ סיימתי, ☕ הפסקה 5 דק׳, או ⏱️ עוד 25. אפשר להקטין את הטיימר ולהמשיך להשתמש באפליקציה. <span class="h">#ראש_אחד_משימה_אחת</span></div>
+    </article>
+    <article class="post" id="f-parse">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p5"><div class="demo parsed"><div class="q">כל יום שלישי ב-5 לקחת את נתנאל מהגן</div><div class="r">🔁 כל שלישי</div><div class="r">⏰ 17:00</div><div class="r">📌 לקחת את נתנאל מהגן</div></div><h3>✍️ מבינה משפט שלם</h3></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> כותבים כמו שמדברים: <b>"כל יום שלישי ב-5 לקחת את נתנאל מהגן"</b> ← משימה קבועה כל שלישי ב-17:00. <b>"פסי צריכה מחר ב-8 ללכת לרופא"</b> ← משימה לפסי. <b>"בשבוע הבא ביום שני לקבוע תור"</b>, <b>"כל ראשון ורביעי בשמונה בערב חוג"</b>, <b>"בעוד שעתיים"</b> — הכל מובן. <span class="h">#כמו_לדבר</span></div>
     </article>
     <article class="post" id="f-shop">
       <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
