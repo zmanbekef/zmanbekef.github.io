@@ -416,3 +416,14 @@ html.no-anim *,html.no-anim *::before,html.no-anim *::after{animation:none!impor
 .focus.brk .fc-ring .fg{stroke:#34D399}
 .fc-ring b{position:absolute;inset:0;display:grid;place-items:center;font-size:48px;font-weight:800;font-variant-numeric:tabular-nums;direction:ltr}
 .focus-pill{position:absolute;top:calc(70px + env(safe-area-inset-top,0px));left:12px;z-index:30;border:none;border-radius:20px;padding:8px 14px;background:linear-gradient(135deg,#7C3AED,#EC4899);color:#fff;font:inherit;font-weight:700;font-variant-numeric:tabular-nums;box-shadow:0 6px 20px rgba(124,58,237,.5);cursor:pointer;animation:popin .3s both}
+/* 🕐 ציר היום */
+.dayline{display:block;width:calc(100% - 32px);margin:10px 16px 0;padding:10px 12px;border-radius:18px;border:1px solid var(--line);background:var(--card);color:#fff;font:inherit;text-align:start;cursor:pointer}
+.dl-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px}
+.dl-h small{color:var(--muted);font-size:12px}
+.dl-bar{position:relative;height:16px;border-radius:8px;background:rgba(255,255,255,.07);margin:8px 0 3px;overflow:hidden}
+.dl-bar i{position:absolute;top:2px;bottom:2px;border-radius:6px;transform-origin:right;animation:dlin .6s cubic-bezier(.2,.8,.2,1) both}
+.dl-bar i.done{opacity:.4}
+@keyframes dlin{from{transform:scaleX(0)}}
+.dl-now{position:absolute;top:0;bottom:0;width:2px;background:#EF4444;box-shadow:0 0 6px #EF4444}
+.dl-t{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);direction:rtl}
+.dl-next{font-size:13px;margin-top:6px;color:#E9D5FF}

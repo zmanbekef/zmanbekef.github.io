@@ -125,7 +125,7 @@ function think(ms = 450) {
 }
 
 // כפתורים שלא "נועלים" את ההודעה (אפשר ללחוץ עליהם שוב)
-const KEEP = new Set(['shopView', 'calDay', 'pickShifts', 'quickFor', 'bump', 'assign', 'newGroup', 'shareGroup', 'editMe', 'edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
+const KEEP = new Set(['toKesef', 'shopView', 'calDay', 'pickShifts', 'quickFor', 'bump', 'assign', 'newGroup', 'shareGroup', 'editMe', 'edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
 async function onAct(m, i, box) {
   const a = m.acts[i];
   if (!KEEP.has(a.op)) {
@@ -163,6 +163,7 @@ async function markDone(id, quiet) {
   it.doneBy = S.myP;
   await save(it); await addLog(it, 'done');
   if (it.stars) await creditStars(it);
+  if (PAY_RE.test(it.text) && it.kind !== 'shop') setTimeout(() => bot('💰', 'var(--g3)', 'שילמת? לרשום את זה בכסף בכיף', `"${it.text}"`, [{ l: '💰 לרשום בכסף בכיף', op: 'toKesef', a: [id], pri: true }]), 600);
   // מי שנתן לי את המשימה מקבל הודעה שסיימתי
   if (it.by && it.by !== S.uid && S.uid) queueNotify(it.by, 'done', `✅ ${nameIn(S.myP, it.group_id)} סיים/ה`, it.text, it.id + ':' + now.getTime());
   if (S.pending === id) S.pending = null;
@@ -181,6 +182,7 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 const OPS = {
   bump: id => bumpTask(id),
+  toKesef: id => openToKesef(id),
   focus: id => startFocus(id, 'work'),
   focusBreak: id => startFocus(id, 'break'),
   habitTick: id => tickHabit(id),
@@ -350,6 +352,7 @@ async function send(text, voice) {
     if (!t) return bot('📋', 'var(--card2)', 'לא מצאתי תבנית כזאת', 'התבניות: ' + allTemplates().map(x => x.name).join(' · '));
     return createItem({ kind: 'task', text: t.name, steps: mkSteps(t.steps), due: null, hasTime: false, repeat: null }, null).then(() => { const n = S.items[S.items.length - 1]; if (n?.steps) openSteps(n.id); });
   }
+  if (/^(?:תפריט\s+(?:ל)?שבת|מה\s+מבשלים\s+לשבת|מה\s+נבשל\s+לשבת)\??$/.test(text.trim())) { await me(text, voice); return openMenu(); }
   // "קניות: חלב, ביצים" → רשימת הקניות של הקבוצה הראשית
   const shopL = shopItems(text);
   if (shopL?.length) {
@@ -1339,6 +1342,7 @@ const shopGo = async () => {
   if (a.length) toast(`🛒 נוסף${a.length > 1 ? 'ו ' + a.length : ''}`); else toast('כבר ברשימה');
 };
 $('#shopAdd').onclick = shopGo;
+$('#menuBtn').onclick = () => openMenu();
 $('#shopIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) shopGo(); });
 $('#shopList').addEventListener('click', async e => {
   const op = e.target.closest('[data-sop]')?.dataset.sop, id = e.target.closest('[data-id]')?.dataset.id, x = id && item(id);
@@ -1590,6 +1594,96 @@ $('#fcStop').onclick = e => { if (tapAgain(e.currentTarget, '⏹️ לעצור? 
 $('#fcHide').onclick = () => drawFocus(false);
 $('#focusPill').onclick = () => drawFocus(true);
 $('#fcDone').onclick = async () => { const f = S.focus; if (!f) return; S.focus = null; await db.setKV('focus', null); drawFocus(); await markDone(f.id); };
+
+// 🕐 ציר היום: פס קטן במסך הראשי — מה יש היום לפי שעות, וקו "עכשיו"
+function renderDayline() {
+  const el = $('#dayline'); if (!el) return;
+  const t0 = sod(new Date()), from = 7, to = 23, span = (to - from) * 36e5;
+  const ev = calEvents(t0, addDays(t0, 1)).filter(e => e.hasTime && (e.owner === S.myP || !S.uid));
+  const pos = t => Math.max(0, Math.min(100, (+t - +t0 - from * 36e5) / span * 100));
+  const nowP = pos(Date.now());
+  el.hidden = false;
+  el.innerHTML = `<div class="dl-h"><b>🕐 היום שלי</b><small>${ev.length ? `${ev.length} ${ev.length === 1 ? 'דבר' : 'דברים'} עם שעה` : 'אין כלום עם שעה — יום פנוי 🌤️'}</small></div>
+    <div class="dl-bar">${ev.map(e => { const a = pos(e.start), b = pos(Math.max(+e.end, +e.start + 30 * 60e3)); return `<i class="${e.done ? 'done' : ''}" style="right:${a}%;width:${Math.max(2.5, b - a)}%;background:${e.cat?.color || e.color}" title="${esc(hm(e.start) + ' ' + e.text)}"></i>`; }).join('')}
+      ${nowP > 0 && nowP < 100 ? `<b class="dl-now" style="right:${nowP}%"></b>` : ''}</div>
+    <div class="dl-t"><span>7:00</span><span>12:00</span><span>17:00</span><span>23:00</span></div>
+    ${ev.filter(e => !e.done && +e.start > Date.now()).slice(0, 1).map(e => `<div class="dl-next">הבא: <b>${hm(e.start)}</b> ${esc(e.it?.icon || '')} ${esc(e.text)}</div>`).join('')}`;
+}
+$('#dayline').onclick = () => { CAL.day = sod(new Date()); CAL.mode = 'day'; showView('cal'); };
+
+// ---------- 🍲 תפריט שבת → רשימת קניות ----------
+const DISHES = {
+  'חלות': ['קמח', 'שמרים', 'סוכר', 'ביצים', 'שמן', 'מלח'], 'דג חריימה': ['פילה דג', 'רסק עגבניות', 'פלפל אדום', 'שום', 'פפריקה'],
+  'מרק עוף': ['עוף למרק', 'גזר', 'בצל', 'סלרי', 'קישוא', 'תפוחי אדמה', 'אבקת מרק'], 'עוף בתנור': ['עוף', 'תפוחי אדמה', 'בצל', 'שום', 'פפריקה', 'שמן'],
+  'צ׳ולנט': ['בשר לצ׳ולנט', 'תפוחי אדמה', 'שעועית', 'גריסים', 'ביצים', 'בצל'], 'קוגל אטריות': ['אטריות', 'ביצים', 'סוכר', 'שמן'],
+  'קוגל תפו"א': ['תפוחי אדמה', 'בצל', 'ביצים', 'שמן'], 'סלט ירקות': ['עגבניות', 'מלפפונים', 'בצל', 'פלפל', 'לימון'],
+  'חומוס וטחינה': ['חומוס', 'טחינה', 'לימון'], 'סלט כרוב': ['כרוב', 'מיונז', 'גזר'], 'אורז': ['אורז', 'שמן'], 'פשטידה': ['ביצים', 'גבינה', 'קמח', 'ירקות'],
+  'עוגה': ['קמח', 'סוכר', 'ביצים', 'שמן', 'אבקת אפיה', 'קקאו'], 'יין ומיץ ענבים': ['יין לקידוש', 'מיץ ענבים'], 'שניצל': ['חזה עוף', 'פירורי לחם', 'ביצים', 'שמן'],
+};
+const MEALS = [['fri', '🕯️ ליל שבת', ['חלות', 'יין ומיץ ענבים', 'דג חריימה', 'מרק עוף', 'עוף בתנור', 'סלט ירקות']], ['day', '☀️ סעודת שחרית', ['חלות', 'צ׳ולנט', 'קוגל אטריות', 'סלט ירקות']], ['third', '🌅 סעודה שלישית', ['חלות', 'חומוס וטחינה', 'סלט ירקות']]];
+const dishIng = n => (S.dishes || {})[n] || DISHES[n] || null;
+async function openMenu() {
+  S.menu ||= await db.getKV('shabMenu', null) || Object.fromEntries(MEALS.map(([k, , d]) => [k, [...d]]));
+  S.dishes ||= await db.getKV('dishes', {});
+  const all = [...new Set([...Object.keys(DISHES), ...Object.keys(S.dishes)])];
+  sheet(`<h3>🍲 תפריט שבת</h3><p class="note">בוחרים מנות לכל סעודה, ובלחיצה אחת כל המצרכים נכנסים לרשימת הקניות.</p>
+    ${MEALS.map(([k, l]) => `<label>${l}</label><div class="chips" style="padding:0;flex-wrap:wrap">${S.menu[k].map((d, i) => `<button class="chip on" data-mk="${k}" data-mi="${i}" title="להסיר">${esc(d)} ✕</button>`).join('')}<button class="chip" data-madd="${k}">➕</button></div>`).join('')}
+    <button class="btn pri" id="mnShop" style="margin-top:14px">🛒 להוסיף את המצרכים לרשימה</button>
+    <button class="btn" id="mnReset">↺ להתחיל מהתפריט הרגיל</button>`);
+  const saveMenu = async () => { await db.setKV('shabMenu', S.menu); openMenu(); };
+  $('#sheet').querySelectorAll('[data-mk]').forEach(b => b.onclick = async () => { S.menu[b.dataset.mk].splice(+b.dataset.mi, 1); await saveMenu(); });
+  $('#sheet').querySelectorAll('[data-madd]').forEach(b => b.onclick = () => {
+    const k = b.dataset.madd;
+    sheet(`<h3>➕ מנה ל${MEALS.find(m => m[0] === k)[1]}</h3><div class="chips" style="padding:0;flex-wrap:wrap">${all.filter(d => !S.menu[k].includes(d)).map(d => `<button class="chip" data-dish="${esc(d)}">${esc(d)}</button>`).join('')}</div>
+      <label>או מנה משלך</label><input id="mnName" maxlength="30" placeholder="למשל: סלט חצילים"><label>המצרכים (מופרדים בפסיק)</label><input id="mnIng" maxlength="200" placeholder="חצילים, טחינה, שום, לימון">
+      <button class="btn pri" id="mnAdd" style="margin-top:12px">➕ להוסיף</button><button class="btn" id="mnBack">חזרה</button>`);
+    $('#sheet').querySelectorAll('[data-dish]').forEach(x => x.onclick = async () => { S.menu[k].push(x.dataset.dish); await saveMenu(); });
+    $('#mnBack').onclick = openMenu;
+    $('#mnAdd').onclick = async () => {
+      const n = $('#mnName').value.trim(); if (!n) return toast('צריך שם למנה', true);
+      const ing = $('#mnIng').value.split(/\s*,\s*/).map(x => x.trim()).filter(Boolean);
+      if (ing.length) { S.dishes[n] = ing; await db.setKV('dishes', S.dishes); }
+      S.menu[k].push(n); await saveMenu();
+    };
+  });
+  $('#mnReset').onclick = async () => { S.menu = Object.fromEntries(MEALS.map(([k, , d]) => [k, [...d]])); await saveMenu(); };
+  $('#mnShop').onclick = async () => {
+    const ing = [...new Set(Object.values(S.menu).flat().flatMap(d => dishIng(d) || [d]))];
+    const added = await addShop(ing);
+    closeSheet(); showView('shop'); confetti(50);
+    toast(added.length ? `🛒 נוספו ${added.length} מצרכים לרשימה` : 'הכל כבר ברשימה 👍');
+  };
+}
+
+// ---------- 🔗 חיבור לכסף בכיף ----------
+// משימת תשלום שבוצעה → "💰 לרשום בכסף בכיף" (נפתח עם הסכום והתיאור)
+const PAY_RE = /(^|\s)(?:לשלם|תשלום|לשלם\s+את|חשבון|ארנונה|חשמל|ועד\s+בית|שכר\s+דירה|משכנתא|ביטוח|אגרה|קנס|דמי|שכר\s+לימוד|גננת|מנוי|לטעון)(?=\s|$)/;
+function openToKesef(id) {
+  const it = item(id); if (!it) return;
+  sheet(`<h3>💰 לרשום בכסף בכיף</h3><p class="note">"${esc(it.text)}" — כמה שילמת? (אפשר גם להשאיר ריק ולמלא שם)</p>
+    <input id="kfAmt" type="number" inputmode="decimal" min="0" placeholder="סכום ב-₪" style="margin-top:8px">
+    <button class="btn pri" id="kfGo" style="margin-top:12px">💰 לפתוח בכסף בכיף</button>`);
+  setTimeout(() => $('#kfAmt')?.focus(), 300);
+  $('#kfGo').onclick = () => {
+    const a = Math.max(0, +$('#kfAmt').value || 0);
+    window.open(`${KESEF_URL}?${a ? 'add=' + a + '&' : 'add=&'}desc=${encodeURIComponent(it.text)}`, '_blank', 'noopener');
+    closeSheet(); toast('💰 נפתח כסף בכיף — לוחצים שם "שמירה"');
+  };
+}
+// קישור מבחוץ (למשל מכסף בכיף): ?task=...&date=YYYY-MM-DD&time=HH:MM → חלון אישור, ושום דבר לא נשמר בלי לחיצה
+function deepLinkTask() {
+  const q = new URLSearchParams(location.search), text = (q.get('task') || '').trim().slice(0, 120);
+  if (!text) return;
+  if ($('#gate').classList.contains('on') || $('#lock').classList.contains('on')) return setTimeout(deepLinkTask, 1000); // קודם כניסה / נעילה
+  const ds = q.get('date') || '', ts = q.get('time') || '';
+  const okD = /^\d{4}-\d{2}-\d{2}$/.test(ds), okT = /^\d{1,2}:\d{2}$/.test(ts);
+  const due = okD ? new Date(ds + 'T00:00') : null; if (due && okT) { const [h, m] = ts.split(':'); due.setHours(+h, +m, 0, 0); }
+  history.replaceState(null, '', location.pathname);
+  sheet(`<h3>📅 להוסיף תזכורת?</h3><p style="font-size:17px;margin:8px 0"><b>${esc(text)}</b></p><p class="note">${due ? whenLabel({ due: due.toISOString(), hasTime: okT }) : 'בלי תאריך'}${q.get('from') === 'kesef' ? ' · מכסף בכיף 💰' : ''}</p>
+    <button class="btn pri" id="dlY" style="margin-top:12px">📅 להוסיף</button><button class="btn" id="dlN">לא תודה</button>`);
+  $('#dlN').onclick = closeSheet;
+  $('#dlY').onclick = async () => { closeSheet(); showView('chat'); await createItem({ kind: 'task', text, due, hasTime: !!(due && okT), repeat: null, dur: okT ? 0 : null }, null); };
+}
 
 // ---------- 🧠 צ'אט חכם: משפט אחד → כמה אירועים ביומן ----------
 const SHIFTS_DEF = { morning: ['07:00', '15:00'], evening: ['15:00', '23:00'], night: ['23:00', '07:00'] };
@@ -2158,13 +2252,13 @@ function openEdit(id, focus, forceKind) {
   const it = item(id); if (!it) return toast('המשימה הזאת כבר לא קיימת', true);
   let kind = forceKind || it.kind;
   const d = it.due ? new Date(it.due) : null;
-  const rep = it.repeat?.type || '';
+  const rep = it.repeat?.erev ? 'erevShabbat' : it.repeat?.type === 'hebDay' ? '' : it.repeat?.type || '';
   sheet(`<h3>✏️ עריכה</h3>
     <label>סוג</label><div class="seg" id="eKind">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
     <label>מה</label><input id="eText" value="${esc(it.text)}">${it.raw && it.raw !== it.text ? `<p class="note" style="margin-top:4px">✍️ במקור כתבת: "${esc(it.raw)}"</p>` : ''}
     <div id="eWhen"><div class="two"><div><label>תאריך</label><input type="date" id="eDate" value="${d ? ymd(d) : ''}"></div>
     <div><label>שעה (לא חובה)</label><input type="time" id="eTime" value="${d && it.hasTime ? hm(d) : ''}"></div></div>
-    <label>חוזר</label><select id="eRep"><option value="">לא חוזר</option><option value="daily">כל יום</option><option value="weekly">כל שבוע</option><option value="monthly">כל חודש</option></select></div>
+    <label>חוזר</label><select id="eRep"><option value="">לא חוזר</option><option value="daily">כל יום</option><option value="weekly">כל שבוע</option><option value="monthly">כל חודש</option><option value="erevShabbat">🕯️ כל ערב שבת</option><option value="roshChodesh">🌙 כל ראש חודש</option><option value="erevChag">🍷 כל ערב חג</option></select></div>
     <div id="eWhen2"><div class="two"><div><label>כמה זמן</label><select id="eDur"><option value="">לא ידוע</option><option value="0">רק תזכורת</option>${[15, 30, 45, 60, 90, 120, 180, 240].map(m => `<option value="${m}">${durLbl(m)}</option>`).join('')}</select></div>
     <div><label>איפה (לא חובה)</label><input id="ePlace" value="${esc(it.place || '')}" list="placeList"><datalist id="placeList">${knownPlaces().concat(C.CITIES).map(x => `<option value="${esc(x)}">`).join('')}</datalist></div></div></div>
     ${it.forP && isKid(it.forP) ? starPicker(it.stars || 0) : ''}
@@ -2200,7 +2294,7 @@ function openEdit(id, focus, forceKind) {
       else if (ts) { due = sod(new Date()); const [h, m] = ts.split(':'); due.setHours(+h, +m); if (due <= new Date() && !rt) due = addDays(due, 1); }
       if (rt) {
         const base = due || new Date();
-        repeat = rt === 'daily' ? { type: 'daily' } : rt === 'weekly' ? { type: 'weekly', dows: it.repeat?.type === 'weekly' && !ds ? it.repeat.dows : [base.getDay()] } : { type: 'monthly', dom: base.getDate() };
+        repeat = rt === 'erevShabbat' ? { type: 'weekly', dows: [5], erev: true } : rt === 'roshChodesh' || rt === 'erevChag' ? { type: rt } : rt === 'daily' ? { type: 'daily' } : rt === 'weekly' ? { type: 'weekly', dows: it.repeat?.type === 'weekly' && !ds ? it.repeat.dows : [base.getDay()] } : { type: 'monthly', dom: base.getDate() };
         due = nextOccurrence(repeat, ts ? +ts.split(':')[0] : 9, ts ? +ts.split(':')[1] : 0, new Date(Math.min(sod(base), Date.now()) - 1));
         if (due && due < new Date() && hasTime) due = nextOccurrence(repeat, due.getHours(), due.getMinutes(), new Date());
       }
@@ -2341,7 +2435,7 @@ function renderChat() {
 function renderAll() {
   const n = new Date();
   $('#hdate').textContent = `יום ${DAYS[n.getDay()]}, ${n.getDate()}.${n.getMonth() + 1} · ${hebDate(n)}`;
-  renderTop3(); renderTasks(); renderThoughts(); renderRes(); renderCal(); renderShop(); renderKids();
+  renderTop3(); renderDayline(); renderTasks(); renderThoughts(); renderRes(); renderCal(); renderShop(); renderKids();
   document.querySelectorAll('.tabs2 [data-v="kids"]').forEach(b => { b.hidden = !kidsList().length; });
   const s = streak(); $('#streak').textContent = s >= 2 ? `🔥 ${s} ימים ברצף` : s === 1 ? '🔥 יום 1' : '';
 }
@@ -3114,6 +3208,7 @@ async function boot() {
     sync.whenReady().then(async () => { await migrateToGroups(); buildPeople(); renderAll(); renderFamily(); renderMe(); });
   }
   if (RECOVERY && sync.user()) openNewPassword();
+  else setTimeout(deepLinkTask, 800);
   try { navigator.storage?.persist?.(); } catch { /* */ } // שהדפדפן לא ימחק את הנתונים כשחסר מקום
 })();
 

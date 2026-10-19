@@ -42,8 +42,16 @@ function extractWhen(s, now) {
   const cut = re => { const m = s.match(re); if (m) s = (s.slice(0, m.index) + ' ' + s.slice(m.index + m[0].length)).replace(/\s+/g, ' ').trim(); return m; };
   let m;
 
-  // --- חזרתיות ---
-  if ((m = cut(new RegExp(`${S}(?:ב?כל|פעם ב)\\s*(?:יום\\s+)?(${DAY_RE})(?:\\s+ו(?:ב)?(${DAY_RE}))?${E}`)))) {
+  // --- חזרתיות לפי הלוח העברי: ערב שבת, ערב חג, ראש חודש, "כל ט"ו בחודש" ---
+  if ((m = cut(new RegExp(`${S}(?:ב?כל|לפני\\s+כל)\\s+ערב\\s+שבת${E}|${S}ב?כל\\s+(?:יום\\s+)?שישי\\s+לפני\\s+שבת${E}`)))) {
+    repeat = { type: 'weekly', dows: [5], erev: true };
+  } else if ((m = cut(new RegExp(`${S}(?:ב?כל|לפני\\s+כל)\\s+ערב\\s+(?:חג|יום\\s+טוב)${E}`)))) {
+    repeat = { type: 'erevChag' };
+  } else if ((m = cut(new RegExp(`${S}(?:ב?כל|ב)\\s*ראש\\s+חודש${E}`)))) {
+    repeat = { type: 'roshChodesh' };
+  } else if ((m = cut(new RegExp(`${S}ב?כל\\s+([א-ל]"?[א-ט]?'?)\\s+(?:ב|ל)חודש(?:\\s+העברי)?${E}`))) && hebNum(m[1])) {
+    repeat = { type: 'hebDay', hday: hebNum(m[1]) };
+  } else if ((m = cut(new RegExp(`${S}(?:ב?כל|פעם ב)\\s*(?:יום\\s+)?(${DAY_RE})(?:\\s+ו(?:ב)?(${DAY_RE}))?${E}`)))) {
     repeat = { type: 'weekly', dows: [DAYS.indexOf(m[1]), ...(m[2] ? [DAYS.indexOf(m[2])] : [])] };
   } else if ((m = cut(new RegExp(`${S}ב?כל\\s+(?:יום|בוקר|ערב|לילה)${E}|${S}(?:פעם ביום|יומי|יום יום)${E}`)))) {
     repeat = { type: 'daily' };
@@ -158,6 +166,25 @@ function extractWhen(s, now) {
   return { date, hour, min, repeat, rel, dow, dur, rest: s };
 }
 
+// ---------- הלוח העברי (בלי אינטרנט, מהדפדפן) ----------
+const HEB_FMT = (() => { try { return new Intl.DateTimeFormat('en-u-ca-hebrew', { day: 'numeric', month: 'long' }); } catch { return null; } })();
+function hebOf(d) {
+  if (!HEB_FMT) return null;
+  const p = HEB_FMT.formatToParts(d);
+  return { day: +p.find(x => x.type === 'day').value, month: p.find(x => x.type === 'month').value };
+}
+const HL = { 'א': 1, 'ב': 2, 'ג': 3, 'ד': 4, 'ה': 5, 'ו': 6, 'ז': 7, 'ח': 8, 'ט': 9, 'י': 10, 'כ': 20, 'ל': 30 };
+export function hebNum(t) { const n = [...t.replace(/["']/g, '')].reduce((a, c) => a + (HL[c] || 0), 0); return n >= 1 && n <= 30 ? n : 0; }
+// ראש חודש (היום הראשון): ל' בחודש, או א' כשהחודש הקודם היה 29 יום (לא ראש השנה)
+export function isRoshChodesh(d) {
+  const h = hebOf(d); if (!h) return false;
+  if (h.day === 30) return true;
+  return h.day === 1 && h.month !== 'Tishri' && hebOf(addDays(d, -1))?.day === 29;
+}
+// ערב חג (בארץ): ערב ראש השנה, יום כיפור, סוכות, שמיני עצרת, פסח, שביעי של פסח, שבועות
+const CHAG = { Tishri: [1, 10, 15, 22], Nisan: [15, 21], Sivan: [6] };
+export function isErevChag(d) { const h = hebOf(addDays(d, 1)); return !!h && (CHAG[h.month] || []).includes(h.day); }
+
 // מחשב את המועד הבא של משימה קבועה (אחרי from)
 export function nextOccurrence(rep, hour, min, from) {
   const at = d => { const x = new Date(d); x.setHours(hour ?? 9, min ?? 0, 0, 0); return x; };
@@ -165,6 +192,9 @@ export function nextOccurrence(rep, hour, min, from) {
     const d = addDays(sod(from), i), c = at(d);
     if (c <= from) continue;
     if (rep.type === 'daily') return c;
+    if (rep.type === 'roshChodesh') { if (isRoshChodesh(d)) return c; continue; }
+    if (rep.type === 'erevChag') { if (isErevChag(d)) return c; continue; }
+    if (rep.type === 'hebDay') { if (hebOf(d)?.day === rep.hday) return c; continue; }
     if (rep.type === 'weekly' && rep.dows.includes(d.getDay())) return c;
     if (rep.type === 'monthly') {
       const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
@@ -272,10 +302,15 @@ export function matchScore(query, text) {
 }
 
 // ---------- תצוגת מועד בעברית ----------
+const gem = n => { const o = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'], t = ['', 'י', 'כ', 'ל']; let s = t[Math.floor(n / 10)] + o[n % 10]; s = s.replace('יה', 'טו').replace('יו', 'טז'); return s.length > 1 ? s.slice(0, -1) + '"' + s.slice(-1) : s + "'"; };
 export function whenLabel(item, now = new Date()) {
   if (item.repeat) {
     const r = item.repeat, t = item.hasTime ? ' ב-' + hm(new Date(item.due)) : '';
     if (r.type === 'daily') return 'כל יום' + t;
+    if (r.erev) return 'כל ערב שבת' + t;
+    if (r.type === 'roshChodesh') return 'כל ראש חודש' + t;
+    if (r.type === 'erevChag') return 'כל ערב חג' + t;
+    if (r.type === 'hebDay') return `כל ${gem(r.hday)} בחודש העברי` + t;
     if (r.type === 'weekly') return 'כל יום ' + r.dows.map(d => DAYS[d]).join(' ו') + t;
     return `כל חודש ב-${r.dom}` + t;
   }
