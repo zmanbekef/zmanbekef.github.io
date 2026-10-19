@@ -83,7 +83,7 @@ function msgEl(m, isNew) {
     return d;
   }
   d.className = 'bot' + (isNew ? ' new' : '');
-  d.innerHTML = `<div class="in"><div class="ic" style="background:${m.bg || 'var(--card2)'}">${m.ic || '🤖'}</div><div><b>${esc(m.title)}</b>${m.sub ? `<div class="sub">${esc(m.sub)}</div>` : ''}</div></div>`;
+  d.innerHTML = `<div class="in"><div class="ic" style="background:${/^[\w\s#(),.%-]*$|^var\(--[\w-]+\)$|^linear-gradient\([\w\s#(),.%-]+\)$/.test(m.bg || '') && m.bg ? m.bg : 'var(--card2)'}">${esc(m.ic || '🤖')}</div><div><b>${esc(m.title)}</b>${m.sub ? `<div class="sub">${esc(m.sub)}</div>` : ''}</div></div>`;
   if (m.acts?.length) {
     const box = document.createElement('div');
     box.className = 'acts' + (m.used ? ' used' : '');
@@ -216,9 +216,11 @@ const OPS = {
   },
   async remove(id) {
     const it = item(id); if (!it) return;
+    const was = it.status;
     it.status = 'deleted'; await save(it); await addLog(it, 'deleted');
     if (S.top3) S.top3.ids = S.top3.ids.filter(x => x !== id), await db.setKV('top3', S.top3);
-    renderAll(); toast('🗑️ נמחק');
+    renderAll();
+    toast('🗑️ נמחק', false, { l: '↩️ בטל', run: async () => { it.status = was; await save(it); await addLog(it, 'restored'); renderAll(); toast('↩️ חזר'); } });
   },
   async toThought(id) {
     const it = item(id); if (!it) return;
@@ -1630,9 +1632,22 @@ function renderAll() {
   const s = streak(); $('#streak').textContent = s >= 2 ? `🔥 ${s} ימים ברצף` : s === 1 ? '🔥 יום 1' : '';
 }
 
-function toast(t, err) {
+// הודעה קצרה למעלה. עם act — גם כפתור (למשל "↩️ בטל" אחרי מחיקה), והיא נשארת יותר זמן
+function toast(t, err, act) {
   const el = $('#toast'); el.textContent = t; el.classList.toggle('err', !!err); el.classList.add('show');
-  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 2400);
+  if (act) {
+    const b = document.createElement('button'); b.className = 'toast-act'; b.textContent = act.l;
+    b.onclick = () => { el.classList.remove('show'); act.run(); }; el.append(' ', b);
+  }
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), act ? 6000 : 2400);
+}
+// "לחיצה נוספת לאישור" במקום חלון אישור של הדפדפן
+function tapAgain(btn, q) {
+  if (!btn) return true;
+  if (btn.dataset.armed) { clearTimeout(btn._t); delete btn.dataset.armed; btn.textContent = btn._orig; return true; }
+  btn._orig = btn.textContent; btn.dataset.armed = '1'; btn.textContent = q;
+  btn._t = setTimeout(() => { delete btn.dataset.armed; btn.textContent = btn._orig; }, 4000);
+  return false;
 }
 function confetti(n = 70) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -1786,12 +1801,12 @@ $('#backupBtn').onclick = async () => {
 $('#restoreBtn').onclick = () => $('#restoreFile').click();
 $('#restoreFile').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  try { await db.importAll(JSON.parse(await f.text())); await load(); toast('📂 השחזור הצליח'); }
+  try { const items = await db.importAll(JSON.parse(await f.text())); await sync.queueMany(items); await load(); toast('📂 השחזור הצליח'); }
   catch (err) { toast(err.message || 'הקובץ לא תקין', true); }
   e.target.value = '';
 };
-$('#clearChatBtn').onclick = async () => {
-  if (!confirm('למחוק את כל ההודעות בשיחה? המשימות והמחשבות נשארות.')) return;
+$('#clearChatBtn').onclick = async e => {
+  if (!tapAgain(e.currentTarget, '🧹 בטוח? לחץ שוב למחיקה')) return;
   await db.clear('msgs'); S.msgs = []; renderChat(); toast('🧹 השיחה נוקתה');
 };
 // ---------- התקנה על המסך (כמו אפליקציה רגילה) ----------
@@ -1818,6 +1833,20 @@ function drawInstallBanner() {
 }
 $('#installBtn').onclick = openInstallSheet;
 drawInstallBanner();
+
+// חזרה מהמייל של "שכחתי סיסמה" — בוחרים סיסמה חדשה
+const RECOVERY = /type=recovery/.test(location.hash);
+function openNewPassword() {
+  sheet(`<h3>🔑 סיסמה חדשה</h3><p class="note">בוחרים סיסמה חדשה לחשבון (אותה סיסמה גם ב"כסף בכיף").</p>
+    <input id="npPass" type="password" autocomplete="new-password" placeholder="סיסמה חדשה (לפחות 6 תווים)" dir="ltr">
+    <div id="npErr" style="color:#FB7185;font-size:13px;min-height:16px;margin-top:6px"></div>
+    <button class="btn pri" id="npSave">💾 שמור סיסמה</button>`);
+  $('#npSave').onclick = async () => {
+    const p = $('#npPass').value; if (p.length < 6) return $('#npErr').textContent = 'הסיסמה צריכה להיות לפחות 6 תווים';
+    try { await sync.setPassword(p); closeSheet(); toast('✅ הסיסמה החדשה נשמרה'); history.replaceState(null, '', location.pathname); }
+    catch (x) { $('#npErr').textContent = x.message; }
+  };
+}
 
 // ---------- נעילה ----------
 let pinBuf = '', fails = 0, lockedUntil = 0, hiddenAt = 0;
@@ -1852,6 +1881,19 @@ $('#lockPad').addEventListener('click', async e => {
   }
 });
 $('#lockBio').onclick = () => tryBio(false);
+// שכחתי את קוד הנעילה → פותחים עם הסיסמה של החשבון, והנעילה מתבטלת
+$('#lockForgot').onclick = () => {
+  if (!sync.user()) { $('#lockErr').textContent = 'בלי חשבון אי אפשר לשחזר. אפשר למחוק את האפליקציה ולהתקין מחדש (מה שבענן חוזר)'; return; }
+  $('#lockRec').hidden = false; $('#lockForgot').hidden = true; $('#lockPad').hidden = true; $('#lockDots').hidden = true; $('#lockRecPass').focus();
+};
+$('#lockRecGo').onclick = async () => {
+  const b = $('#lockRecGo'); b.disabled = true;
+  const ok = await sync.verifyPassword($('#lockRecPass').value);
+  b.disabled = false;
+  if (!ok) { $('#lockErr').textContent = navigator.onLine ? 'הסיסמה לא נכונה' : 'צריך אינטרנט כדי לבדוק את הסיסמה'; return; }
+  lock.disable(); $('#lockRecPass').value = ''; $('#lockRec').hidden = true; $('#lockForgot').hidden = false; $('#lockPad').hidden = false; $('#lockDots').hidden = false; unlockNow();
+  toast('🔓 הנעילה בוטלה. אפשר להגדיר קוד חדש בהגדרות ← נעילה');
+};
 document.addEventListener('visibilitychange', () => {
   const st = lock.settings(); if (!st) return;
   if (document.hidden) hiddenAt = Date.now();
@@ -2016,7 +2058,15 @@ async function showGate() {
       <input id="gPass" type="password" autocomplete="current-password" placeholder="סיסמה (לפחות 6 תווים)" dir="ltr">
       <div class="err"></div>
       <button class="btn pri" id="gIn">כניסה</button>
-      <button class="btn" id="gUp">אין לי חשבון — הרשמה</button>`;
+      <button class="btn" id="gUp">אין לי חשבון — הרשמה</button>
+      <button class="link" id="gForgot">🔑 שכחתי סיסמה</button>`;
+    $('#gForgot').onclick = async e => {
+      const em = $('#gEmail').value.trim();
+      if (!/^\S+@\S+\.\S+$/.test(em)) { err('קודם כותבים למעלה את המייל, ואז "שכחתי סיסמה"'); $('#gEmail').focus(); return; }
+      busy(e.target, true);
+      try { await sync.resetPassword(em); err(''); body.querySelector('.err').insertAdjacentHTML('afterend', `<p class="note" style="color:#86EFAC">📧 שלחנו מייל ל-${esc(em)} עם קישור. לוחצים עליו, חוזרים לכאן ובוחרים סיסמה חדשה. (לא הגיע? בודקים בספאם)</p>`); e.target.hidden = true; }
+      catch (x) { err(x.message); busy(e.target, false); }
+    };
     const go = async (fn, b) => {
       const e = $('#gEmail').value.trim(), p = $('#gPass').value;
       if (!/^\S+@\S+\.\S+$/.test(e)) return err('צריך מייל תקין');
@@ -2074,9 +2124,18 @@ async function afterGate() {
   buildPeople(); renderAll(); renderFamily(); renderMe();
   if (!started) boot();
 }
-async function signOut() {
-  if (!confirm('לצאת מהחשבון? המשימות נשארות שמורות בענן, ויחזרו כשתיכנס שוב.')) return;
-  await sync.signOut(); S.uid = null; S.myP = null; S.people = [];
+async function signOut(e) {
+  const btn = e?.currentTarget;
+  if (!tapAgain(btn, '👋 בטוח? לחץ שוב לצאת')) return;
+  try { await sync.signOut(!btn || btn.dataset.force === '1'); }
+  catch (x) {
+    if (x.message !== 'pending') return toast(x.message, true);
+    const n = await sync.pendingCount();
+    toast(`⚠️ ${n} שינויים עוד לא עלו לענן (אין אינטרנט?). כדאי להתחבר לאינטרנט ולנסות שוב`, true);
+    btn.dataset.force = '1'; btn._orig = btn.textContent; btn.dataset.armed = '1'; btn.textContent = '⚠️ לצאת בכל זאת (השינויים יימחקו)';
+    return;
+  }
+  S.uid = null; S.myP = null; S.people = [];
   await load(); showGate();
 }
 
@@ -2128,7 +2187,7 @@ function renderFamily() {
       ${g.kind === 'pair' && g.members.length < 2 ? '<p class="note">⏳ ממתין שיצטרף בקישור ששלחת</p>' : ''}
       ${me && me.role !== 'child' ? (() => { const v = me.cal_share || (['family', 'pair'].includes(g.kind) ? 'all' : 'busy');
         return `<div class="note" style="margin-top:8px">📅 מי ${g.kind === 'pair' ? 'שם' : 'בקבוצה'} רואה את היומן שלי:</div><div class="chips" style="padding:6px 0 0;flex-wrap:wrap">${[['all', '👀 הכל'], ['busy', '⛔ רק "תפוס/ה"'], ['none', '🚫 לא']].map(([k, l]) => `<button class="chip ${v === k ? 'on' : ''}" data-cal="${g.id}" data-cv="${k}" aria-pressed="${v === k}">${l}</button>`).join('')}</div>${v === 'all' ? '<div class="note" style="font-size:11px">מה שסימנת 🔒 פרטי תמיד מופיע אצלם רק כ"תפוס/ה".</div>' : ''}`; })() : ''}
-      ${admin || g.kind === 'pair' ? `<div class="codes">${g.kind !== 'pair' || g.members.length < 2 ? `<div class="code-box" style="background:rgba(124,58,237,.25);border-color:rgba(196,181,253,.4)"><div class="note">${g.kind === 'family' ? '👨‍👩 קוד להורה' : '🔑 קוד הצטרפות'}</div><div class="code">${g.code}</div><button class="chip" data-copy="${g.code}">📋 העתקה</button> <a class="chip" href="${waHref(inviteText(g, g.code))}" target="_blank" rel="noopener" style="text-decoration:none">💬 וואטסאפ</a></div>` : ''}
+      ${(admin || g.kind === 'pair') && g.code ? `<div class="codes">${g.kind !== 'pair' || g.members.length < 2 ? `<div class="code-box" style="background:rgba(124,58,237,.25);border-color:rgba(196,181,253,.4)"><div class="note">${g.kind === 'family' ? '👨‍👩 קוד להורה' : '🔑 קוד הצטרפות'}</div><div class="code">${g.code}</div><button class="chip" data-copy="${g.code}">📋 העתקה</button> <a class="chip" href="${waHref(inviteText(g, g.code))}" target="_blank" rel="noopener" style="text-decoration:none">💬 וואטסאפ</a></div>` : ''}
         ${g.kind === 'family' && g.child_code ? `<div class="code-box" style="background:rgba(249,115,22,.25);border-color:rgba(253,186,116,.4)"><div class="note">🧒 קוד לילד</div><div class="code">${g.child_code}</div><button class="chip" data-copy="${g.child_code}">📋 העתקה</button> <a class="chip" href="${waHref(inviteText(g, g.child_code))}" target="_blank" rel="noopener" style="text-decoration:none">💬 וואטסאפ</a></div>` : ''}</div>` : ''}
       <div class="chips" style="padding:8px 0 0;flex-wrap:wrap">
         <button class="chip" data-nick="${g.id}">✏️ הכינוי שלי</button>
@@ -2299,20 +2358,25 @@ async function boot() {
   await load();
   await sync.start({
     onItem: onRemoteItem,
-    onRemote: () => { renderAll(); renderFamily(); if (started) scanConflicts(); },
+    onRemote: () => { clearTimeout(S._rr); S._rr = setTimeout(() => { renderAll(); renderFamily(); if (started) scanConflicts(); }, 250); },
     onGroups: () => { buildPeople(); renderAll(); renderFamily(); renderMe(); },
     onBusy: b => { S.busy = b; },
     onRes: async r => { await db.setKV('resources', r); S.resources = C.DEFAULT_RES.concat(r); renderRes(); },
     onStatus: st => { const el = $('#syncState'); if (el) el.textContent = st === 'ok' ? 'מסונכרן ✓' : 'ממתין לרשת…'; },
   });
   S.items = await db.all('items');
-  if (await showGate()) { await migrateToGroups(); buildPeople(); renderAll(); renderFamily(); boot(); }
+  if (await showGate()) {
+    buildPeople(); renderAll(); renderFamily(); boot();
+    sync.whenReady().then(async () => { await migrateToGroups(); buildPeople(); renderAll(); renderFamily(); renderMe(); });
+  }
+  if (RECOVERY && sync.user()) openNewPassword();
+  try { navigator.storage?.persist?.(); } catch { /* */ } // שהדפדפן לא ימחק את הנתונים כשחסר מקום
 })();
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js').then(r => r.update?.()).catch(() => {});
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) toast('✨ האפליקציה עודכנה לגרסה חדשה'); });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) toast('✨ יש גרסה חדשה', false, { l: '🔄 לעדכן', run: () => location.reload() }); });
 }
 
 // לבדיקות מהדפדפן

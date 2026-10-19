@@ -25,6 +25,7 @@ async function store(name, mode) {
 const done = req => new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
 
 export const all = async name => done((await store(name, 'readonly')).getAll());
+export const get = async (name, id) => done((await store(name, 'readonly')).get(id));
 export const put = async (name, v) => done((await store(name, 'readwrite')).put(v));
 export const del = async (name, id) => done((await store(name, 'readwrite')).delete(id));
 export const clear = async name => done((await store(name, 'readwrite')).clear());
@@ -46,6 +47,7 @@ export async function importAll(data) {
   for (const it of data.items) await put('items', it);
   for (const l of data.log || []) await put('log', l);
   for (const [k, v] of Object.entries(data.kv || {})) if (v != null) await setKV(k, v);
+  return data.items;
 }
 
 export const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

@@ -219,7 +219,7 @@ footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
       <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
       <div class="pic p9"><div class="big">🔒</div><h3>נעול רק בשבילכם</h3><span class="tag">#פרטיות</span></div>
       <div class="acts">❤️ 💬 ➤</div>
-      <div class="cap"><b>zmanbekef</b> קוד או Face ID / טביעת אצבע. וכל משימה אפשר לסמן <b>🔒 פרטי</b> — רק אתה רואה. <span class="h">#שלכם_ורק_שלכם</span></div>
+      <div class="cap"><b>zmanbekef</b> קוד או Face ID / טביעת אצבע. וכל משימה אפשר לסמן <b>🔒 פרטי</b> — רק אתה רואה. שכחתם את הקוד? <b>"🔑 שכחתי את הקוד"</b> ← הסיסמה של החשבון ← נפתח. שכחתם סיסמה? במסך הכניסה <b>"🔑 שכחתי סיסמה"</b> ומגיע מייל. מחקתם בטעות? <b>↩️ בטל</b> מופיע מיד למעלה. <span class="h">#שלכם_ורק_שלכם</span></div>
     </article>
     <article class="post" id="f-me">
       <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
@@ -408,7 +408,9 @@ footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
 <script>
 // קישור אחד לכל דבר: התקנה ישירה מהמדריך, וקוד המשפחה עובר לאפליקציה
 (function () {
-  var q = location.search || '';
+  // רק קוד הצטרפות תקין עובר הלאה (שום דבר אחר מהכתובת לא נכנס לדף)
+  var j = new URLSearchParams(location.search).get('join');
+  var q = j && /^[A-Za-z0-9]{4,12}$/.test(j) ? '?join=' + encodeURIComponent(j) : '';
   document.querySelectorAll('a.open-app, a.install').forEach(function (a) { a.href = '../' + q; });
   var evt = null;
   var standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -422,10 +424,12 @@ footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
       if (ios) { e.preventDefault(); document.getElementById('iphone').scrollIntoView({ behavior: 'smooth' }); return; }
     });
   });
-  if (q.indexOf('join=') >= 0) {
+  if (q) {
     var bar = document.createElement('div');
     bar.style.cssText = 'position:sticky;top:0;z-index:9;background:linear-gradient(135deg,#3B82F6,#7C3AED,#EC4899);color:#fff;text-align:center;padding:12px 16px;font-weight:700;font-size:17px';
-    bar.innerHTML = '👋 הוזמנת למשפחה! <a href="../' + q + '" class="install" style="color:#fff;text-decoration:underline">התקנה והצטרפות ←</a>';
+    var link = document.createElement('a');
+    link.href = '../' + q; link.className = 'install'; link.style.cssText = 'color:#fff;text-decoration:underline'; link.textContent = 'התקנה והצטרפות ←';
+    bar.textContent = '👋 הוזמנת לקבוצה! '; bar.appendChild(link);
     document.body.prepend(bar);
   }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('../sw.js').catch(function () {});

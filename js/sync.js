@@ -39,6 +39,7 @@ const HEB_ERR = {
   'User already registered': 'המייל הזה כבר רשום — נסה "כניסה"',
   'Password should be at least 6 characters': 'הסיסמה צריכה להיות לפחות 6 תווים',
   'bad code': 'הקוד לא נמצא. בדוק שהעתקת נכון',
+  'too many tries': 'יותר מדי ניסיונות עם קוד שגוי. נסה שוב בעוד רבע שעה',
   'pair full': 'הקישור הזה כבר בשימוש של מישהו אחר',
   'last admin': 'חייב להישאר לפחות מנהל אחד בקבוצה',
   'not admin': 'רק מנהל הקבוצה יכול לעשות את זה',
@@ -61,13 +62,32 @@ export async function signIn(email, password) {
   if (error) throw new Error(nice(error));
   await currentUser();
 }
+// שכחתי סיסמה: מייל עם קישור שחוזר לאפליקציה, ושם בוחרים סיסמה חדשה
+export async function resetPassword(email) {
+  const { error } = await (await client()).auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  if (error) throw new Error(nice(error));
+}
+export async function setPassword(password) {
+  const { error } = await (await client()).auth.updateUser({ password });
+  if (error) throw new Error(nice(error));
+}
+/** בדיקת סיסמת החשבון (בשביל "שכחתי את קוד הנעילה") */
+export async function verifyPassword(password) {
+  if (!me?.email || !navigator.onLine) return false;
+  const { error } = await (await client()).auth.signInWithPassword({ email: me.email, password });
+  return !error;
+}
 export async function signUp(email, password) {
   const { data, error } = await (await client()).auth.signUp({ email, password });
   if (error) throw new Error(nice(error));
   if (!data.session) throw new Error(HEB_ERR['Email not confirmed']);
   await currentUser();
 }
-export async function signOut() {
+/** יציאה: קודם מעלים לענן את מה שעוד לא עלה. אם אי אפשר — זורקים 'pending' (אלא אם force) */
+export async function pendingCount() { return (await db.getKV('outbox', [])).length; }
+export async function signOut(force) {
+  if (me && navigator.onLine) await Promise.race([flush(), new Promise(r => setTimeout(r, 6000))]);
+  if (!force && (await pendingCount())) throw new Error('pending');
   stop(); hh = null; me = null; groups = []; profile = null;
   for (const k of ['household', 'outbox', 'lastSync2', 'people', 'top3', 'groups', 'profile', 'migratedGroups']) await db.setKV(k, null);
   await db.clear('items'); await db.clear('msgs'); await db.clear('log');
@@ -98,7 +118,7 @@ export async function loadProfile() {
   try {
     const { data, error } = await (await client()).from('zman_profiles').select('*').eq('user_id', me.id).maybeSingle();
     if (error) throw error;
-    profile = data || null; await db.setKV('profile', profile);
+    profile = cleanP(data) || null; await db.setKV('profile', profile);
   } catch { profile = await db.getKV('profile', null); }
   return profile;
 }
@@ -115,19 +135,27 @@ export async function saveProfile(full_name, emoji) {
   return profile;
 }
 
+// שם ואייקון שמגיעים מאנשים אחרים — מנקים, שלא יוכלו להכניס קוד לדף
+const cleanE = v => typeof v === 'string' && v.length <= 16 && !/[<>&"'`=\\/]/.test(v) ? v : null;
+const cleanT = v => typeof v === 'string' ? v.replace(/[<>]/g, '').slice(0, 60) : v;
+const cleanP = p => p && { ...p, full_name: cleanT(p.full_name), emoji: cleanE(p.emoji) };
+
 // ---------- קבוצות ----------
 export async function loadGroups() {
   try {
     const c = await client();
-    const { data: gs, error } = await c.from('zman_groups').select('*').order('created_at');
+    const { data: gs, error } = await c.from('zman_groups').select('id,name,kind,source_household,created_by,created_at').order('created_at');
     if (error) throw error;
     const ids = (gs || []).map(g => g.id);
     const { data: ms } = ids.length ? await c.from('zman_members').select('*').in('group_id', ids).order('joined_at') : { data: [] };
     const uids = [...new Set((ms || []).map(m => m.user_id).filter(Boolean))];
     const { data: ps } = uids.length ? await c.from('zman_profiles').select('*').in('user_id', uids) : { data: [] };
+    // קודי הצטרפות — רק למנהל (ילד לא רואה אותם)
+    const { data: codes } = ids.length ? await c.rpc('zman_group_codes') : { data: [] };
     groups = (gs || []).map(g => {
-      const members = (ms || []).filter(m => m.group_id === g.id).map(m => ({ ...m, profile: (ps || []).find(p => p.user_id === m.user_id) || null }));
-      return { ...g, members, myRole: members.find(m => m.user_id === me.id)?.role || 'member' };
+      const members = (ms || []).filter(m => m.group_id === g.id).map(m => ({ ...m, nickname: cleanT(m.nickname), emoji: cleanE(m.emoji), profile: cleanP((ps || []).find(p => p.user_id === m.user_id)) || null }));
+      const cd = (codes || []).find(x => x.id === g.id);
+      return { ...g, name: cleanT(g.name), code: cd?.code || null, child_code: cd?.child_code || null, members, myRole: members.find(m => m.user_id === me.id)?.role || 'member' };
     });
     await db.setKV('groups', groups);
   } catch (e) { console.warn('groups', e); groups = await db.getKV('groups', []) || []; }
@@ -139,7 +167,7 @@ const rpc = async (fn, args) => {
   return data;
 };
 export const createGroup = async (name, kind, nick, emo) => { const g = await rpc('zman_create_group', { gname: name, gkind: kind, nick, emo }); await loadGroups(); return g; };
-export const joinGroup = async (code, nick, emo) => { const g = await rpc('zman_join_group', { jcode: code, nick, emo }); await loadGroups(); return g; };
+export const joinGroup = async (code, nick, emo) => { const g = await rpc('zman_join_group', { jcode: code, nick, emo }); if (!g) throw new Error(HEB_ERR['bad code']); await loadGroups(); return g; };
 export const setNickname = async (g, nick, emo) => { await rpc('zman_set_nickname', { g, nick, emo }); await loadGroups(); };
 // יומן: מי בקבוצה רואה את היומן שלי ('all' / 'busy' / 'none'), והיומן של מישהו אחר לפי מה שהוא הרשה
 export const setCalShare = async (g, v) => { await rpc('zman_set_cal_share', { g, v }); await loadGroups(); };
@@ -184,6 +212,15 @@ export async function queue(it) {
   await db.setKV('outbox', box);
   flush();
 }
+/** אחרי שחזור מגיבוי: כל המשימות נכנסות לתור ועולות לענן */
+export async function queueMany(items) {
+  if (!me || !items?.length) return;
+  const ids = new Set(items.map(x => x.id)), now = Date.now();
+  const box = (await db.getKV('outbox', [])).filter(o => !ids.has(o.id));
+  for (const id of ids) box.push({ id, at: now });
+  await db.setKV('outbox', box);
+  flush();
+}
 const rowOf = it => {
   const data = { ...it }; LOCAL_ONLY.forEach(k => delete data[k]);
   return { id: it.id, group_id: it.group_id || null, data, deleted: it.status === 'deleted', created_by: it.by || me?.id, assignee: it.forU || null, private: !!it.private };
@@ -197,7 +234,19 @@ export async function flush() {
     while (box.length) {
       const batch = box.slice(0, 200);
       const items = (await db.all('items')).filter(it => batch.some(b => b.id === it.id));
-      if (items.length) { const { error } = await c.from('zman_tasks').upsert(items.map(rowOf)); if (error) throw error; }
+      if (items.length) {
+        const { error } = await c.from('zman_tasks').upsert(items.map(rowOf));
+        if (error) {
+          if (!error.code) throw error; // אין רשת — ננסה שוב אחר כך
+          // השרת דחה משהו (הרשאה / נתונים): שולחים אחד-אחד, ומה שנדחה עובר הצידה — כדי שלא יחסום את כל השאר לתמיד
+          const parked = await db.getKV('outboxParked', []);
+          for (const it of items) {
+            const r = await c.from('zman_tasks').upsert([rowOf(it)]);
+            if (r.error) { if (!r.error.code) throw r.error; parked.push({ id: it.id, at: new Date().toISOString(), err: r.error.message }); console.warn('sync parked', it.id, r.error.message); }
+          }
+          await db.setKV('outboxParked', parked.slice(-200));
+        }
+      }
       box = (await db.getKV('outbox', [])).filter(o => !batch.some(b => b.id === o.id && b.at === o.at));
       await db.setKV('outbox', box);
     }
@@ -208,7 +257,9 @@ export async function flush() {
 
 // ---------- קבלת שינויים מהטלפונים האחרים ----------
 async function apply(row, live) {
-  const local = (await db.all('items')).find(x => x.id === row.id) || null;
+  const local = (await db.get('items', row.id)) || null;
+  // יש אצלנו שינוי שעוד לא עלה לענן — השינוי שלנו גובר (הוא יעלה עוד רגע)
+  if (local && (await db.getKV('outbox', [])).some(o => o.id === row.id)) return;
   const next = { ...row.data, group_id: row.group_id, status: row.deleted ? 'deleted' : row.data.status };
   if (local) LOCAL_ONLY.forEach(k => { if (local[k] !== undefined) next[k] = local[k]; });
   await db.put('items', next);
@@ -262,17 +313,23 @@ function listen() {
 }
 
 /** מופעל בעליית האפליקציה. מחזיר { user } */
+let ready = Promise.resolve();
+export const whenReady = () => ready;
+/** פתיחה: מה שבטלפון מיד (בלי לחכות לרשת), והענן ממשיך ברקע. בפעם הראשונה במכשיר — מחכים לפרופיל */
 export async function start(callbacks) {
   cb = callbacks;
-  try {
-    await currentUser();
-    if (!me) return { user: null };
-    hh = await db.getKV('household', null); groups = await db.getKV('groups', []) || []; profile = await db.getKV('profile', null);
-    try { await loadHousehold(); } catch { /* בלי רשת */ }
-    await loadProfile(); await loadGroups();
-    await connected(false);
-    return { user: me };
-  } catch (e) { console.warn('sync start', e); cb.onStatus?.('wait'); return { user: me }; }
+  try { await currentUser(); } catch (e) { console.warn('sync start', e); }
+  if (!me) return { user: null };
+  hh = await db.getKV('household', null); groups = await db.getKV('groups', []) || []; profile = await db.getKV('profile', null);
+  ready = (async () => {
+    try {
+      try { await loadHousehold(); } catch { /* בלי רשת */ }
+      await loadProfile(); await loadGroups(); cb.onGroups?.();
+      await connected(false);
+    } catch (e) { console.warn('sync start', e); cb.onStatus?.('wait'); }
+  })();
+  if (!profile) await ready;
+  return { user: me };
 }
 /** אחרי כניסה: מעלה את מה שכבר רשום בטלפון, מוריד את של הקבוצות, ומאזין לשינויים */
 export async function connected(first = true) {
