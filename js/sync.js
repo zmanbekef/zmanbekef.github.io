@@ -187,6 +187,7 @@ export async function saveCategory(row) {
   const rows = (await db.getKV('cats', [])).filter(r => r.id !== row.id); rows.push(row); await db.setKV('cats', rows);
 }
 // יומן: מי בקבוצה רואה את היומן שלי ('all' / 'busy' / 'none'), והיומן של מישהו אחר לפי מה שהוא הרשה
+export const setColor = async (mid, c) => { await rpc('zman_set_color', { mid, c }); await loadGroups(); };
 export const setCalShare = async (g, v) => { await rpc('zman_set_cal_share', { g, v }); await loadGroups(); };
 export async function calendarOf(uid) {
   if (!me || !uid || !navigator.onLine) return db.getKV('cal:' + uid, []);
@@ -273,10 +274,21 @@ export async function flush() {
 }
 
 // ---------- קבלת שינויים מהטלפונים האחרים ----------
+const mergeComments = (a, b) => {
+  if (!a?.length && !b?.length) return null;
+  const m = new Map(); for (const c of [...(a || []), ...(b || [])]) m.set(c.id, c);
+  return [...m.values()].sort((x, y) => x.at.localeCompare(y.at));
+};
 async function apply(row, live) {
   const local = (await db.get('items', row.id)) || null;
-  // יש אצלנו שינוי שעוד לא עלה לענן — השינוי שלנו גובר (הוא יעלה עוד רגע)
-  if (local && (await db.getKV('outbox', [])).some(o => o.id === row.id)) return;
+  // תגובות על משימה: מאחדים (שתי תגובות שנכתבו באותו זמן לא דורסות זו את זו)
+  const merged = mergeComments(local?.comments, row.data?.comments);
+  // יש אצלנו שינוי שעוד לא עלה לענן — השינוי שלנו גובר (הוא יעלה עוד רגע), רק מוסיפים לו תגובות חדשות
+  if (local && (await db.getKV('outbox', [])).some(o => o.id === row.id)) {
+    if (merged && merged.length !== (local.comments || []).length) { local.comments = merged; await db.put('items', local); cb.onItem?.(local, local, live); }
+    return;
+  }
+  if (merged) row = { ...row, data: { ...row.data, comments: merged } };
   const next = { ...row.data, group_id: row.group_id, status: row.deleted ? 'deleted' : row.data.status };
   if (local) LOCAL_ONLY.forEach(k => { if (local[k] !== undefined) next[k] = local[k]; });
   await db.put('items', next);

@@ -7,6 +7,7 @@ import * as Z from './zmanim.js';
 import * as help from './help.js';
 import * as lock from './lock.js';
 import { smartParse, iconFor } from './smart.js';
+import { DEPTS, deptOf, guessDept, shopItems } from './shop.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -41,6 +42,7 @@ function buildPeople() {
     const id = m.user_id ? 'u:' + m.user_id : 'm:' + m.id;
     let p = list.find(x => x.id === id);
     if (!p) { p = { id, uid: m.user_id || null, name: m.user_id ? (m.profile?.full_name || m.nickname) : m.nickname, e: m.profile?.emoji || m.emoji || '🙂', nicks: [] }; list.push(p); }
+    if (m.color && !p.color) p.color = m.color;
     p.nicks.push({ g: g.id, nick: m.nickname, role: m.role, mid: m.id, kind: g.kind });
   }
   S.people = list; S.myP = S.uid ? 'u:' + S.uid : null;
@@ -123,7 +125,7 @@ function think(ms = 450) {
 }
 
 // כפתורים שלא "נועלים" את ההודעה (אפשר ללחוץ עליהם שוב)
-const KEEP = new Set(['calDay', 'pickShifts', 'quickFor', 'bump', 'assign', 'newGroup', 'shareGroup', 'editMe', 'edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
+const KEEP = new Set(['shopView', 'calDay', 'pickShifts', 'quickFor', 'bump', 'assign', 'newGroup', 'shareGroup', 'editMe', 'edit', 'star', 'pickTop3', 'goto', 'conflict', 'replyText', 'replyNo']);
 async function onAct(m, i, box) {
   const a = m.acts[i];
   if (!KEEP.has(a.op)) {
@@ -178,6 +180,7 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 const OPS = {
   bump: id => bumpTask(id),
+  shopView: gid => { S.shopG = gid || null; showView('shop'); },
   calDay(iso) { CAL.day = sod(new Date(iso)); CAL.mode = 'day'; showView('cal'); },
   async undoMany(...ids) {
     for (const id of ids) { const it = item(id); if (!it) continue; it.status = 'deleted'; await save(it); }
@@ -322,6 +325,22 @@ async function send(text, voice) {
   const pi = parse(text).intent;
   if (!['query', 'summary', 'morning', 'yes', 'no', 'done'].includes(pi) && help.isHelpRequest(text)) { $('#inp').blur(); return openHelp(text, help.wantsGuide(text) && !help.answer(text).length); }
   if (/^(?:תקפיץ|תקפיצי|להקפיץ|הקפץ|הקפיצי)\s/.test(text) && await bumpByText(text)) return;
+  // "תבנית ניקיון פסח" / "תבנית הכנות לשבת"
+  const tm = text.match(/^(?:תבנית|מתבנית|תפתח\s+תבנית)\s+(.+)$/);
+  if (tm) {
+    const want = tm[1].trim(), t = allTemplates().find(x => x.name.includes(want) || want.includes(x.name.split(' ')[0]));
+    await me(text, voice); await think();
+    if (!t) return bot('📋', 'var(--card2)', 'לא מצאתי תבנית כזאת', 'התבניות: ' + allTemplates().map(x => x.name).join(' · '));
+    return createItem({ kind: 'task', text: t.name, steps: mkSteps(t.steps), due: null, hasTime: false, repeat: null }, null).then(() => { const n = S.items[S.items.length - 1]; if (n?.steps) openSteps(n.id); });
+  }
+  // "קניות: חלב, ביצים" → רשימת הקניות של הקבוצה הראשית
+  const shopL = shopItems(text);
+  if (shopL?.length) {
+    await me(text, voice); await think();
+    const gid = defGroup()?.id || null, a = await addShop(shopL, gid);
+    return bot('🛒', 'var(--g3)', a.length ? `נוסף${a.length > 1 ? 'ו ' + a.length : ''} לרשימת הקניות${gid ? ` של "${groupOf(gid)?.name}"` : ''}` : 'כבר ברשימה',
+      a.map(x => `${deptOf(x.dept)[1]} ${x.text}`).join('\n'), [{ l: '🛒 לרשימה', op: 'shopView', a: [gid || ''] , pri: true }]);
+  }
   // משפט "ליומן" (כמה ימים / משמרות / "תכניס ל...") → אירועים ביומן
   const sm = smartParse(text, { names: smartNames(), shifts: shiftHours(), now: new Date() });
   if (sm) { await me(text, voice); await think(); return createEvents(sm); }
@@ -415,7 +434,7 @@ async function createItem(p, raw) {
     id: db.newId(), kind: p.kind === 'thought' && fp ? 'task' : p.kind, text: p.text || raw, due: p.due ? p.due.toISOString() : null, hasTime: !!p.hasTime,
     repeat: p.repeat, status: 'open', created: new Date().toISOString(), askAt: null, askedKey: null, raw: raw || null,
     forP: p.forP === 'any' ? 'any' : fp?.id || null, forU: fp?.uid || null, private: !!p.private, group_id: p.private ? null : (p.group || null),
-    dur: p.dur ?? null, place: p.place || null, res: p.res?.length ? p.res : null, cat: p.cat || null,
+    dur: p.dur ?? null, place: p.place || null, res: p.res?.length ? p.res : null, cat: p.cat || null, steps: p.steps || null,
   };
   S.items.push(it); await save(it); await addLog(it, 'created'); renderAll();
   if (fp?.uid && fp.uid !== S.uid) queueNotify(fp.uid, 'share', `📥 ${nameIn(S.myP, it.group_id)} נתן/ה לך ${it.kind === 'meeting' ? 'פגישה' : 'משימה'}`, `${it.text}${it.due ? ' · ' + whenLabel(it) : ''}`, it.id);
@@ -761,7 +780,7 @@ async function syncSchedule() {
 
 // כרטיס ההגדרות
 const PUSH_CATS = [['msg', '💬 הודעות ותגובות'], ['task', '⏰ הגיע הזמן של משימה'], ['conflict', '⚠️ התנגשות'], ['share', '📥 שיתפו איתי / נתנו לי משימה'], ['group', '📎 שיוך לקבוצה'],
-  ['bump', '🔔 הקפצות'], ['done', '✅ מישהו סיים משימה שנתתי'], ['join', '👥 מצטרף חדש לקבוצה'], ['summary', '☀️🌙 סיכומים'], ['shabbat', '🕯️ שבת וחג']];
+  ['bump', '🔔 הקפצות'], ['comment', '💬 תגובות על משימות'], ['done', '✅ מישהו סיים משימה שנתתי'], ['join', '👥 מצטרף חדש לקבוצה'], ['summary', '☀️🌙 סיכומים'], ['shabbat', '🕯️ שבת וחג']];
 function drawMonthly() {
   const el = $('#monthlyRow'); if (!el) return;
   if (!S.uid) { el.innerHTML = '<p class="note" style="margin-top:8px">📧 אחרי כניסה אפשר לקבל ב-1 לכל חודש מייל עם סיכום החודש.</p>'; return; }
@@ -1147,11 +1166,12 @@ function rowHtml(it) {
   const g = groupOf(it.group_id);
   const owner = !S.uid ? '' : it.forP && it.forP !== S.myP ? whoIn(it.forP, it.group_id) : g ? gLabel(g) : (it.by && it.by !== S.uid ? whoIn(personOfUid(it.by)?.id, null) : '');
   const ct = catOf(it);
-  const meta = [ct ? `${ct.icon} ${ct.name}` : '', owner, it.kind === 'meeting' ? '👥 פגישה' : '', (it.hasTime && it.dur ? whenLabel(it).replace(/(\d{1,2}:\d{2})$/, x => `\u2066${x}–${hm(new Date(C.endOf(it)))}\u2069`) : whenLabel(it)), it.place ? '📍 ' + it.place : '', ...(it.res || []).map(r => resOf(r)?.e || '')].filter(Boolean).join(' · ');
+  const meta = [stepsLbl(it), ct ? `${ct.icon} ${ct.name}` : '', owner, it.kind === 'meeting' ? '👥 פגישה' : '', (it.hasTime && it.dur ? whenLabel(it).replace(/(\d{1,2}:\d{2})$/, x => `\u2066${x}–${hm(new Date(C.endOf(it)))}\u2069`) : whenLabel(it)), it.place ? '📍 ' + it.place : '', ...(it.res || []).map(r => resOf(r)?.e || '')].filter(Boolean).join(' · ');
   const warn = S.conflictIds?.has(it.id) && it.status === 'open' ? '<button class="warn" data-op="conf" aria-label="התנגשות">⚠️</button>' : '';
-  return `<div class="row${d}" data-id="${it.id}"><button class="cb" data-op="check">${d ? '✓' : ''}</button>${warn}
+  const tint = S.uid ? colorOf(it.forP && it.forP !== 'any' ? it.forP : ownerP(it) || S.myP) : null;
+  return `<div class="row${d}" data-id="${it.id}"${tint ? ` style="--pc:${tint}"` : ''}><button class="cb" data-op="check">${d ? '✓' : ''}</button>${warn}
     <div class="nm" data-op="edit">${esc(it.text)}${meta ? `<small class="${late ? 'late' : ''}">${esc(meta)}</small>` : ''}</div>
-    ${canBump(it) ? '<button class="star on" data-op="bump" aria-label="להקפיץ" style="font-size:16px">🔔</button>' : ''}${S.uid && it.status === 'open' ? '<button class="star on" data-op="assign" aria-label="שיוך" style="font-size:16px">📎</button>' : ''}${it.status === 'open' && it.kind === 'task' && isMine(it) ? `<button class="star${star ? ' on' : ''}" data-op="star" aria-label="לחשובים של היום">⭐</button>` : ''}</div>`;
+    ${it.comments?.length ? `<button class="star on cm-n" data-op="comments" aria-label="${it.comments.length} תגובות">💬<small>${it.comments.length}</small></button>` : ''}${canBump(it) ? '<button class="star on" data-op="bump" aria-label="להקפיץ" style="font-size:16px">🔔</button>' : ''}${S.uid && it.status === 'open' ? '<button class="star on" data-op="assign" aria-label="שיוך" style="font-size:16px">📎</button>' : ''}${it.status === 'open' && it.kind === 'task' && isMine(it) ? `<button class="star${star ? ' on' : ''}" data-op="star" aria-label="לחשובים של היום">⭐</button>` : ''}</div>`;
 }
 function renderTasks() {
   const now = new Date(), t0 = sod(now), t1 = addDays(t0, 1), t2 = addDays(t0, 2);
@@ -1187,13 +1207,162 @@ $('#taskList').addEventListener('click', e => {
   const op = e.target.closest('[data-op]')?.dataset.op, id = e.target.closest('.row')?.dataset.id;
   if (!op || !id) return;
   const it = S.items.find(x => x.id === id);
+  if (op === 'check') e.target.closest('.cb')?.classList.add('pop');
   if (op === 'check') return isDoneToday(it) && !(it.repeat && it.status === 'open' && !isToday(it.lastDone)) ? OPS.undoDone(id) : markDone(id, true).then(() => toast('✅ ' + it.text));
   if (op === 'edit') return openEdit(id);
   if (op === 'star') return OPS.star(id);
   if (op === 'conf') return openConflict(id);
   if (op === 'assign') return openAssign(id);
   if (op === 'bump') return bumpTask(id);
+  if (op === 'comments') return openComments(id);
 });
+
+// 🎬 אנימציית כניסה: הכרטיסים "קופצים" אחד אחרי השני — רק כשנכנסים למסך, לא בכל עדכון
+function enterAnim(el) { if (!el) return; el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); clearTimeout(el._en); el._en = setTimeout(() => el.classList.remove('enter'), 900); }
+// מספר שעולה מ-0 (למשל רצף ימים, בוצעו השבוע)
+function countUp(el, to, pre = '') {
+  if (!el) return; to = +to || 0;
+  if (document.documentElement.classList.contains('no-anim') || to < 2) { el.textContent = pre + to; return; }
+  const t0 = performance.now(), d = 900;
+  const step = t => { const k = Math.min(1, (t - t0) / d), e = 1 - Math.pow(1 - k, 3); el.textContent = pre + Math.round(to * e); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+// ⚙️ תצוגה: גודל טקסט ואנימציות (לכל מכשיר)
+function drawViewCard() {
+  const el = $('#viewCard'); if (!el) return;
+  const font = document.documentElement.dataset.font || 'm', anim = !document.documentElement.classList.contains('no-anim');
+  el.innerHTML = `<h4>🔠 תצוגה</h4>
+    <div class="set-row"><span>גודל טקסט</span><span class="chips" style="padding:0;gap:4px">${[['m', 'רגיל'], ['l', 'גדול'], ['xl', 'ענק']].map(([k, l]) => `<button class="chip ${font === k ? 'on' : ''}" data-font="${k}" aria-pressed="${font === k}">${l}</button>`).join('')}</span></div>
+    <div class="set-row"><span>🎬 אנימציות</span><span class="chips" style="padding:0;gap:4px">${[['on', 'פועל'], ['off', 'כבוי']].map(([k, l]) => `<button class="chip ${(k === 'on') === anim ? 'on' : ''}" data-anim="${k}">${l}</button>`).join('')}</span></div>
+    <p class="note">נשמר בטלפון הזה בלבד.</p>`;
+  el.querySelectorAll('[data-font]').forEach(b => b.onclick = () => { const f = b.dataset.font; if (f === 'm') delete document.documentElement.dataset.font; else document.documentElement.dataset.font = f; try { localStorage.setItem('zman-font', f === 'm' ? '' : f); } catch { /* */ } drawViewCard(); toast('🔠 נשמר'); });
+  el.querySelectorAll('[data-anim]').forEach(b => b.onclick = () => { const on = b.dataset.anim === 'on'; document.documentElement.classList.toggle('no-anim', !on); try { localStorage.setItem('zman-anim', on ? 'on' : 'off'); } catch { /* */ } drawViewCard(); if (on) confetti(30); toast(on ? '🎬 האנימציות פועלות' : 'האנימציות כבויות'); });
+}
+
+// 🎨 צבע לכל בן משפחה — מסונכרן לכולם. כל אחד משנה את שלו, מנהל גם ל"רק שם"
+const canColor = pid => { const p = person(pid); if (!p) return false; if (pid === S.myP) return true; return p.nicks.some(n => groupOf(n.g)?.myRole === 'admin'); };
+function openColorPick(pid) {
+  const p = person(pid); if (!p) return;
+  if (!S.uid) return toast('צריך להיות מחובר', true);
+  if (!canColor(pid)) return toast('רק מנהל הקבוצה (או האדם עצמו) יכול לשנות צבע', true);
+  sheet(`<h3>🎨 הצבע של ${esc(p.id === S.myP ? 'אני' : pName(pid))}</h3><p class="note">המשימות והאירועים שלו/ה יופיעו בצבע הזה — אצל כולם.</p>
+    <div class="col-grid" id="cpGrid" style="margin-top:10px">${CAT_COLORS.map(c => `<button type="button" class="${c === colorOf(pid) ? 'on' : ''}" data-c="${c}" style="background:${c}" aria-label="צבע ${c}"></button>`).join('')}</div>`);
+  pickChips($('#cpGrid'), 'data-c', async c => {
+    const mid = p.nicks.find(n => pid === S.myP || groupOf(n.g)?.myRole === 'admin')?.mid || p.nicks[0]?.mid;
+    try { await sync.setColor(mid, c); buildPeople(); closeSheet(); renderAll(); renderFamily(); drawCalCard(); toast('🎨 נשמר'); } catch (x) { toast(x.message, true); }
+  });
+}
+
+// 💬 תגובות על משימה — שרשור קטן, עם הודעה למי שרשם ולמי שהמשימה בשבילו
+function openComments(id) {
+  const it = item(id); if (!it) return;
+  const list = it.comments || [];
+  sheet(`<h3>💬 ${esc(it.text)}</h3>
+    <div class="cm-list" id="cmList">${list.length ? list.map(c => { const p = person(c.p), mine = c.p === S.myP;
+      return `<div class="cm ${mine ? 'mine' : ''}" style="--c:${colorOf(c.p)}"><b>${esc(mine ? 'אני' : p ? pName(p.id) : 'מישהו')}</b>${esc(c.text)}<i>${ago(c.at)}</i></div>`; }).join('')
+      : '<div class="empty-state" style="padding:14px"><span class="em">💬</span>עוד אין תגובות. אפשר לשאול, לעדכן או להוסיף פרט.</div>'}</div>
+    <div style="display:flex;gap:8px;margin-top:10px"><input id="cmText" placeholder="כתוב תגובה…" maxlength="300" enterkeyhint="send" style="flex:1"><button class="round mic" id="cmSend" aria-label="שליחה" style="width:46px;height:46px;font-size:18px">➤</button></div>`);
+  const box = $('#cmList'); box.scrollTop = box.scrollHeight;
+  const go = async () => {
+    const text = $('#cmText').value.trim(); if (!text) return;
+    if (!S.uid) return toast('צריך להיות מחובר כדי להגיב', true);
+    it.comments = [...(it.comments || []), { id: db.newId(), p: S.myP, at: new Date().toISOString(), text: text.slice(0, 300) }];
+    await save(it); renderAll();
+    const gid = it.group_id;
+    for (const uid of new Set([it.by, it.forU].filter(u => u && u !== S.uid))) await queueNotify(uid, 'comment', `💬 ${nameIn(S.myP, gid)} הגיב/ה על "${it.text.slice(0, 40)}"`, text, it.id + ':' + it.comments.length);
+    openComments(id);
+  };
+  $('#cmSend').onclick = go;
+  $('#cmText').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) go(); };
+  setTimeout(() => $('#cmText')?.focus(), 300);
+}
+
+// 🛒 רשימת קניות משותפת לקבוצה, לפי מחלקות בסופר
+const shopGid = () => S.shopG !== undefined ? S.shopG : (defGroup()?.id || null);
+const shopOf = gid => S.items.filter(x => x.kind === 'shop' && x.status !== 'deleted' && (x.group_id || null) === (gid || null));
+async function addShop(texts, gid = shopGid()) {
+  const have = shopOf(gid).filter(x => x.status === 'open').map(x => x.text.trim());
+  const added = [];
+  for (const t of texts) {
+    if (have.includes(t)) continue;
+    const it = { id: db.newId(), kind: 'shop', text: t.slice(0, 60), dept: guessDept(t), status: 'open', created: new Date().toISOString(), group_id: gid || null, private: !gid, forP: null, forU: null, due: null, hasTime: false, repeat: null };
+    S.items.push(it); await save(it); added.push(it);
+  }
+  renderShop(); return added;
+}
+function renderShop() {
+  const el = $('#shopList'); if (!el || !$('#v-shop').classList.contains('on')) return;
+  const gs = S.uid ? sync.myGroups().filter(g => g.kind !== 'pair' || g.members.length > 1) : [];
+  const gid = shopGid();
+  $('#shopWho').hidden = !gs.length;
+  $('#shopWho').innerHTML = [[null, '🔒 רק שלי'], ...gs.map(g => [g.id, gLabel(g)])].map(([id, l]) => `<button class="chip ${(gid || null) === id ? 'on' : ''}" data-sg="${id || ''}">${esc(l)}</button>`).join('');
+  const list = shopOf(gid), open = list.filter(x => x.status === 'open'), done = list.filter(x => x.status === 'done');
+  const row = x => `<div class="shop-row${x.status === 'done' ? ' done' : ''}" data-id="${x.id}"><button class="cb" data-sop="check" aria-label="${x.status === 'done' ? 'החזר לרשימה' : 'נקנה'}">${x.status === 'done' ? '✓' : ''}</button><span class="sh-t" data-sop="edit">${esc(x.text)}</span>${x.by && x.by !== S.uid ? `<i class="sh-by" style="background:${colorOf(personOfUid(x.by)?.id)}" title="${esc(personOfUid(x.by)?.name || '')}"></i>` : ''}</div>`;
+  el.innerHTML = (open.length ? DEPTS.map(([id, ic, name]) => { const l = open.filter(x => (x.dept || 'other') === id); return l.length ? `<div class="card"><h4>${ic} ${name}<small>${l.length}</small></h4>${l.map(row).join('')}</div>` : ''; }).join('')
+    : `<div class="empty-state"><span class="em">🛒</span>הרשימה ריקה.<br>כותבים למעלה, או בצ'אט: "קניות: חלב, ביצים, לחם"</div>`)
+    + (done.length ? `<div class="card"><h4>✅ בעגלה<small>${done.length}</small></h4>${done.map(row).join('')}<button class="btn" id="shopClear" style="margin-top:8px">🧹 לנקות את מה שנקנה</button></div>` : '');
+  $('#shopClear')?.addEventListener('click', async e => {
+    if (!tapAgain(e.currentTarget, '🧹 בטוח? לחץ שוב')) return;
+    for (const x of done) { x.status = 'deleted'; await save(x); } renderShop(); toast('🧹 נוקה');
+  });
+}
+$('#shopWho').onclick = e => { const b = e.target.closest('[data-sg]'); if (!b) return; S.shopG = b.dataset.sg || null; renderShop(); };
+const shopGo = async () => {
+  const v = $('#shopIn').value.trim(); if (!v) return;
+  const parts = shopItems('קניות: ' + v) || [v];
+  $('#shopIn').value = ''; const a = await addShop(parts);
+  if (a.length) toast(`🛒 נוסף${a.length > 1 ? 'ו ' + a.length : ''}`); else toast('כבר ברשימה');
+};
+$('#shopAdd').onclick = shopGo;
+$('#shopIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) shopGo(); });
+$('#shopList').addEventListener('click', async e => {
+  const op = e.target.closest('[data-sop]')?.dataset.sop, id = e.target.closest('[data-id]')?.dataset.id, x = id && item(id);
+  if (!op || !x) return;
+  if (op === 'check') { x.status = x.status === 'done' ? 'open' : 'done'; x.doneAt = x.status === 'done' ? new Date().toISOString() : null; await save(x); e.target.closest('.cb')?.classList.add('pop'); setTimeout(renderShop, 180); return; }
+  sheet(`<h3>🛒 ${esc(x.text)}</h3><label>שם</label><input id="shN" value="${esc(x.text)}" maxlength="60"><label>מחלקה</label>
+    <div class="chips" id="shD" style="padding:0;flex-wrap:wrap">${DEPTS.map(([d, ic, n]) => `<button class="chip ${(x.dept || 'other') === d ? 'on' : ''}" data-d="${d}">${ic} ${n}</button>`).join('')}</div>
+    <button class="btn pri" id="shSave" style="margin-top:14px">💾 שמור</button><button class="btn danger" id="shDel">🗑️ להוריד מהרשימה</button>`);
+  let dep = x.dept || 'other';
+  pickChips($('#shD'), 'data-d', v => { dep = v; });
+  $('#shSave').onclick = async () => { x.text = $('#shN').value.trim() || x.text; x.dept = dep; await save(x); closeSheet(); renderShop(); };
+  $('#shDel').onclick = async () => { x.status = 'deleted'; await save(x); closeSheet(); renderShop(); toast('🗑️ הוסר', false, { l: '↩️ בטל', run: async () => { x.status = 'open'; await save(x); renderShop(); } }); };
+});
+
+// 📋 תבניות + פירוק משימה גדולה לשלבים
+const TEMPLATES = [
+  { id: 'shabbat', ic: '🕯️', name: 'הכנות לשבת', steps: ['קניות לשבת', 'לבשל', 'להכין חלות', 'לנקות את הבית', 'לערוך שולחן', 'להפעיל פלטה ומיחם', 'שעון שבת', 'בגדי שבת', 'הדלקת נרות'] },
+  { id: 'pesach', ic: '🧹', name: 'ניקיון פסח', steps: ['חדרי שינה', 'סלון', 'ארונות בגדים', 'המכונית', 'ארונות מטבח', 'מקרר', 'תנור וכיריים', 'להכשיר כיורים', 'להחליף כלים', 'מכירת חמץ', 'בדיקת חמץ', 'ביעור חמץ'] },
+  { id: 'simcha', ic: '🎉', name: 'חתונה / שמחה', steps: ['לבחור תאריך', 'אולם', 'רשימת מוזמנים', 'צלם', 'תזמורת / די־ג׳יי', 'הזמנות להדפסה', 'לשלוח הזמנות', 'בגדים', 'איפור ושיער', 'אישורי הגעה', 'סידורי הושבה'] },
+  { id: 'school', ic: '🎒', name: 'חזרה ללימודים', steps: ['רשימת ציוד', 'ספרים', 'מחברות וכלי כתיבה', 'תיק', 'בגדים ונעליים', 'לעטוף ספרים', 'מדבקות שם', 'תשלומי הורים', 'הסעות'] },
+];
+const allTemplates = () => TEMPLATES.concat((S.templates || []).map(t => ({ ...t, mine: true })));
+const mkSteps = arr => arr.map(t => ({ id: db.newId(), text: t, done: false }));
+const stepsLbl = it => it.steps?.length ? `📝 ${it.steps.filter(x => x.done).length}/${it.steps.length}` : '';
+function openSteps(id) {
+  const it = item(id); if (!it) return;
+  const st = it.steps || [], n = st.filter(x => x.done).length;
+  sheet(`<h3>📝 ${esc(it.text)}</h3>
+    ${st.length ? `<div class="bar" style="margin:4px 0 10px"><i style="width:${n / st.length * 100}%"></i></div><p class="note">${n} מתוך ${st.length} שלבים</p>` : '<p class="note">מפרקים משימה גדולה לצעדים קטנים. כל צעד מסמנים כשגומרים.</p>'}
+    <div id="stList">${st.map(x => `<div class="shop-row${x.done ? ' done' : ''}" data-s="${x.id}"><button class="cb" data-st="check">${x.done ? '✓' : ''}</button><span class="sh-t">${esc(x.text)}</span><button class="star on" data-st="del" aria-label="מחיקה">✕</button></div>`).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:10px"><input id="stIn" placeholder="שלב חדש…" maxlength="80" enterkeyhint="done" style="flex:1"><button class="round mic" id="stAdd" aria-label="הוספה" style="width:46px;height:46px;font-size:20px">＋</button></div>
+    ${st.length ? '<button class="btn" id="stTpl" style="margin-top:12px">💾 לשמור כתבנית</button>' : ''}`);
+  const re = () => { renderAll(); openSteps(id); };
+  const add = async () => { const v = $('#stIn').value.trim(); if (!v) return; it.steps = [...(it.steps || []), ...mkSteps(v.split(/\s*,\s*/).filter(Boolean))]; await save(it); re(); setTimeout(() => $('#stIn')?.focus(), 50); };
+  $('#stAdd').onclick = add;
+  $('#stIn').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) add(); };
+  $('#stList').onclick = async e => {
+    const op = e.target.closest('[data-st]')?.dataset.st, sid = e.target.closest('[data-s]')?.dataset.s; if (!op || !sid) return;
+    if (op === 'del') it.steps = it.steps.filter(x => x.id !== sid);
+    else { const x = it.steps.find(y => y.id === sid); x.done = !x.done; if (x.done) e.target.closest('.cb')?.classList.add('pop'); }
+    await save(it);
+    if (op === 'check' && it.steps.length && it.steps.every(x => x.done) && it.status === 'open') { confetti(90); closeSheet(); renderAll(); return toast('🏆 כל השלבים בוצעו!', false, { l: '✅ לסמן את המשימה', run: () => markDone(id) }); }
+    setTimeout(re, op === 'check' ? 160 : 0);
+  };
+  $('#stTpl')?.addEventListener('click', async () => {
+    S.templates = (S.templates || []).filter(t => t.name !== it.text).concat({ id: db.newId(), ic: '📋', name: it.text, steps: it.steps.map(x => x.text) });
+    await db.setKV('templates', S.templates); toast('💾 נשמר כתבנית. תמצא אותה ב-➕ ← "📋 מתבנית"');
+  });
+}
 
 // ---------- 🧠 צ'אט חכם: משפט אחד → כמה אירועים ביומן ----------
 const SHIFTS_DEF = { morning: ['07:00', '15:00'], evening: ['15:00', '23:00'], night: ['23:00', '07:00'] };
@@ -1372,7 +1541,7 @@ function goTo(go) {
   if (!go) return;
   if (go.conf) return openConflict(go.conf);
   if (go.view) showView(go.view);
-  if (go.item && item(go.item)) { if (item(go.item).kind === 'msg') return showView('chat'); return openCalEvent(go.item); }
+  if (go.item && item(go.item)) { if (item(go.item).kind === 'msg') return showView('chat'); if (go.comments) return openComments(go.item); return openCalEvent(go.item); }
 }
 $('#bellBtn').onclick = openBell;
 
@@ -1419,6 +1588,7 @@ const pName = pid => nameIn(pid, person(pid)?.nicks?.[0]?.g || null);
 const calShow = () => ({ mine: true, assigned: true, groups: true, thoughts: false, ...(S.settings.calShow || {}) });
 // צבע לכל אדם: אני סגול, השאר לפי הסדר (אפשר לשנות בהגדרות)
 function colorOf(pid) {
+  const pc = person(pid)?.color; if (pc) return pc; // הצבע שנבחר (מסונכרן לכל הקבוצה)
   if (S.settings.calColors?.[pid]) return S.settings.calColors[pid];
   if (!pid || pid === S.myP) return '#7C3AED';
   const i = others().findIndex(p => p.id === pid);
@@ -1567,14 +1737,14 @@ function drawMonth(d, ev) {
 
 function calMove(n) {
   const d = CAL.day;
-  CAL.jump = true;
+  CAL.jump = true; enterAnim($('#v-cal'));
   CAL.day = CAL.mode === 'day' ? addDays(d, n) : CAL.mode === 'week' ? addDays(d, 7 * n) : new Date(d.getFullYear(), d.getMonth() + n, 1);
   renderCal();
 }
 $('#calMode').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; CAL.mode = b.dataset.m; CAL.jump = true; renderCal(); };
 $('#calPrev').onclick = () => calMove(-1);
 $('#calNext').onclick = () => calMove(1);
-$('#calToday').onclick = () => { CAL.day = sod(new Date()); CAL.jump = true; renderCal(); };
+$('#calToday').onclick = () => { CAL.day = sod(new Date()); CAL.jump = true; enterAnim($('#v-cal')); renderCal(); };
 $('#calWho').onclick = async e => {
   const b = e.target.closest('[data-p]'); if (!b) return;
   const cur = calWho(), id = b.dataset.p, on = !cur.includes(id);
@@ -1615,11 +1785,15 @@ function openCalEvent(id, t) {
   sheet(`<h3>${evIcon({ kind: it.kind, it, done: !open })} ${esc(it.text)}</h3>
     <p class="note">${it.due ? whenLabel(it) : 'בלי תאריך'}${it.dur ? ' · ⏱️ ' + durLbl(it.dur) : ''}${it.place ? ' · 📍 ' + esc(it.place) : ''}${S.uid ? ' · ' + esc(assignLabel(it)) : ''}</p>
     ${open ? '<button class="btn pri" id="ceDone" style="margin-top:14px">✅ עשיתי</button>' : '<p class="note" style="margin-top:10px">✅ בוצע</p>'}
+    <button class="btn" id="ceSteps">${it.steps?.length ? `📝 שלבים (${stepsLbl(it).slice(3)})` : '✂️ לפרק לשלבים'}</button>
+    ${S.uid ? `<button class="btn" id="ceCm">💬 תגובות${it.comments?.length ? ` (${it.comments.length})` : ''}</button>` : ''}
     ${canBump(it) ? `<button class="btn" id="ceBump">🔔 להקפיץ ל${esc(pName(it.forP))}</button>` : ''}
     <div class="two"><button class="btn" id="ceEdit">✏️ עריכה</button>${S.uid ? '<button class="btn" id="ceAssign">📎 שיוך</button>' : '<button class="btn" id="ceClose">סגירה</button>'}</div>`);
   $('#ceDone')?.addEventListener('click', async () => { closeSheet(); await markDone(id, true); toast('✅ ' + it.text); renderCal(); });
   $('#ceEdit').onclick = () => openEdit(id);
   $('#ceBump')?.addEventListener('click', () => { closeSheet(); bumpTask(id); });
+  $('#ceCm')?.addEventListener('click', () => openComments(id));
+  $('#ceSteps').onclick = () => openSteps(id);
   $('#ceAssign')?.addEventListener('click', () => openAssign(id));
   $('#ceClose')?.addEventListener('click', closeSheet);
 }
@@ -1632,11 +1806,12 @@ function drawCalCard() {
     ${[['mine', '🙋 מה שרשמתי לעצמי'], ['assigned', '📥 מה שהקצו לי (וגם "מישהו מאיתנו")'], ['groups', '📤 מה שרשמתי בשביל אחרים'], ['thoughts', '💭 מחשבות שיש להן תאריך']]
       .map(([k, l]) => `<label class="set-row" style="cursor:pointer"><span>${l}</span><input type="checkbox" data-show="${k}" ${sh[k] ? 'checked' : ''}></label>`).join('')}
     <p class="note" style="margin-top:10px">צבע לכל אחד:</p>
-    ${[S.people.find(p => p.id === S.myP) || { id: null, e: '🙋', name: 'אני' }, ...others().filter(p => p.uid)].map(p => `<label class="set-row"><span>${esc(p.e)} ${esc(p.id === S.myP || !p.id ? 'אני' : nameIn(p.id, p.nicks?.[0]?.g))}</span><input type="color" data-col="${p.id || ''}" value="${colorOf(p.id)}" class="cal-color" aria-label="הצבע של ${esc(p.name)}"></label>`).join('')}
+    ${S.uid ? S.people.map(p => `<div class="set-row"><span>${esc(p.e)} ${esc(p.id === S.myP ? 'אני' : pName(p.id))}</span><button class="color-dot" data-pc="${p.id}" style="background:${colorOf(p.id)}" aria-label="הצבע של ${esc(p.name)}${canColor(p.id) ? ' — לשינוי' : ''}"></button></div>`).join('') : '<p class="note">אחרי כניסה אפשר לבחור צבע לכל אחד.</p>'}
     <p class="note" style="margin-top:10px">🏥 שעות משמרות (בשביל "תכניס לפסי משמרות בראשון ערב…"):</p>
     ${[['morning', 'בוקר'], ['evening', 'ערב'], ['night', 'לילה']].map(([k, l]) => `<div class="set-row"><span>${l}</span><span style="display:flex;gap:6px;align-items:center"><input type="time" data-sh="${k}" data-i="0" value="${shiftHours()[k][0]}">–<input type="time" data-sh="${k}" data-i="1" value="${shiftHours()[k][1]}"></span></div>`).join('')}
     <p class="note">את מי עוד רואים ביומן בוחרים בראש מסך היומן. מי רואה את היומן <b>שלך</b> נקבע בכל קבוצה, ב"👥 הקבוצות שלי".</p>`;
   el.querySelectorAll('[data-show]').forEach(c => c.onchange = async () => { S.settings.calShow = { ...calShow(), [c.dataset.show]: c.checked }; await db.setKV('settings', S.settings); toast('נשמר ✓'); });
+  el.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => openColorPick(b.dataset.pc));
   el.querySelectorAll('[data-sh]').forEach(c => c.onchange = async () => {
     const sh = shiftHours(); sh[c.dataset.sh] = [...sh[c.dataset.sh]]; sh[c.dataset.sh][+c.dataset.i] = c.value || sh[c.dataset.sh][+c.dataset.i];
     S.settings.shifts = sh; await db.setKV('settings', S.settings); toast('🏥 נשמר');
@@ -1697,7 +1872,8 @@ pullDown($('#main'), () => $('#main'), () => !$('#v-chat').classList.contains('o
 function openQuick(pre = {}) {
   let kind = pre.kind || 'task';
   sheet(`<h3>➕ הוספה מהירה</h3>
-    <div class="seg" id="qKind">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <label>📋 מתבנית (לא חובה)</label><div class="chips" id="qTpl" style="padding:0;flex-wrap:wrap">${allTemplates().map(t => `<button class="chip" data-t="${t.id}">${t.ic} ${esc(t.name)}</button>`).join('')}</div>
+    <div class="seg" id="qKind" style="margin-top:10px">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
     <label>מה</label><input id="qText" placeholder="למשל: לקנות מתנה לאמא" enterkeyhint="done" value="${esc(pre.text || '')}">
     <div id="qWhen"><label>מתי</label><div class="chips" id="qDay" style="padding:0;flex-wrap:wrap">${[['0', 'היום'], ['1', 'מחר'], ['x', '📅 תאריך'], ['', 'בלי תאריך']].map(([k, l]) => `<button class="chip ${k === '0' ? 'on' : ''}" data-d="${k}">${l}</button>`).join('')}</div>
     <input type="date" id="qDate" hidden style="margin-top:8px">
@@ -1706,8 +1882,14 @@ function openQuick(pre = {}) {
     <label>קטגוריה</label><div id="qCat">${catChips(defGroup()?.id || null, '')}</div>
     <button class="btn pri" id="qSave" style="margin-top:16px">➕ הוסף</button>
     <button class="btn" id="qCancel">ביטול</button>`);
-  let qcat = '';
+  let qcat = '', qsteps = null;
   pickChips($('#qCat'), 'data-cat', v => { qcat = v; });
+  $('#qTpl').addEventListener('click', e => {
+    const b = e.target.closest('[data-t]'); if (!b) return;
+    const on = !b.classList.contains('on'); $('#qTpl').querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', x === b && on));
+    const t = allTemplates().find(x => x.id === b.dataset.t);
+    qsteps = on ? t.steps : null; if (on) { $('#qText').value = t.name; toast(`📝 ${t.steps.length} שלבים יתווספו`); }
+  });
   let day = '0';
   if (pre.day) { // מהיומן: יום ושעה מוכנים
     const diff = Math.round((sod(pre.day) - sod(new Date())) / 864e5);
@@ -1735,7 +1917,7 @@ function openQuick(pre = {}) {
     const dv = $('#qDur').value;
     const back = pre.day ? 'cal' : 'chat';
     closeSheet(); if (back === 'chat') showView('chat');
-    await createItem({ kind, text, due, hasTime: !!(due && ts), repeat: null, dur: dv === '' ? null : +dv, forP: pre.forP && pre.forP !== S.myP ? pre.forP : null, private: false, group: pre.forP && pre.forP !== S.myP ? sharedGroup(pre.forP)?.id || null : null, cat: qcat || null }, null);
+    await createItem({ kind, text, due, hasTime: !!(due && ts), repeat: null, dur: dv === '' ? null : +dv, forP: pre.forP && pre.forP !== S.myP ? pre.forP : null, private: false, group: pre.forP && pre.forP !== S.myP ? sharedGroup(pre.forP)?.id || null : null, cat: qcat || null, steps: qsteps ? mkSteps(qsteps) : null }, null);
     toast('✅ נוסף');
   };
 }
@@ -1756,6 +1938,8 @@ function openEdit(id, focus, forceKind) {
     <div><label>איפה (לא חובה)</label><input id="ePlace" value="${esc(it.place || '')}" list="placeList"><datalist id="placeList">${knownPlaces().concat(C.CITIES).map(x => `<option value="${esc(x)}">`).join('')}</datalist></div></div></div>
     <label>קטגוריה</label><div id="eCat">${catChips(it.group_id, it.cat || '')}</div>
     ${S.uid ? `<label>שייכת ל</label><div class="set-row" style="border:none;padding:4px 0"><b>${esc(assignLabel(it))}</b><button class="act pri" id="eAssign">📎 שיוך</button></div>` : ''}
+    <button class="btn" id="eSteps" style="margin-top:12px">${it.steps?.length ? `📝 שלבים (${stepsLbl(it).slice(3)})` : '✂️ לפרק לשלבים'}</button>
+    ${S.uid ? `<button class="btn" id="eCm">💬 תגובות${it.comments?.length ? ` (${it.comments.length})` : ''}</button>` : ''}
     <button class="btn pri" id="eSave" style="margin-top:16px">💾 שמור</button>
     <div class="two"><button class="btn" id="eCancel">ביטול</button><button class="btn danger" id="eDel">🗑️ מחק</button></div>`);
   $('#eRep').value = rep;
@@ -1767,6 +1951,8 @@ function openEdit(id, focus, forceKind) {
   syncKind();
   $('#eKind').onclick = e => { const b = e.target.closest('button'); if (!b) return; kind = b.dataset.k; [...$('#eKind').children].forEach(x => x.classList.toggle('on', x === b)); syncKind(); };
   $('#eAssign')?.addEventListener('click', () => openAssign(id));
+  $('#eCm')?.addEventListener('click', () => openComments(id));
+  $('#eSteps').onclick = () => openSteps(id);
   if (focus === 'date') setTimeout(() => { try { $('#eDate').showPicker?.(); } catch { $('#eDate').focus(); } }, 350);
   $('#eCancel').onclick = closeSheet;
   $('#eDel').onclick = () => { closeSheet(); OPS.remove(id); };
@@ -1898,9 +2084,11 @@ function openPicker(mustSwapFor) {
 
 // ---------- ניווט ותצוגה ----------
 function showView(v) {
-  if (v === 'settings') { renderProfile(); drawPush(); drawLockCard(); drawMonthly(); drawCalCard(); drawCatCard(); }
-  document.querySelectorAll('nav button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === (v === 'thoughts' ? 'tasks' : v)));
+  if (v === 'settings') { renderProfile(); drawPush(); drawLockCard(); drawMonthly(); drawCalCard(); drawCatCard(); drawViewCard(); }
+  document.querySelectorAll('nav button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === (v === 'thoughts' || v === 'shop' ? 'tasks' : v)));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
+  enterAnim($('#v-' + v));
+  if (v === 'shop') renderShop();
   $('#composer').style.display = v === 'chat' ? 'flex' : 'none';
   if (v === 'chat') { renderChat(); $('#main').scrollTop = $('#main').scrollHeight; } else $('#main').scrollTop = 0;
   if (v === 'cal') { CAL.jump = true; renderCal(true); }
@@ -1917,7 +2105,7 @@ function renderChat() {
 function renderAll() {
   const n = new Date();
   $('#hdate').textContent = `יום ${DAYS[n.getDay()]}, ${n.getDate()}.${n.getMonth() + 1} · ${hebDate(n)}`;
-  renderTop3(); renderTasks(); renderThoughts(); renderRes(); renderCal();
+  renderTop3(); renderTasks(); renderThoughts(); renderRes(); renderCal(); renderShop();
   const s = streak(); $('#streak').textContent = s >= 2 ? `🔥 ${s} ימים ברצף` : s === 1 ? '🔥 יום 1' : '';
 }
 
@@ -2235,7 +2423,7 @@ async function load() {
   S.settings = await db.getKV('settings', S.settings);
   S.travel = await db.getKV('travel', {}); S.alerted = await db.getKV('alerted', []);
   S.resources = C.DEFAULT_RES.concat(await db.getKV('resources', []));
-  S.bell = await db.getKV('bell', []); S.cats = await db.getKV('cats', []); drawBellBadge();
+  S.templates = await db.getKV('templates', []); S.bell = await db.getKV('bell', []); S.cats = await db.getKV('cats', []); drawBellBadge();
   S.settings = { morning: '07:00', evening: '20:00', city: 'ירושלים', candleMin: 40, shabbatAlerts: [60], melody: 'bells', ...S.settings };
   $('#setMorning').value = S.settings.morning; $('#setEvening').value = S.settings.evening; drawShabbatSettings();
   // השאלה האחרונה שעוד לא נענתה — כדי ש"כן" / "עוד לא" יתייחסו אליה
@@ -2306,6 +2494,9 @@ async function onRemoteItem(local, next, live) {
     return;
   }
   if (!live) return;
+  const newCm = (next.comments || []).filter(c => c.p !== S.myP && !(local?.comments || []).some(x => x.id === c.id));
+  for (const c of newCm) await bell('💬', `${person(c.p) ? pName(c.p) : 'מישהו'} הגיב/ה על "${next.text.slice(0, 40)}"`, c.text, { item: next.id, comments: true }, 'cm:' + c.id);
+  if (newCm.length) { buzz(); if ($('#cmList') && $('#sheetBg').classList.contains('on')) openComments(next.id); }
   const fromOther = next.doneBy && next.doneBy !== S.myP;
   const wasOpen = local && local.status === 'open' && !(local.repeat && isToday(local.lastDone));
   const nowDone = next.status === 'done' || (next.repeat && isToday(next.lastDone));
@@ -2489,7 +2680,7 @@ function renderFamily() {
   const canImport = hh && !gs.some(g => g.source_household === hh.id);
   const card = g => {
     const me = g.members.find(m => m.user_id === S.uid), admin = me?.role === 'admin';
-    const mem = g.members.map(m => `<div class="fam-row"><span style="flex:1;min-width:110px">${m.user_id ? '📱' : '✏️'} ${esc(m.profile?.emoji || m.emoji || '🙂')} <b>${esc(m.nickname)}</b>${m.user_id === S.uid ? ' (אני)' : ''}${m.user_id && m.profile?.full_name && m.profile.full_name !== m.nickname ? ` <span class="note">· ${esc(m.profile.full_name)}</span>` : ''}</span>
+    const mem = g.members.map(m => `<div class="fam-row"><button class="color-dot sm" data-pc="${m.user_id ? 'u:' + m.user_id : 'm:' + m.id}" style="background:${colorOf(m.user_id ? 'u:' + m.user_id : 'm:' + m.id)}" aria-label="צבע"></button><span style="flex:1;min-width:110px">${m.user_id ? '📱' : '✏️'} ${esc(m.profile?.emoji || m.emoji || '🙂')} <b>${esc(m.nickname)}</b>${m.user_id === S.uid ? ' (אני)' : ''}${m.user_id && m.profile?.full_name && m.profile.full_name !== m.nickname ? ` <span class="note">· ${esc(m.profile.full_name)}</span>` : ''}</span>
       ${g.kind !== 'pair' && admin && m.user_id !== S.uid ? `<button class="chip" data-role="${m.id}" data-to="${m.role === 'admin' ? 'member' : g.kind === 'family' && m.role === 'member' ? 'child' : 'admin'}">${{ admin: '⭐ מנהל', member: '🙂 חבר', child: '🧒 ילד' }[m.role]}</button><button class="chip" data-rm="${m.id}">✕</button>` : `<span class="note">${g.kind === 'pair' ? '' : { admin: '⭐ מנהל', member: '🙂 חבר', child: '🧒 ילד' }[m.role]}</span>`}</div>`).join('');
     return `<div class="grp" data-g="${g.id}">
       <div class="grp-h"><b>${esc(gLabel(g))}</b><span class="note">הכינוי שלי: <b>${esc(me?.nickname || '')}</b></span></div>
@@ -2526,6 +2717,7 @@ function renderFamily() {
   el.querySelectorAll('[data-leave]').forEach(b => b.onclick = () => { if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'בטוח? לצאת'; return; } run(() => sync.removeMember(b.dataset.leave)); });
   el.querySelectorAll('[data-def]').forEach(b => b.onclick = async () => { S.settings.defGroup = b.dataset.def; await db.setKV('settings', S.settings); renderFamily(); toast('⭐ זו הקבוצה הראשית'); });
   el.querySelectorAll('[data-nick]').forEach(b => b.onclick = () => openNick(b.dataset.nick));
+  el.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => openColorPick(b.dataset.pc));
   el.querySelectorAll('[data-cal]').forEach(b => b.onclick = () => run(async () => { await sync.setCalShare(b.dataset.cal, b.dataset.cv); toast({ all: '👀 עכשיו רואים את היומן שלך', busy: '⛔ רואים רק מתי את/ה תפוס/ה', none: '🚫 היומן שלך מוסתר מהקבוצה' }[b.dataset.cv]); }));
   el.querySelectorAll('[data-rename]').forEach(b => b.onclick = () => {
     const g = groupOf(b.dataset.rename);
@@ -2613,12 +2805,13 @@ function renderProfile() {
   }
   const weekAgo = Date.now() - 7 * 864e5;
   const doneWeek = S.log.filter(l => l.action === 'done' && new Date(l.ts) > weekAgo).length;
-  const stat = (n, l) => `<div class="me-stat"><b>${n}</b><span>${l}</span></div>`;
+  const stat = (n, l, pre = '') => `<div class="me-stat"><b data-count="${n}" data-pre="${pre}">${pre}${n}</b><span>${l}</span></div>`;
   el.innerHTML = `<h4 style="margin-bottom:10px">👤 האזור האישי</h4><div class="me-top"><button class="me-face" id="pFace" aria-label="שינוי אייקון">${p?.e || '🙋'}</button>
       <div class="me-txt"><b>${esc(p?.name || '')}</b><span dir="ltr">${esc(u.email || '')}</span>
       <span>${gs.length ? gs.map(g => `${gLabel(g)} · "${esc(g.members.find(m => m.user_id === S.uid)?.nickname || '')}"`).join('<br>') : 'עוד לא בשום קבוצה'}</span></div></div>
-    <div class="me-stats">${stat('🔥 ' + streak(), 'ימים ברצף')}${stat(doneWeek, 'בוצעו השבוע')}${stat(tasksOpen().length, 'פתוחות שלי')}${stat(openItems().filter(x => x.kind === 'thought' && byMe(x)).length, 'מחשבות')}</div>
+    <div class="me-stats">${stat(streak(), 'ימים ברצף', '🔥 ')}${stat(doneWeek, 'בוצעו השבוע')}${stat(tasksOpen().length, 'פתוחות שלי')}${stat(openItems().filter(x => x.kind === 'thought' && byMe(x)).length, 'מחשבות')}</div>
     <div class="two" style="margin-top:10px"><button class="btn" id="pEdit" style="margin:0">✏️ שם ואייקון</button><button class="btn danger" id="pOut" style="margin:0">יציאה</button></div>`;
+  el.querySelectorAll('[data-count]').forEach(b => countUp(b, b.dataset.count, b.dataset.pre));
   $('#pEdit').onclick = openEditMe; $('#pFace').onclick = openEditMe;
   $('#pOut').onclick = signOut;
 }

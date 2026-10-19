@@ -93,6 +93,35 @@ nav.toc a{flex:none;text-decoration:none;font-size:15px;font-weight:600;padding:
 .divider{text-align:center;padding:40px 18px 0}
 .divider span{display:inline-block;font-weight:800;font-size:22px;padding:12px 26px;border-radius:999px;background:var(--g);color:#fff;box-shadow:0 10px 30px rgba(236,72,153,.35)}
 footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
+/* 🎬 הדגמות חיות בכרטיסים */
+.demo{width:min(260px,82%);background:rgba(255,255,255,.95);border-radius:18px;padding:10px;color:#1E1B2E;text-align:start;box-shadow:0 14px 34px rgba(0,0,0,.25);font-size:14px;font-weight:600;display:flex;flex-direction:column;gap:6px}
+.demo .r{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;background:#F4F2FF}
+.demo .ck{width:18px;height:18px;border-radius:6px;border:2px solid #A78BFA;flex:none;position:relative}
+.demo .h{font-size:12px;color:#6B6585;font-weight:700}
+@keyframes dk{0%,20%{background:transparent;border-color:#A78BFA}30%,85%{background:#22C55E;border-color:#22C55E}100%{background:transparent}}
+@keyframes dt{0%,20%{opacity:1;text-decoration:none}30%,85%{opacity:.45;text-decoration:line-through}100%{opacity:1}}
+.shopd .r:nth-child(2) .ck{animation:dk 6s infinite .2s}.shopd .r:nth-child(2) span{animation:dt 6s infinite .2s}
+.shopd .r:nth-child(3) .ck{animation:dk 6s infinite 1.2s}.shopd .r:nth-child(3) span{animation:dt 6s infinite 1.2s}
+.shopd .r:nth-child(5) .ck{animation:dk 6s infinite 2.2s}.shopd .r:nth-child(5) span{animation:dt 6s infinite 2.2s}
+@keyframes bub{0%,8%{opacity:0;transform:translateY(10px) scale(.9)}15%,90%{opacity:1;transform:none}100%{opacity:0}}
+.cmd .b{padding:7px 10px;border-radius:12px;background:#F4F2FF;border-inline-start:4px solid var(--c);max-width:85%;opacity:0;animation:bub 7s infinite}
+.cmd .b.me{align-self:flex-end;background:#EDE9FE}
+.cmd .b:nth-child(2){animation-delay:1s}.cmd .b:nth-child(3){animation-delay:2s}
+.cmd .b small{display:block;font-size:11px;color:var(--c)}
+@keyframes fillw{0%,10%{width:0}80%,100%{width:100%}}
+.stepd .bar{height:10px;border-radius:9px;background:#E9E5FF;overflow:hidden}.stepd .bar i{display:block;height:100%;background:linear-gradient(90deg,#22C55E,#14B8A6);animation:fillw 6s infinite}
+.stepd .r:nth-child(3) .ck{animation:dk 6s infinite .6s}.stepd .r:nth-child(4) .ck{animation:dk 6s infinite 1.8s}.stepd .r:nth-child(5) .ck{animation:dk 6s infinite 3s}
+@keyframes tint{0%,100%{box-shadow:inset -5px 0 0 #3B82F6}33%{box-shadow:inset -5px 0 0 #EC4899}66%{box-shadow:inset -5px 0 0 #22C55E}}
+.cold .r{box-shadow:inset -5px 0 0 var(--c)}
+.cold .dots{display:flex;gap:8px;justify-content:center}.cold .dots i{width:26px;height:26px;border-radius:50%;background:var(--c);animation:pulse3 2.4s infinite}
+.cold .dots i:nth-child(2){animation-delay:.4s}.cold .dots i:nth-child(3){animation-delay:.8s}
+@keyframes pulse3{50%{transform:scale(1.25)}}
+@keyframes grow{0%,15%{font-size:16px}45%,60%{font-size:26px}85%,100%{font-size:34px}}
+.fontd{align-items:center}.fontd b{animation:grow 5s infinite alternate;line-height:1.1}
+@keyframes popc{0%{opacity:0;transform:translateY(14px) scale(.9)}20%,85%{opacity:1;transform:none}100%{opacity:0}}
+.animd .r{opacity:0;animation:popc 5s infinite}.animd .r:nth-child(2){animation-delay:.25s}.animd .r:nth-child(3){animation-delay:.5s}
+.animd .num{font-size:28px;font-weight:800;color:#7C3AED;text-align:center}
+@media (prefers-reduced-motion: reduce){.demo *{animation:none!important;opacity:1!important}}
 </style>
 </head>
 <body>
@@ -117,7 +146,7 @@ footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
 <section class="ig" id="features">
   <h2>כל מה שהזמן שלכם היה צריך 🔥</h2>
   <p class="sub2">גוללים כמו באינסטגרם — ומגלים מה זמן בכיף יודע לעשות</p>
-  <div class="stories"><a class="story" href="#f-chat"><div class="ring"><span>💬</span></div>שיחה</a><a class="story" href="#f-smart"><div class="ring"><span>🧠</span></div>צ'אט חכם</a><a class="story" href="#f-bell"><div class="ring"><span>🔔</span></div>פעמון</a><a class="story" href="#f-cal"><div class="ring"><span>📅</span></div>יומן</a><a class="story" href="#f-plus"><div class="ring"><span>➕</span></div>הוספה</a><a class="story" href="#f-ask"><div class="ring"><span>⏰</span></div>עשית?</a><a class="story" href="#f-top3"><div class="ring"><span>⭐</span></div>3 חשובים</a><a class="story" href="#f-thoughts"><div class="ring"><span>💭</span></div>מחשבות</a><a class="story" href="#f-family"><div class="ring"><span>👥</span></div>קבוצות</a><a class="story" href="#f-assign"><div class="ring"><span>📎</span></div>שיוך</a><a class="story" href="#f-msg"><div class="ring"><span>💌</span></div>הודעות</a><a class="story" href="#f-clash"><div class="ring"><span>⚠️</span></div>התנגשויות</a><a class="story" href="#f-shabbat"><div class="ring"><span>🕯️</span></div>שבת</a><a class="story" href="#f-push"><div class="ring"><span>🔔</span></div>התראות</a><a class="story" href="#f-lock"><div class="ring"><span>🔒</span></div>נעילה</a><a class="story" href="#f-me"><div class="ring"><span>👤</span></div>אזור אישי</a></div>
+  <div class="stories"><a class="story" href="#f-chat"><div class="ring"><span>💬</span></div>שיחה</a><a class="story" href="#f-shop"><div class="ring"><span>🛒</span></div>קניות</a><a class="story" href="#f-steps"><div class="ring"><span>📋</span></div>תבניות</a><a class="story" href="#f-comments"><div class="ring"><span>💬</span></div>תגובות</a><a class="story" href="#f-colors"><div class="ring"><span>🎨</span></div>צבעים</a><a class="story" href="#f-font"><div class="ring"><span>🔠</span></div>תצוגה</a><a class="story" href="#f-smart"><div class="ring"><span>🧠</span></div>צ'אט חכם</a><a class="story" href="#f-bell"><div class="ring"><span>🔔</span></div>פעמון</a><a class="story" href="#f-cal"><div class="ring"><span>📅</span></div>יומן</a><a class="story" href="#f-plus"><div class="ring"><span>➕</span></div>הוספה</a><a class="story" href="#f-ask"><div class="ring"><span>⏰</span></div>עשית?</a><a class="story" href="#f-top3"><div class="ring"><span>⭐</span></div>3 חשובים</a><a class="story" href="#f-thoughts"><div class="ring"><span>💭</span></div>מחשבות</a><a class="story" href="#f-family"><div class="ring"><span>👥</span></div>קבוצות</a><a class="story" href="#f-assign"><div class="ring"><span>📎</span></div>שיוך</a><a class="story" href="#f-msg"><div class="ring"><span>💌</span></div>הודעות</a><a class="story" href="#f-clash"><div class="ring"><span>⚠️</span></div>התנגשויות</a><a class="story" href="#f-shabbat"><div class="ring"><span>🕯️</span></div>שבת</a><a class="story" href="#f-push"><div class="ring"><span>🔔</span></div>התראות</a><a class="story" href="#f-lock"><div class="ring"><span>🔒</span></div>נעילה</a><a class="story" href="#f-me"><div class="ring"><span>👤</span></div>אזור אישי</a></div>
   <div class="feed">
     <article class="post" id="f-chat">
       <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
@@ -148,6 +177,42 @@ footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
       <div class="pic p6"><div class="big">👀</div><h3>היומן של פסי, בוורוד</h3><span class="tag">#יחד</span></div>
       <div class="acts">❤️ 💬 ➤</div>
       <div class="cap"><b>zmanbekef</b> בראש היומן לוחצים על הפרצוף של מי שבקבוצה איתכם, ורואים גם את היומן שלו, כל אחד בצבע שלו. <b>כל אחד מחליט מי רואה את היומן שלו</b>: ⚙️ ← הקבוצות שלי ← "📅 מי רואה את היומן שלי": 👀 הכל / ⛔ רק "תפוס/ה" / 🚫 לא. מה שסומן 🔒 פרטי תמיד מופיע אצל אחרים רק כ"תפוס/ה". צבעים ומה מוצג: ⚙️ ← 📅 יומן. <span class="h">#בלי_הפתעות</span></div>
+    </article>
+    <article class="post" id="f-shop">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p4"><div class="demo shopd"><div class="h">🥛 חלב וביצים</div><div class="r"><i class="ck"></i><span>חלב</span></div><div class="r"><i class="ck"></i><span>ביצים</span></div><div class="h">🥬 ירקות ופירות</div><div class="r"><i class="ck"></i><span>עגבניות</span></div></div><h3>🛒 רשימת קניות משותפת</h3></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> כותבים בצ'אט <b>"קניות: חלב, ביצים, עגבניות"</b> — וזה נכנס לרשימה של המשפחה, <b>מסודר לפי מחלקות בסופר</b>. בסופר מסמנים ✓ על מה שנכנס לעגלה, ואחר כך "🧹 לנקות". כולם רואים אותה רשימה. נמצא ב-📋 משימות ← <b>🛒 קניות</b>. <span class="h">#לא_שוכחים_כלום_בסופר</span></div>
+    </article>
+    <article class="post" id="f-comments">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p6"><div class="demo cmd"><div class="b" style="--c:#EC4899"><small>פסי</small>קנית כבר את המתנה?</div><div class="b me" style="--c:#3B82F6"><small>אני</small>עוד לא, מחר בבוקר 🙏</div><div class="b" style="--c:#EC4899"><small>פסי</small>מעולה ❤️</div></div><h3>💬 תגובות על משימה</h3></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> בכל משימה ← ✏️ ← <b>"💬 תגובות"</b>. שואלים, מעדכנים, מוסיפים פרט — מי שרשם ומי שהמשימה בשבילו מקבלים התראה. ליד משימה עם תגובות מופיע 💬 עם מספר. <span class="h">#בלי_וואטסאפ_נפרד</span></div>
+    </article>
+    <article class="post" id="f-steps">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p2"><div class="demo stepd"><div class="h">🧹 ניקיון פסח · 📋 תבנית</div><div class="bar"><i></i></div><div class="r"><i class="ck"></i><span>חדרי שינה</span></div><div class="r"><i class="ck"></i><span>סלון</span></div><div class="r"><i class="ck"></i><span>מטבח</span></div></div><h3>📋 תבניות ושלבים</h3></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> משימה גדולה? ✏️ ← <b>"✂️ לפרק לשלבים"</b>, ומסמנים כל שלב. או מתבנית מוכנה: <b>🕯️ הכנות לשבת · 🧹 ניקיון פסח · 🎉 חתונה/שמחה · 🎒 חזרה ללימודים</b> — ב-➕ ← "📋 מתבנית", או בצ'אט <b>"תבנית ניקיון פסח"</b>. אפשר גם "💾 לשמור כתבנית" משלכם. <span class="h">#צעד_אחרי_צעד</span></div>
+    </article>
+    <article class="post" id="f-colors">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p1"><div class="demo cold"><div class="dots"><i style="--c:#3B82F6"></i><i style="--c:#EC4899"></i><i style="--c:#22C55E"></i></div><div class="r" style="--c:#3B82F6">🧔 לקחת את הרכב לטסט</div><div class="r" style="--c:#EC4899">👩 משמרת ערב</div><div class="r" style="--c:#22C55E">👧 חוג ציור</div></div><h3>🎨 צבע לכל אחד</h3></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> לכל בן משפחה צבע משלו — המשימות והאירועים שלו מסומנים בו, ברשימה וביומן, <b>אצל כולם</b>. בוחרים ב-⚙️ ← הקבוצות שלי (העיגול ליד השם), או ב-⚙️ ← 📅 יומן. כל אחד משנה את שלו, ומנהל הקבוצה גם לילדים. <span class="h">#מי_עושה_מה</span></div>
+    </article>
+    <article class="post" id="f-font">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p5"><div class="demo fontd"><b>אבג 123</b><div class="h">רגיל · גדול · ענק</div></div><h3>🔠 גודל טקסט ואנימציות</h3></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> קשה לקרוא? ⚙️ ← <b>🔠 תצוגה</b> ← גודל טקסט: <b>רגיל / גדול / ענק</b> — כל האפליקציה גדלה. שם גם <b>🎬 אנימציות: פועל / כבוי</b> (אם מפריע, או בטלפון ישן). נשמר בטלפון הזה. <span class="h">#נוח_לעיניים</span></div>
+    </article>
+    <article class="post" id="f-anim">
+      <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>
+      <div class="pic p3"><div class="demo animd"><div class="num">🔥 7</div><div class="r">📌 לשלוח הצעת מחיר</div><div class="r">👥 פגישה עם יוסי</div><div class="r">🛒 חלב, ביצים</div></div><h3>🎬 אפליקציה חיה</h3></div>
+      <div class="acts">❤️ 💬 ➤</div>
+      <div class="cap"><b>zmanbekef</b> המסכים נכנסים בתנועה רכה, הכרטיסים "קופצים" אחד אחרי השני, המספרים עולים, ומסיימים משימה — קונפטי 🎉. הכל קליל ומהיר, גם בטלפון ישן. לא אוהבים? ⚙️ ← 🔠 תצוגה ← אנימציות: כבוי. <span class="h">#כיף_לפתוח</span></div>
     </article>
     <article class="post" id="f-bell">
       <div class="top"><div class="av"><img src="../icons/icon-192.png" alt="" style="width:100%;height:100%;border-radius:50%;display:block;border:2px solid #15101F"></div><div class="who">zmanbekef<small>זמן בכיף ⏰</small></div></div>

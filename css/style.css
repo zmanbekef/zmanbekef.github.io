@@ -106,8 +106,8 @@ nav .badge{top:0;left:6px}
 .card p.note{font-size:13px;color:var(--muted);line-height:1.6}
 .row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border:none}
-.row .cb{width:26px;height:26px;border-radius:9px;border:2px solid rgba(255,255,255,.45);background:none;display:grid;place-items:center;font-size:14px;cursor:pointer;flex:none}
-.row.done .cb{background:var(--g3);border-color:transparent}
+.row .cb,.shop-row .cb{width:26px;height:26px;border-radius:9px;border:2px solid rgba(255,255,255,.45);background:none;display:grid;place-items:center;font-size:14px;cursor:pointer;flex:none}
+.row.done .cb,.shop-row.done .cb{background:var(--g3);border-color:transparent;color:#fff}
 .row.done .nm{opacity:.55;text-decoration:line-through}
 .row .nm{flex:1;cursor:pointer;font-size:14.5px;min-width:0}
 .row .nm small{display:block;color:var(--muted);font-size:12px;margin-top:1px}
@@ -338,3 +338,48 @@ nav button.plus:active b{transform:scale(.9)}
 .col-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
 .col-grid button{aspect-ratio:1;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;min-width:0}
 .col-grid button.on{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.4)}
+
+/* 🔠 גודל טקסט (לכל המכשיר) */
+html[data-font="l"] body{zoom:1.12}
+html[data-font="xl"] body{zoom:1.25}
+/* 🎬 אנימציות: רק transform/opacity, עד 400ms. כבוי = הכל עוצר */
+.view.enter .card,.view.enter .cal-col,.view.enter .cal-cell,.view.enter .shop-row,.bell-row{animation:popin .32s cubic-bezier(.2,.9,.3,1.2) both}
+.view.enter .card:nth-child(2),.view.enter .cal-col:nth-child(2),.bell-row:nth-child(2),.view.enter .shop-row:nth-child(2){animation-delay:.05s}
+.view.enter .card:nth-child(3),.view.enter .cal-col:nth-child(3),.bell-row:nth-child(3),.view.enter .shop-row:nth-child(3){animation-delay:.1s}
+.view.enter .card:nth-child(4),.view.enter .cal-col:nth-child(4),.bell-row:nth-child(4),.view.enter .shop-row:nth-child(4){animation-delay:.15s}
+.view.enter .card:nth-child(5),.view.enter .cal-col:nth-child(5),.bell-row:nth-child(5),.view.enter .shop-row:nth-child(5){animation-delay:.2s}
+.view.enter .card:nth-child(6),.view.enter .cal-col:nth-child(6),.bell-row:nth-child(6),.view.enter .shop-row:nth-child(6){animation-delay:.25s}
+.view.enter .card:nth-child(7),.view.enter .cal-col:nth-child(7),.bell-row:nth-child(7),.view.enter .shop-row:nth-child(7){animation-delay:.3s}
+.view.enter .card:nth-child(n+8){animation-delay:.35s}
+@keyframes popin{from{opacity:0;transform:translateY(10px) scale(.97)}}
+.btn,.chip,.act,.icon-btn,nav button,.cb,.star,.cal-ev,.cal-pill{transition:transform .12s}
+.btn:active,.chip:active,.act:active,.icon-btn:active,nav button:active,.cb:active,.star:active,.cal-pill:active{transform:scale(.94)}
+.empty-state .em{animation:bob 3s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(-8px) rotate(-6deg)}}
+.cb.pop{animation:cbpop .35s ease}
+@keyframes cbpop{40%{transform:scale(1.35)}}
+html.no-anim *,html.no-anim *::before,html.no-anim *::after{animation:none!important;transition:none!important}
+.bar i{transition:width .7s cubic-bezier(.2,.9,.3,1)}
+/* 🎨 צבע לכל בן משפחה */
+.row[style*="--pc"]{box-shadow:inset -4px 0 0 var(--pc);padding-inline-start:10px;border-radius:6px}
+.color-dot{width:30px;height:30px;border-radius:50%;border:2px solid rgba(255,255,255,.7);cursor:pointer;flex:none;padding:0}
+.color-dot.sm{width:22px;height:22px;margin-inline-end:6px}
+/* 💬 תגובות */
+.cm-list{max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+.cm{align-self:flex-start;max-width:85%;background:var(--card);border:1px solid var(--line);border-inline-start:4px solid var(--c);border-radius:14px;padding:8px 10px;font-size:14px;animation:popin .25s both}
+.cm.mine{align-self:flex-end;background:rgba(124,58,237,.22)}
+.cm b{display:block;font-size:12px;color:var(--c)}
+.cm i{display:block;font-style:normal;font-size:11px;color:var(--muted);margin-top:2px}
+.cm-n{font-size:15px;display:inline-flex;align-items:center;gap:1px}
+.cm-n small{font-size:11px}
+/* 🛒 קניות */
+.tabs2 button{min-width:0}
+.shop-add{display:flex;gap:8px;padding:0 16px 12px}
+.shop-add input{flex:1;min-width:0;height:46px;border-radius:23px;border:1px solid var(--line);background:var(--card2);color:#fff;font:inherit;font-size:16px;padding:0 16px;outline:none}
+.shop-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.shop-row:last-child{border-bottom:none}
+.sh-t{flex:1;min-width:0;cursor:pointer;font-size:15px;overflow-wrap:anywhere}
+.shop-row.done .sh-t{text-decoration:line-through;opacity:.55}
+.sh-by{width:10px;height:10px;border-radius:50%;flex:none}
+.set-row{flex-wrap:wrap;gap:6px 10px}.set-row input[type=time]{min-width:0;max-width:110px}
+.res-row input{min-width:0}
