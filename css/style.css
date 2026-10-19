@@ -353,7 +353,7 @@ html[data-font="xl"] body{zoom:1.25}
 .view.enter .card:nth-child(n+8){animation-delay:.35s}
 @keyframes popin{from{opacity:0;transform:translateY(10px) scale(.97)}}
 .btn,.chip,.act,.icon-btn,nav button,.cb,.star,.cal-ev,.cal-pill{transition:transform .12s}
-.btn:active,.chip:active,.act:active,.icon-btn:active,nav button:active,.cb:active,.star:active,.cal-pill:active{transform:scale(.94)}
+.btn:active,.chip:active,.act:active,.icon-btn:active,nav button:active,.cb:active,.star:active,.cal-pill:active{transform:scale(.96)}
 .empty-state .em{animation:bob 3s ease-in-out infinite}
 @keyframes bob{50%{transform:translateY(-8px) rotate(-6deg)}}
 .cb.pop{animation:cbpop .35s ease}

@@ -1231,12 +1231,12 @@ function countUp(el, to, pre = '') {
 function drawViewCard() {
   const el = $('#viewCard'); if (!el) return;
   const font = document.documentElement.dataset.font || 'm', anim = !document.documentElement.classList.contains('no-anim');
-  el.innerHTML = `<h4>🔠 תצוגה</h4>
-    <div class="set-row"><span>גודל טקסט</span><span class="chips" style="padding:0;gap:4px">${[['m', 'רגיל'], ['l', 'גדול'], ['xl', 'ענק']].map(([k, l]) => `<button class="chip ${font === k ? 'on' : ''}" data-font="${k}" aria-pressed="${font === k}">${l}</button>`).join('')}</span></div>
-    <div class="set-row"><span>🎬 אנימציות</span><span class="chips" style="padding:0;gap:4px">${[['on', 'פועל'], ['off', 'כבוי']].map(([k, l]) => `<button class="chip ${(k === 'on') === anim ? 'on' : ''}" data-anim="${k}">${l}</button>`).join('')}</span></div>
+  el.innerHTML = `<h4>🎨 תצוגה</h4>
+    <div class="set-row"><span>🔠 גודל כתב</span><span class="chips" style="padding:0;gap:4px">${[['m', 'רגיל', 14], ['l', 'גדול', 16], ['xl', 'ענק', 18]].map(([k, l, px]) => `<button class="chip ${font === k ? 'on' : ''}" data-font="${k}" aria-pressed="${font === k}" style="font-size:${px}px">א ${l}</button>`).join('')}</span></div>
+    <div class="set-row"><span>🎬 אנימציות</span><span class="chips" style="padding:0;gap:4px">${[['on', '✨ פועל'], ['off', '⏸️ כבוי']].map(([k, l]) => `<button class="chip ${(k === 'on') === anim ? 'on' : ''}" data-anim="${k}">${l}</button>`).join('')}</span></div>
     <p class="note">נשמר בטלפון הזה בלבד.</p>`;
-  el.querySelectorAll('[data-font]').forEach(b => b.onclick = () => { const f = b.dataset.font; if (f === 'm') delete document.documentElement.dataset.font; else document.documentElement.dataset.font = f; try { localStorage.setItem('zman-font', f === 'm' ? '' : f); } catch { /* */ } drawViewCard(); toast('🔠 נשמר'); });
-  el.querySelectorAll('[data-anim]').forEach(b => b.onclick = () => { const on = b.dataset.anim === 'on'; document.documentElement.classList.toggle('no-anim', !on); try { localStorage.setItem('zman-anim', on ? 'on' : 'off'); } catch { /* */ } drawViewCard(); if (on) confetti(30); toast(on ? '🎬 האנימציות פועלות' : 'האנימציות כבויות'); });
+  el.querySelectorAll('[data-font]').forEach(b => b.onclick = () => { const f = b.dataset.font; if (f === 'm') delete document.documentElement.dataset.font; else document.documentElement.dataset.font = f; try { localStorage.setItem('zman-font', f === 'm' ? '' : f); } catch { /* */ } drawViewCard(); toast('🔠 גודל הכתב עודכן'); });
+  el.querySelectorAll('[data-anim]').forEach(b => b.onclick = () => { const on = b.dataset.anim === 'on'; document.documentElement.classList.toggle('no-anim', !on); try { localStorage.setItem('zman-anim', on ? 'on' : 'off'); } catch { /* */ } drawViewCard(); if (on) confetti(30); toast(on ? '✨ האנימציות פועלות' : '⏸️ האנימציות כבויות'); });
 }
 
 // 🎨 צבע לכל בן משפחה — מסונכרן לכולם. כל אחד משנה את שלו, מנהל גם ל"רק שם"
