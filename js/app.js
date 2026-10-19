@@ -1229,6 +1229,23 @@ function renderTasks() {
   const lateN = tasksOpen().filter(isLate).length;
   $('#lateBadge').hidden = !lateN; $('#lateBadge').textContent = lateN;
 }
+// החלקה של שורה הצידה ← מחיקה (עם "↩️ בטל")
+(() => {
+  let row = null, x0 = 0, y0 = 0, dx = 0;
+  const list = $('#taskList');
+  list.addEventListener('touchstart', e => { row = e.target.closest('.row[data-id]'); if (!row) return; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; row.style.transition = 'none'; }, { passive: true });
+  list.addEventListener('touchmove', e => {
+    if (!row) return; const d = e.touches[0].clientX - x0, dy = e.touches[0].clientY - y0;
+    if (!dx && Math.abs(dy) > Math.abs(d)) { row = null; return; }
+    dx = d; row.style.transform = `translateX(${dx}px)`; row.classList.toggle('swipe-del', Math.abs(dx) > 90);
+  }, { passive: true });
+  list.addEventListener('touchend', async () => {
+    if (!row) return; const r = row, id = r.dataset.id; row = null;
+    r.style.transition = 'transform .2s';
+    if (Math.abs(dx) > 90) { r.style.transform = `translateX(${dx > 0 ? 120 : -120}%)`; setTimeout(() => OPS.remove(id), 180); }
+    else { r.style.transform = ''; r.classList.remove('swipe-del'); }
+  });
+})();
 $('#catFilter').addEventListener('click', e => { const b = e.target.closest('[data-cf]'); if (b) { S.catF = b.dataset.cf || null; renderTasks(); } });
 $('#whoFilter').addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (b) { S.who = b.dataset.w; renderTasks(); } });
 $('#taskList').addEventListener('click', e => {
@@ -2152,12 +2169,14 @@ function openCalEvent(id, t) {
   const open = it.status === 'open';
   sheet(`<h3>${evIcon({ kind: it.kind, it, done: !open })} ${esc(it.text)}</h3>
     <p class="note">${it.due ? whenLabel(it) : 'בלי תאריך'}${it.dur ? ' · ⏱️ ' + durLbl(it.dur) : ''}${it.place ? ' · 📍 ' + esc(it.place) : ''}${S.uid ? ' · ' + esc(assignLabel(it)) : ''}</p>
-    ${open ? '<button class="btn pri" id="ceDone" style="margin-top:14px">✅ עשיתי</button>' : '<p class="note" style="margin-top:10px">✅ בוצע</p>'}
+    <div class="three" style="margin-top:14px">${open ? '<button class="btn pri" id="ceDone">✅ עשיתי</button>' : '<button class="btn" disabled>✅ בוצע</button>'}<button class="btn" id="ceEdit">✏️ עריכה</button><button class="btn danger" id="ceDel">🗑️ מחיקה</button></div>
     ${open ? `<button class="btn" id="ceFocus">⏱️ פוקוס ${FOCUS_MIN} דק׳</button>` : ''}
     <button class="btn" id="ceSteps">${it.steps?.length ? `📝 שלבים (${stepsLbl(it).slice(3)})` : '✂️ לפרק לשלבים'}</button>
     ${S.uid ? `<button class="btn" id="ceCm">💬 תגובות${it.comments?.length ? ` (${it.comments.length})` : ''}</button>` : ''}
     ${canBump(it) ? `<button class="btn" id="ceBump">🔔 להקפיץ ל${esc(pName(it.forP))}</button>` : ''}
-    <div class="two"><button class="btn" id="ceEdit">✏️ עריכה</button>${S.uid ? '<button class="btn" id="ceAssign">📎 שיוך</button>' : '<button class="btn" id="ceClose">סגירה</button>'}</div>`);
+    ${S.uid ? '<button class="btn" id="ceAssign">📎 שיוך</button>' : ''}`);
+  // מחיקה מיידית — ו"↩️ בטל" מופיע מיד למעלה
+  $('#ceDel').onclick = async () => { closeSheet(); await OPS.remove(id); renderCal(); };
   $('#ceDone')?.addEventListener('click', async () => { closeSheet(); await markDone(id, true); toast('✅ ' + it.text); renderCal(); });
   $('#ceEdit').onclick = () => openEdit(id);
   $('#ceBump')?.addEventListener('click', () => { closeSheet(); bumpTask(id); });
