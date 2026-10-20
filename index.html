@@ -24,7 +24,8 @@
   <header>
     <div><div class="logo">זמן בכיף ⏰</div><div class="hdate"><span id="hello"></span><span id="hdate"></span></div><div class="hdate hzman" id="hzman"></div></div>
     <div style="display:flex;gap:8px">
-      <button class="icon-btn" id="meBtn" aria-label="אני" hidden style="font-size:22px"></button>
+      <button class="icon-btn" id="setBtn" aria-label="הגדרות והאזור האישי">⚙️</button>
+      <button class="icon-btn" id="meBtn" aria-label="אני" hidden style="display:none"></button>
       <button class="icon-btn" id="bellBtn" aria-label="התראות" style="position:relative">🔔<i class="badge" id="bellBadge" hidden></i></button>
       <button class="icon-btn" id="helpBtn" aria-label="עזרה">❓</button>
       <button class="icon-btn" id="todayBtn" aria-label="מה יש לי היום">📋</button>
@@ -65,7 +66,7 @@
 
     <!-- משימות -->
     <section class="view" id="v-tasks">
-      <div class="seg tabs2"><button class="on" data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button><button data-v="shop">🛒 קניות</button><button data-v="kids" hidden>⭐ ילדים</button></div>
+      <div class="seg tabs2 big-tabs"><button class="on" data-v="tasks"><span>📋</span>משימות</button><button data-v="thoughts"><span>💭</span>מחשבות</button><button data-v="kids" hidden><span>⭐</span>ילדים</button></div>
       <div class="h2">המשימות 📋</div>
       <div class="chips" id="whoFilter" style="padding:0 16px 12px" hidden></div>
       <div class="chips" id="catFilter" style="padding:0 16px 12px" hidden></div>
@@ -74,7 +75,6 @@
 
     <!-- קניות -->
     <section class="view" id="v-shop">
-      <div class="seg tabs2"><button data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button><button class="on" data-v="shop">🛒 קניות</button><button data-v="kids" hidden>⭐ ילדים</button></div>
       <div class="h2" id="shopTitle">רשימת קניות 🛒</div>
       <div class="chips" id="shopWho" style="padding:0 16px 10px" hidden></div>
       <div class="chips shop-lists" id="shopLists" style="padding:0 16px 10px"></div>
@@ -85,14 +85,14 @@
 
     <!-- ילדים -->
     <section class="view" id="v-kids">
-      <div class="seg tabs2"><button data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button><button data-v="shop">🛒 קניות</button><button class="on" data-v="kids">⭐ ילדים</button></div>
+      <div class="seg tabs2 big-tabs"><button data-v="tasks"><span>📋</span>משימות</button><button data-v="thoughts"><span>💭</span>מחשבות</button><button class="on" data-v="kids"><span>⭐</span>ילדים</button></div>
       <div class="h2">כוכבים ופרסים ⭐</div>
       <div class="cards" id="kidList"></div>
     </section>
 
     <!-- מחשבות -->
     <section class="view" id="v-thoughts">
-      <div class="seg tabs2"><button data-v="tasks">📋 משימות</button><button class="on" data-v="thoughts">💭 מחשבות</button><button data-v="shop">🛒 קניות</button><button data-v="kids" hidden>⭐ ילדים</button></div>
+      <div class="seg tabs2 big-tabs"><button data-v="tasks"><span>📋</span>משימות</button><button class="on" data-v="thoughts"><span>💭</span>מחשבות</button><button data-v="kids" hidden><span>⭐</span>ילדים</button></div>
       <div class="h2">תיבת מחשבות 💭</div>
       <div class="cards" id="thoughtList"></div>
     </section>
@@ -179,7 +179,7 @@
     <button data-v="cal"><span>📅</span>יומן</button>
     <button class="plus" id="plusBtn" aria-label="הוספה מהירה"><b>➕</b></button>
     <button data-v="tasks"><span>📋</span>משימות<i class="badge" id="lateBadge" hidden></i></button>
-    <button data-v="settings"><span>⚙️</span>הגדרות</button>
+    <button data-v="shop"><span>🛒</span>קניות</button>
   </nav>
 
   <div class="gate" id="gate"><div class="gate-box" id="gateBody"></div></div>

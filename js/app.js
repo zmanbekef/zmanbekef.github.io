@@ -1967,6 +1967,19 @@ $('#v-tasks').addEventListener('click', e => {
 // ---------- ⏱️ טיימר פוקוס: 25 דקות עבודה, 5 הפסקה, ובסוף "סיימת?" ----------
 // ⏱️ כמה זמן עבודה וכמה הפסקה — בוחרים לפני שמתחילים (נשמר לפעם הבאה)
 const fMin = () => S.settings.focusWork || 25, bMin = () => S.settings.focusBreak ?? 5;
+// ⏱️ טיימר מה־➕: בוחרים על איזו משימה (או כותבים חדשה)
+function pickFocusTask() {
+  const list = rankForToday(tasksOpen().filter(x => x.kind === 'task')).slice(0, 12);
+  sheet(`<h3>⏱️ טיימר פוקוס — על מה?</h3>
+    ${list.length ? `<div id="ftList">${list.map(x => `<div class="pick" data-id="${x.id}"><div class="ck">⏱️</div>${esc(x.text)}<small>${esc(whenLabel(x))}</small></div>`).join('')}</div>` : '<p class="note">אין משימות פתוחות.</p>'}
+    <label>או משהו חדש</label><div style="display:flex;gap:8px"><input id="ftNew" placeholder="למשל: לסדר את המחסן"><button class="round mic" id="ftGo" style="width:46px;height:46px;font-size:18px" aria-label="להתחיל">▶️</button></div>`);
+  $('#ftList')?.addEventListener('click', e => { const id = e.target.closest('.pick')?.dataset.id; if (id) openFocusPick(id); });
+  $('#ftGo').onclick = async () => {
+    const text = $('#ftNew').value.trim(); if (!text) return toast('צריך לכתוב על מה', true);
+    const it = { id: db.newId(), kind: 'task', text, due: sod(new Date()).toISOString(), hasTime: false, repeat: null, status: 'open', created: new Date().toISOString() };
+    S.items.push(it); await save(it); await addLog(it, 'created'); openFocusPick(it.id);
+  };
+}
 function openFocusPick(id) {
   const it = item(id); if (!it) return;
   let w = fMin(), b = bMin();
@@ -2739,7 +2752,9 @@ pullDown($('#main'), () => $('#main'), () => !$('#v-chat').classList.contains('o
 // ➕ הוספה מהירה בלי צ'אט
 function openQuick(pre = {}) {
   let kind = pre.kind || 'task';
-  sheet(`<h3>➕ הוספה מהירה</h3>
+  sheet(`<h3>➕ מה להוסיף?</h3>
+    <div class="qa-tiles">${[['qaTimer', '⏱️', 'טיימר'], ['qaShop', '🛒', 'קניות'], ['qaMenu', '🍲', 'תפריט שבת'], ['qaHabit', '🔥', 'הרגל'], ['qaMed', '💊', 'תרופה / קבוע']].map(([id, ic, l], i) => `<button class="qa-tile" id="${id}" style="--d:${i * 60}ms"><span>${ic}</span>${l}</button>`).join('')}</div>
+    <div class="qa-sep">או משימה / פגישה / מחשבה:</div>
     <label>📋 מתבנית (לא חובה)</label><div class="chips" id="qTpl" style="padding:0;flex-wrap:wrap">${allTemplates().map(t => `<button class="chip" data-t="${t.id}">${t.ic} ${esc(t.name)}</button>`).join('')}</div>
     <div class="seg" id="qKind" style="margin-top:10px">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
     <label>מה</label><input id="qText" placeholder="למשל: לקנות מתנה לאמא" enterkeyhint="done" value="${esc(pre.text || '')}">
@@ -2753,6 +2768,11 @@ function openQuick(pre = {}) {
     <button class="btn pri" id="qSave" style="margin-top:8px">➕ הוסף</button>
     <button class="btn" id="qCancel">ביטול</button>`);
   $('#qRecur').onclick = () => openRecur(null, { text: $('#qText').value.trim(), time: $('#qTime').value });
+  $('#qaTimer').onclick = () => pickFocusTask();
+  $('#qaShop').onclick = () => { closeSheet(); showView('shop'); setTimeout(() => $('#shopIn')?.focus(), 350); };
+  $('#qaMenu').onclick = () => openMenu();
+  $('#qaHabit').onclick = () => openHabit(null);
+  $('#qaMed').onclick = () => openRecur(null, { text: $('#qText').value.trim() });
   let qcat = '', qsteps = null, qstars = pre.stars || 0;
   if ($('#stPick')) pickChips($('#stPick'), 'data-n', v => { qstars = +v; });
   pickChips($('#qCat'), 'data-cat', v => { qcat = v; });
@@ -2962,10 +2982,11 @@ function openPicker(mustSwapFor) {
 
 // ---------- ניווט ותצוגה ----------
 function showView(v, fromPop) {
-  const from = curView(), tabs = ['thoughts', 'shop', 'kids', 'tasks'];
+  const from = curView(), tabs = ['thoughts', 'kids', 'tasks'];
   if (!fromPop && v !== from) { if (v === 'chat') NAV.stack = []; else if (!(tabs.includes(v) && tabs.includes(from))) NAV.stack.push(from); }
   if (v === 'settings') { drawDemoCard(); renderProfile(); drawPush(); drawLockCard(); drawMonthly(); drawCalCard(); drawCatCard(); drawViewCard(); drawGcal(); }
-  document.querySelectorAll('nav button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === (['thoughts', 'shop', 'kids'].includes(v) ? 'tasks' : v)));
+  document.querySelectorAll('nav button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === (['thoughts', 'kids'].includes(v) ? 'tasks' : v)));
+  $('#setBtn')?.classList.toggle('on', v === 'settings');
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
   enterAnim($('#v-' + v));
   if (v === 'shop') renderShop();
@@ -3294,6 +3315,7 @@ $('#shareAppBtn').onclick = shareApp;
 $('#feedbackBtn').onclick = () => openFeedback();
 $('#helpBtn').onclick = () => openHelp();
 $('#meBtn').onclick = () => showView('settings');
+$('#setBtn').onclick = () => showView(curView() === 'settings' ? 'chat' : 'settings');
 $('#helpBtn2').onclick = () => openHelp();
 
 // ---------- הפעלה ----------
