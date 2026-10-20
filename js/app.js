@@ -77,6 +77,30 @@ async function shrinkPhoto(file) {
   return new Promise(r => cv.toBlob(r, 'image/jpeg', 0.82));
 }
 
+// ---------- 💬 "לא נקראו" כמו בוואטסאפ ----------
+// מה שמישהו אחר הוסיף (משימה, פגישה, קנייה) ועוד לא ראיתי. סופרים רק מאז שהתכונה נוספה (seenSince)
+const isUnread = it => !!it.by && it.by !== S.uid && !S.seen?.[it.id] && ['task', 'meeting', 'shop'].includes(it.kind) && it.status === 'open'
+  && new Date(it.created || 0) > new Date(S.seenSince || Date.now());
+async function markSeen(list) {
+  if (!list.length) return;
+  S.seen = { ...(S.seen || {}) }; for (const it of list) S.seen[it.id] = Date.now();
+  const old = Date.now() - 60 * 864e5; for (const [k, v] of Object.entries(S.seen)) if (v < old) delete S.seen[k];
+  await db.setKV('seen', S.seen); drawUnread();
+}
+const unreadChat = () => S.msgs.filter(m => m.role === 'bot' && m.ts > (S.chatSeen || '')).length;
+function drawUnread() {
+  const t = S.items.filter(x => isUnread(x) && x.kind !== 'shop').length, sh = S.items.filter(x => isUnread(x) && x.kind === 'shop').length;
+  const c = curView() === 'chat' && !document.hidden ? 0 : unreadChat();
+  const set = (sel, n) => { const b = $(sel); if (b) { b.hidden = !n; b.textContent = n > 99 ? '99+' : n; } };
+  set('#newTasks', t); set('#newShop', sh); set('#newChat', c);
+}
+// נכנסים למסך → מה שחדש מסומן "חדש" עד שיוצאים, ונחשב כנקרא
+function seeView(v) {
+  if (v === 'tasks') { const l = S.items.filter(x => isUnread(x) && x.kind !== 'shop'); S.fresh = new Set(l.map(x => x.id)); setTimeout(() => markSeen(l), 1500); }
+  if (v === 'shop') { const l = S.items.filter(x => isUnread(x) && x.kind === 'shop'); S.freshShop = new Set(l.map(x => x.id)); setTimeout(() => markSeen(l), 1500); }
+  if (v === 'chat') { S.chatFrom = S.chatSeen || ''; setTimeout(async () => { if (curView() === 'chat' && !document.hidden) { S.chatSeen = new Date().toISOString(); await db.setKV('chatSeen', S.chatSeen); drawUnread(); } }, 1500); }
+}
+
 // ---------- שמירה ----------
 async function save(it) {
   if (S.uid && !it.by) { it.by = S.uid; it.byP = S.myP; }
@@ -132,7 +156,7 @@ function scrollDown() { requestAnimationFrame(() => { const mn = $('#main'); mn.
 
 async function pushMsg(m) {
   m.id = db.newId(); m.ts = new Date().toISOString();
-  S.msgs.push(m); await db.put('msgs', m);
+  S.msgs.push(m); await db.put('msgs', m); drawUnread();
   if ($('#v-chat').classList.contains('on')) { appendMsg(m, true); scrollDown(); } else { lastDay = null; }
   return m;
 }
@@ -1464,20 +1488,24 @@ function renderTasks() {
   const used = [...new Map(allTasksOpen().map(catOf).filter(Boolean).map(c => [c.id, c])).values()];
   $('#catFilter').hidden = !used.length;
   if (used.length) $('#catFilter').innerHTML = [`<button class="chip ${!S.catF ? 'on' : ''}" data-cf="">🏷️ כל הקטגוריות</button>`, ...used.map(c => `<button class="chip ${S.catF === c.id ? 'on' : ''}" data-cf="${esc(c.id)}" style="--c:${c.color}">${esc(c.icon)} ${esc(c.name)}</button>`)].join('');
+  const fresh = open.filter(x => S.fresh?.has(x.id) || isUnread(x)), freshIds = new Set(fresh.map(x => x.id));
+  const rest = open.filter(x => !freshIds.has(x.id));
   const groups = [
-    ['⚠️ באיחור', open.filter(isLate)],
-    ['☀️ היום', open.filter(x => !isLate(x) && x.due && new Date(x.due) < t1 && !x.repeat)],
-    ['🌅 מחר', open.filter(x => x.due && new Date(x.due) >= t1 && new Date(x.due) < t2 && !x.repeat)],
-    ['📆 בהמשך', open.filter(x => x.due && new Date(x.due) >= t2 && !x.repeat)],
-    ['🔁 קבועות', open.filter(x => x.repeat && !isLate(x))],
-    ['📝 בלי תאריך', open.filter(x => !x.due)],
+    ['📩 חדשים שלא ראית', fresh],
+    ['⚠️ באיחור', rest.filter(isLate)],
+    ['☀️ היום', rest.filter(x => !isLate(x) && x.due && new Date(x.due) < t1 && !x.repeat)],
+    ['🌅 מחר', rest.filter(x => x.due && new Date(x.due) >= t1 && new Date(x.due) < t2 && !x.repeat)],
+    ['📆 בהמשך', rest.filter(x => x.due && new Date(x.due) >= t2 && !x.repeat)],
+    ['🔁 קבועות', rest.filter(x => x.repeat && !isLate(x))],
+    ['📝 בלי תאריך', rest.filter(x => !x.due)],
     ['✅ בוצעו היום', S.items.filter(x => pass(x) && x.status !== 'deleted' && isTask(x) && ((x.status === 'done' && isToday(x.doneAt)) || (x.repeat && isToday(x.lastDone))))],
   ].filter(g => g[1].length);
-  $('#taskList').innerHTML = habitsCard() + recurCard() + (groups.length ? groups.map(([h, l]) => `<div class="card"><h4>${h}<small>${l.length}</small></h4>${l.map(rowHtml).join('')}</div>`).join('')
+  $('#taskList').innerHTML = habitsCard() + recurCard() + (groups.length ? groups.map(([h, l]) => `<div class="card${h.startsWith('📩') ? ' fresh-card' : ''}"><h4>${h}<small>${l.length}</small></h4>${l.map(rowHtml).join('')}</div>`).join('')
     : `<div class="empty-state"><span class="em">🌤️</span>אין משימות כרגע.<br>כתוב לי בשיחה, למשל: "תזכיר לי מחר ב-10 להתקשר לבנק"</div>`);
   requestAnimationFrame(() => document.querySelectorAll('.rc-bar i[data-pct]').forEach(b => { b.style.width = b.dataset.pct + '%'; }));
   const lateN = tasksOpen().filter(isLate).length;
   $('#lateBadge').hidden = !lateN; $('#lateBadge').textContent = lateN;
+  drawUnread();
 }
 // החלקה של שורה הצידה ← מחיקה (עם "↩️ בטל")
 (() => {
@@ -1529,13 +1557,17 @@ function countUp(el, to, pre = '') {
   requestAnimationFrame(step);
 }
 // ⚙️ תצוגה: גודל טקסט ואנימציות (לכל מכשיר)
+// 📱 מסך הפתיחה — לבחירה, לכל טלפון בנפרד
+const startView = () => { try { const v = localStorage.getItem('zman-start'); return ['chat', 'cal', 'tasks', 'shop'].includes(v) ? v : 'chat'; } catch { return 'chat'; } };
 function drawViewCard() {
   const el = $('#viewCard'); if (!el) return;
   const font = document.documentElement.dataset.font || 'm', anim = !document.documentElement.classList.contains('no-anim');
   el.innerHTML = `<h4>🎨 תצוגה</h4>
     <div class="set-row"><span>🔠 גודל כתב</span><span class="chips" style="padding:0;gap:4px">${[['m', 'רגיל', 14], ['l', 'גדול', 16], ['xl', 'ענק', 18]].map(([k, l, px]) => `<button class="chip ${font === k ? 'on' : ''}" data-font="${k}" aria-pressed="${font === k}" style="font-size:${px}px">א ${l}</button>`).join('')}</span></div>
     <div class="set-row"><span>🎬 אנימציות</span><span class="chips" style="padding:0;gap:4px">${[['on', '✨ פועל'], ['off', '⏸️ כבוי']].map(([k, l]) => `<button class="chip ${(k === 'on') === anim ? 'on' : ''}" data-anim="${k}">${l}</button>`).join('')}</span></div>
+    <div class="set-row" style="display:block"><span>📱 מסך הפתיחה</span><div class="chips" style="padding:8px 0 0;flex-wrap:wrap">${[['chat', '💬 שיחה'], ['cal', '📅 יומן'], ['tasks', '📋 משימות'], ['shop', '🛒 קניות']].map(([k, l]) => `<button class="chip ${startView() === k ? 'on' : ''}" data-sv="${k}">${l}</button>`).join('')}</div></div>
     <p class="note">נשמר בטלפון הזה בלבד.</p>`;
+  el.querySelectorAll('[data-sv]').forEach(b => b.onclick = () => { try { localStorage.setItem('zman-start', b.dataset.sv); } catch { /* */ } drawViewCard(); toast(`📱 מעכשיו האפליקציה נפתחת ב${b.textContent}`); });
   el.querySelectorAll('[data-font]').forEach(b => b.onclick = () => { const f = b.dataset.font; if (f === 'm') delete document.documentElement.dataset.font; else document.documentElement.dataset.font = f; try { localStorage.setItem('zman-font', f === 'm' ? '' : f); } catch { /* */ } drawViewCard(); toast('🔠 גודל הכתב עודכן'); });
   el.querySelectorAll('[data-anim]').forEach(b => b.onclick = () => { const on = b.dataset.anim === 'on'; document.documentElement.classList.toggle('no-anim', !on); try { localStorage.setItem('zman-anim', on ? 'on' : 'off'); } catch { /* */ } drawViewCard(); if (on) confetti(30); toast(on ? '✨ האנימציות פועלות' : '⏸️ האנימציות כבויות'); });
 }
@@ -1609,7 +1641,7 @@ function renderShop() {
   $('#shopTitle').textContent = lid ? `${lists.find(l => l.id === lid)?.icon || '🏪'} ${lists.find(l => l.id === lid)?.text}` : 'רשימת קניות 🛒';
   $('#shopIn').placeholder = lid ? `מה צריך ב${lists.find(l => l.id === lid)?.text}? למשל: מסמרים, צבע` : 'למשל: חלב, ביצים, עגבניות';
   const list = shopOf(gid, lid), open = list.filter(x => x.status === 'open'), done = list.filter(x => x.status === 'done');
-  const row = x => `<div class="shop-row${x.status === 'done' ? ' done' : ''}" data-id="${x.id}"><button class="cb" data-sop="check" aria-label="${x.status === 'done' ? 'החזר לרשימה' : 'נקנה'}">${x.status === 'done' ? '✓' : ''}</button><span class="sh-t" data-sop="edit">${esc(x.text)}</span>${x.by && x.by !== S.uid ? `<i class="sh-by" style="background:${colorOf(personOfUid(x.by)?.id)}" title="${esc(personOfUid(x.by)?.name || '')}"></i>` : ''}</div>`;
+  const row = x => `<div class="shop-row${x.status === 'done' ? ' done' : ''}" data-id="${x.id}"><button class="cb" data-sop="check" aria-label="${x.status === 'done' ? 'החזר לרשימה' : 'נקנה'}">${x.status === 'done' ? '✓' : ''}</button><span class="sh-t" data-sop="edit">${esc(x.text)}${S.freshShop?.has(x.id) || isUnread(x) ? '<i class="new-dot">חדש</i>' : ''}</span>${x.by && x.by !== S.uid ? `<i class="sh-by" style="background:${colorOf(personOfUid(x.by)?.id)}" title="${esc(personOfUid(x.by)?.name || '')}"></i>` : ''}</div>`;
   el.innerHTML = (open.length ? DEPTS.map(([id, ic, name]) => { const l = open.filter(x => (x.dept || 'other') === id); return l.length ? `<div class="card"><h4>${ic} ${name}<small>${l.length}</small></h4>${l.map(row).join('')}</div>` : ''; }).join('')
     : `<div class="empty-state"><span class="em">🛒</span>הרשימה ריקה.<br>כותבים למעלה, או בצ'אט: "קניות: חלב, ביצים, לחם"</div>`)
     + (done.length ? `<div class="card"><h4>✅ בעגלה<small>${done.length}</small></h4>${done.map(row).join('')}<button class="btn" id="shopClear" style="margin-top:8px">🧹 לנקות את מה שנקנה</button></div>` : '');
@@ -3069,12 +3101,13 @@ function showView(v, fromPop) {
   if (v === 'settings') { drawDemoCard(); renderProfile(); drawPush(); drawLockCard(); drawMonthly(); drawCalCard(); drawCatCard(); drawViewCard(); drawGcal(); }
   document.querySelectorAll('nav button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === (['thoughts', 'kids'].includes(v) ? 'tasks' : v)));
   $('#setBtn')?.classList.toggle('on', v === 'settings');
+  seeView(v);
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
   enterAnim($('#v-' + v));
   if (v === 'shop') renderShop();
   if (v === 'kids') renderKids();
   $('#composer').style.display = v === 'chat' ? 'flex' : 'none';
-  if (v === 'chat') { renderChat(); $('#main').scrollTop = $('#main').scrollHeight; } else $('#main').scrollTop = 0;
+  if (v === 'chat') { renderChat(); const ud = $('#unreadDiv'); if (ud) requestAnimationFrame(() => ud.scrollIntoView({ block: 'start' })); else $('#main').scrollTop = $('#main').scrollHeight; } else $('#main').scrollTop = 0;
   if (v === 'cal') { CAL.jump = true; renderCal(true); }
   setTimeout(syncTrap, 0);
 }
@@ -3085,7 +3118,11 @@ $('#t3edit').onclick = () => openPicker();
 
 function renderChat() {
   $('#chat').innerHTML = ''; lastDay = null;
-  S.msgs.forEach(m => appendMsg(m, false));
+  const n = S.msgs.filter(m => m.role === 'bot' && m.ts > (S.chatFrom || '')).length; let shown = false;
+  S.msgs.forEach(m => {
+    if (n && !shown && m.role === 'bot' && m.ts > (S.chatFrom || '')) { shown = true; const d = document.createElement('div'); d.className = 'unread-div'; d.id = 'unreadDiv'; d.textContent = `📩 ${n === 1 ? 'הודעה אחת שלא נקראה' : n + ' הודעות שלא נקראו'}`; $('#chat').appendChild(d); }
+    appendMsg(m, false);
+  });
 }
 function renderAll() {
   const n = new Date();
@@ -3410,6 +3447,9 @@ async function load() {
   S.settings = await db.getKV('settings', S.settings);
   S.travel = await db.getKV('travel', {}); S.alerted = await db.getKV('alerted', []);
   S.resources = C.DEFAULT_RES.concat(await db.getKV('resources', []));
+  S.seen = await db.getKV('seen', {}); S.seenSince = await db.getKV('seenSince', null); S.chatSeen = await db.getKV('chatSeen', '');
+  if (!S.seenSince) { S.seenSince = new Date().toISOString(); await db.setKV('seenSince', S.seenSince); S.chatSeen = S.seenSince; await db.setKV('chatSeen', S.chatSeen); }
+  S.chatFrom = S.chatSeen;
   S.focus = await db.getKV('focus', null); S.templates = await db.getKV('templates', []); S.bell = await db.getKV('bell', []); S.cats = await db.getKV('cats', []); drawBellBadge();
   S.settings = { morning: '07:00', evening: '20:00', city: 'ירושלים', candleMin: 40, shabbatAlerts: [60], melody: 'bells', ...S.settings };
   $('#setMorning').value = S.settings.morning; $('#setEvening').value = S.settings.evening; drawShabbatSettings();
@@ -3869,7 +3909,7 @@ async function boot() {
   }
   await tick();
   setInterval(tick, 30000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { document.title = 'זמן בכיף'; tick(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { document.title = 'זמן בכיף'; tick(); seeView(curView()); } });
 }
 
 (async () => {
@@ -3891,6 +3931,8 @@ async function boot() {
     buildPeople(); renderAll(); renderFamily(); boot();
     sync.whenReady().then(async () => { await migrateToGroups(); buildPeople(); renderAll(); renderFamily(); renderMe(); });
   }
+  if (startView() === 'chat') seeView('chat'); drawUnread();
+  if (startView() !== 'chat' && !new URLSearchParams(location.search).has('take') && !new URLSearchParams(location.search).has('dose')) showView(startView());
   if (RECOVERY && sync.user()) openNewPassword();
   else { setTimeout(deepLinkTask, 800); gcalReturn(); }
   { const q = new URLSearchParams(location.search), id = q.get('take') || q.get('dose');
