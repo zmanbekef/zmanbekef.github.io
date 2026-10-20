@@ -767,7 +767,7 @@ function openFeedback(text = '', hint = text) {
       ? `${navigator.userAgent.match(/iPhone|iPad|Android[^;)]*|Mac|Windows/)?.[0] || 'מכשיר'} · ${screen.width}×${screen.height} · ${isStandalone() ? 'מותקנת' : 'דפדפן'} · קבוצות: ${sync.myGroups().length}`
       : '';
     e.target.disabled = true; e.target.textContent = 'שולח…';
-    const cloud = sync.saveFeedback({ kind, message, contact, device }).catch(() => false);
+    const cloud = sync.saveFeedbackAny({ kind, message, contact, device });
     let mailed = false;
     try {
       const r = await fetch(`https://formsubmit.co/ajax/${FEEDBACK_FORM}`, {
@@ -775,7 +775,7 @@ function openFeedback(text = '', hint = text) {
         body: JSON.stringify({ _subject: `💌 משוב חדש — זמן בכיף (${FKINDS[kind]})`, _template: 'table', _captcha: 'false',
           'אפליקציה': 'זמן בכיף ⏰', 'סוג': FKINDS[kind], 'משוב': message, 'פרטים לחזרה': contact || '—', 'מכשיר': device || '—' }),
       });
-      mailed = r.ok;
+      mailed = await formOk(r);
     } catch { mailed = false; }
     const saved = await cloud;
     if (mailed || saved) { closeSheet(); confetti(); toast('💌 תודה! המשוב נשלח'); return; }
@@ -798,14 +798,20 @@ async function drawDemoCard() {
   $('#dmTour')?.addEventListener('click', () => demo.startTour(0));
   $('#dmOut')?.addEventListener('click', () => demo.exit());
 }
+// FormSubmit עונה 200 גם כשלא נשלח (למשל טופס שעוד לא הופעל) — בודקים success באמת
+async function formOk(r) { if (!r.ok) return false; try { const j = await r.json(); return j.success === true || j.success === 'true'; } catch { return false; } }
+// ההערות נשמרות גם בטבלת המשוב בענן וגם במייל. נמחקות מהטלפון רק אם לפחות אחד מהם הצליח באמת
 async function sendDemoNotes(text, n) {
+  const cloud = sync.saveFeedbackAny({ kind: 'idea', message: `🎭 הערות מצב הדגמה (${n})\n\n${text}`.slice(0, 4900), contact: sync.user()?.email && !demo.DEMO ? sync.user().email : '', device: `${navigator.userAgent.match(/iPhone|iPad|Android[^;)]*|Mac|Windows/)?.[0] || ''} · ${screen.width}×${screen.height}` });
+  let mailed = false;
   try {
     const r = await fetch(`https://formsubmit.co/ajax/${FEEDBACK_FORM}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ _subject: `📝 הערות מצב הדגמה — זמן בכיף (${n})`, _template: 'box', _captcha: 'false', 'אפליקציה': 'זמן בכיף ⏰', 'סוג': 'הערות מצב הדגמה', 'הערות': text }),
     });
-    return r.ok;
-  } catch { return false; }
+    mailed = await formOk(r);
+  } catch { mailed = false; }
+  return (await cloud) || mailed;
 }
 
 // ---------- עזרה: שאלות ותשובות בחלון נפרד ----------

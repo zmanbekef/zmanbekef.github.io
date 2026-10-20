@@ -234,6 +234,18 @@ export async function saveFeedback(f) {
   return !error;
 }
 
+/** משוב שעובד גם במצב הדגמה: לקוח נפרד עם החשבון האמיתי שבטלפון (רק הוספה לטבלת המשוב) */
+export async function saveFeedbackAny(f) {
+  try {
+    await loadLib();
+    const c = sb || window.supabase.createClient(CONFIG.url, CONFIG.key, { auth: { persistSession: true, autoRefreshToken: false } });
+    const u = (await c.auth.getSession()).data.session?.user; if (!u) return false;
+    const { error } = await c.from('feedback').insert({ user_id: u.id, app: 'zman-bekef', ...f });
+    if (error) console.warn('feedback', error);
+    return !error;
+  } catch (e) { console.warn('feedback', e); return false; }
+}
+
 // ---------- תור שליחה (עובד גם כשאין רשת) ----------
 export async function queue(it) {
   if (!me || DEMO) return;

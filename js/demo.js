@@ -318,6 +318,6 @@ function openNotes() {
     const ok = await A.sendNotes(allText(), notes().length);
     if (ok) { setNotes([]); A.closeSheet(); A.confetti?.(); A.toast('📤 כל ההערות נשלחו! תודה 🙏'); return; }
     b.disabled = false; b.textContent = '📤 שלח את כל ההערות';
-    $('#dnErr').textContent = 'לא הצלחתי לשלוח (אין אינטרנט?). אפשר "📋 העתק" ולהדביק בצ\'אט.';
+    $('#dnErr').textContent = 'לא הצלחתי לשלוח. ההערות נשארו שמורות בטלפון. אפשר לנסות שוב, או "📋 העתק" ולהדביק בצ\'אט.';
   });
 }
