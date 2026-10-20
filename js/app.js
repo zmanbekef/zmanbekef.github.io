@@ -2313,7 +2313,7 @@ function colorOf(pid) {
 // מי מוצג ביומן חוץ ממני (ברירת מחדל: מי שבמשפחה או בקשר ישיר איתי)
 function calWho() {
   if (Array.isArray(S.settings.calWho)) return S.settings.calWho.filter(id => person(id));
-  return others().filter(p => p.uid && p.nicks.some(n => ['family', 'pair'].includes(n.kind))).map(p => p.id);
+  return others().filter(p => p.nicks.some(n => ['family', 'pair'].includes(n.kind))).map(p => p.id);
 }
 // לאיזו קבוצה בהגדרות "מה מוצג" שייך דבר: שלי / שהקצו לי / של הקבוצות
 function calCat(it) {
@@ -2348,6 +2348,8 @@ function calEvents(from, to) {
     if (!['open', 'done'].includes(it.status) || ['msg', 'reply'].includes(it.kind) || !it.due) continue;
     const cat = calCat(it), owner = it.forP && it.forP !== 'any' ? it.forP : ownerP(it) || S.myP;
     if (cat === 'other' ? !who.has(owner) : !show[cat]) continue;
+    if (cat === 'groups' && !who.has(owner)) continue; // בשביל מישהו שהוסתר בשורת האנשים
+    if (S.settings.calMe === false && ['mine', 'assigned', 'thoughts'].includes(cat)) continue; // 🙋 "אני" כבוי
     seen.add(it.id); push(it, owner, true, false);
   }
   for (const pid of who) {
@@ -2365,7 +2367,12 @@ async function loadHol(d) {
   if (!CAL.hol[k]) CAL.hol[k] = await Z.monthEvents(S.settings.city, S.settings.candleMin, d.getFullYear(), d.getMonth());
   return CAL.hol[k];
 }
+// 🕯️ שבת וחג בצבע בולט (חג = יום טוב, לא ראש חודש או צום)
+const CHAG_RE = /ראש השנה|יום כיפור|יום הכיפורים|סוכות|שמיני עצרת|שמחת תורה|פסח|שבועות|חג/;
+const dayKind = (d, h) => (h?.hol || []).some(x => CHAG_RE.test(x) && !/ערב|חול המועד|חוה[״"]מ|הושענא/.test(x)) ? ' hol chag' : d.getDay() === 6 ? ' hol shab' : h?.hol.length ? ' holmin' : '';
 const holOf = d => CAL.hol[`${d.getFullYear()}-${d.getMonth()}`]?.[ymd(d)] || null;
+// 📅 התאריך הראשי (גדול): לועזי או עברי — לבחירה ב⚙️ ← 📅 יומן
+const hebMain = () => S.settings.mainDate === 'heb';
 const hebDay = d => { try { const n = +new Intl.DateTimeFormat('he-u-ca-hebrew', { day: 'numeric' }).format(d); return gematria(n); } catch { return ''; } };
 const hebMonth = d => { try { return new Intl.DateTimeFormat('he-u-ca-hebrew', { month: 'long' }).format(d).replace('חשון', 'חשוון'); } catch { return ''; } };
 const evLabel = e => `${e.kind === 'meeting' ? 'פגישה' : e.kind === 'thought' ? 'מחשבה' : 'משימה'}: ${e.busy ? 'תפוס' : e.text}${e.hasTime ? `, ${hm(e.start)}${e.dur ? ' עד ' + hm(e.end) : ''}` : ''}${e.owner !== S.myP ? ', של ' + pName(e.owner) : ''}${e.done ? ', בוצע' : ''}`;
@@ -2376,9 +2383,9 @@ async function renderCal(force) {
   const d = CAL.day, m = CAL.mode, jump = CAL.jump; CAL.jump = false;
   document.querySelectorAll('#calMode button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   // שורת האנשים: אני + מי שבקבוצות שלי ויש לו חשבון
-  const ppl = others().filter(p => p.uid), who = calWho();
+  const ppl = others(), who = calWho(), meOn = S.settings.calMe !== false, all = meOn && ppl.every(p => who.includes(p.id));
   $('#calWho').hidden = !ppl.length;
-  $('#calWho').innerHTML = `<button class="chip on" style="--c:${colorOf(S.myP)}" disabled><i class="dot"></i>🙋 אני</button>` +
+  $('#calWho').innerHTML = `<span class="cw-lbl">👀 של מי:</span><button class="chip ${all ? 'on' : ''}" data-p="*">👨‍👩‍👧 כולם</button><button class="chip ${meOn ? 'on' : ''}" data-p="me" style="--c:${colorOf(S.myP)}" aria-pressed="${meOn}"><i class="dot"></i>🙋 אני</button>` +
     ppl.map(p => `<button class="chip ${who.includes(p.id) ? 'on' : ''}" data-p="${p.id}" style="--c:${colorOf(p.id)}" aria-pressed="${who.includes(p.id)}"><i class="dot"></i>${esc(p.e)} ${esc(pName(p.id))}</button>`).join('');
   const from = m === 'day' ? d : m === 'week' ? addDays(d, -d.getDay()) : new Date(d.getFullYear(), d.getMonth(), 1);
   const to = m === 'day' ? addDays(d, 1) : m === 'week' ? addDays(from, 7) : new Date(d.getFullYear(), d.getMonth() + 1, 1);
@@ -2389,7 +2396,8 @@ async function renderCal(force) {
 
 function drawDay(d, ev, jump) {
   const h = holOf(d), isT = ymd(d) === today();
-  $('#calTitle').innerHTML = `<b>${isT ? 'היום · ' : ''}יום ${DAYS[d.getDay()]}, ${d.getDate()}.${d.getMonth() + 1}</b><small>${esc(hebDate(d))}${h?.hol.length ? ' · ' + esc(h.hol.join(', ')) : ''}</small>`;
+  const g1 = `${d.getDate()}.${d.getMonth() + 1}`, hol1 = h?.hol.length ? ' · ' + esc(h.hol.join(', ')) : '';
+  $('#calTitle').innerHTML = hebMain() ? `<b>${isT ? 'היום · ' : ''}יום ${DAYS[d.getDay()]}, ${esc(hebDate(d))}</b><small>${g1}${hol1}</small>` : `<b>${isT ? 'היום · ' : ''}יום ${DAYS[d.getDay()]}, ${g1}</b><small>${esc(hebDate(d))}${hol1}</small>`;
   const timed = ev.filter(e => e.hasTime), allDay = ev.filter(e => !e.hasTime);
   // משימות שחופפות בזמן — זו ליד זו
   const cols = []; let group = [], gEnd = 0;
@@ -2427,11 +2435,12 @@ function drawDay(d, ev, jump) {
 
 function drawWeek(from, ev) {
   const to = addDays(from, 6);
-  $('#calTitle').innerHTML = `<b>${from.getDate()}.${from.getMonth() + 1} – ${to.getDate()}.${to.getMonth() + 1}</b><small>${esc(hebDate(from))} – ${esc(hebDate(to))}</small>`;
+  const gw = `${from.getDate()}.${from.getMonth() + 1} – ${to.getDate()}.${to.getMonth() + 1}`, hw = `${esc(hebDate(from))} – ${esc(hebDate(to))}`;
+  $('#calTitle').innerHTML = hebMain() ? `<b>${hw}</b><small>${gw}</small>` : `<b>${gw}</b><small>${hw}</small>`;
   $('#calBody').innerHTML = `<div class="cal-week">${Array.from({ length: 7 }, (_, i) => {
     const d = addDays(from, i), list = ev.filter(e => ymd(e.start) === ymd(d)), h = holOf(d);
-    return `<button class="cal-col${ymd(d) === today() ? ' today' : ''}${d.getDay() === 6 || h?.hol.length ? ' hol' : ''}" data-day="${ymd(d)}" aria-label="יום ${DAYS[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}, ${list.length} דברים">
-      <span class="cal-dh"><b>${DSH[d.getDay()]}׳</b><i>${d.getDate()}</i><small>${hebDay(d)}</small></span>
+    return `<button class="cal-col${ymd(d) === today() ? ' today' : ''}${dayKind(d, h)}" data-day="${ymd(d)}" aria-label="יום ${DAYS[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}, ${list.length} דברים">
+      <span class="cal-dh"><b>${DSH[d.getDay()]}׳</b>${hebMain() ? `<i>${hebDay(d)}</i><small>${d.getDate()}</small>` : `<i>${d.getDate()}</i><small>${hebDay(d)}</small>`}</span>
       ${h?.hol.length ? `<span class="cal-holname">${esc(h.hol[0])}</span>` : ''}
       ${list.map(e => `<span class="cal-wi${e.done ? ' done' : ''}" style="--c:${e.color}">${e.hasTime ? `<b>${hm(e.start)}</b>` : ''}${esc(e.busy ? 'תפוס/ה' : e.text)}</span>`).join('')}
     </button>`; }).join('')}</div>`;
@@ -2440,13 +2449,14 @@ function drawWeek(from, ev) {
 function drawMonth(d, ev) {
   const first = new Date(d.getFullYear(), d.getMonth(), 1), last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
   const hm1 = hebMonth(first), hm2 = hebMonth(last), hy = hebDate(last).split(' ').pop();
-  $('#calTitle').innerHTML = `<b>${MONTHS_HE[d.getMonth()]} ${d.getFullYear()}</b><small>${esc(hm1 === hm2 ? hm1 : hm1 + '–' + hm2)} ${esc(hy)}</small>`;
+  const gm = `${MONTHS_HE[d.getMonth()]} ${d.getFullYear()}`, hmo = `${esc(hm1 === hm2 ? hm1 : hm1 + '–' + hm2)} ${esc(hy)}`;
+  $('#calTitle').innerHTML = hebMain() ? `<b>${hmo}</b><small>${gm}</small>` : `<b>${gm}</b><small>${hmo}</small>`;
   const start = addDays(first, -first.getDay()), weeks = Math.ceil((first.getDay() + last.getDate()) / 7);
   $('#calBody').innerHTML = `<div class="cal-month"><div class="cal-mh">${DSH.map(x => `<span>${x}׳</span>`).join('')}</div>${Array.from({ length: weeks * 7 }, (_, i) => {
     const c = addDays(start, i), list = ev.filter(e => ymd(e.start) === ymd(c)), h = holOf(c), out = c.getMonth() !== d.getMonth();
     const dots = [...new Set(list.map(e => e.color))].slice(0, 4);
-    return `<button class="cal-cell${out ? ' out' : ''}${ymd(c) === today() ? ' today' : ''}${c.getDay() === 6 || h?.hol.length ? ' hol' : ''}" data-day="${ymd(c)}" aria-label="${c.getDate()}.${c.getMonth() + 1}, ${esc(hebDate(c))}${h?.hol.length ? ', ' + esc(h.hol.join(', ')) : ''}, ${list.length ? list.length + ' דברים' : 'פנוי'}">
-      <b>${c.getDate()}</b><small>${hebDay(c)}</small>${h?.hol.length ? `<em>${esc(h.hol[0])}</em>` : ''}<span class="cal-dots">${dots.map(x => `<i style="background:${x}"></i>`).join('')}${list.length > 4 ? '+' : ''}</span></button>`;
+    return `<button class="cal-cell${out ? ' out' : ''}${ymd(c) === today() ? ' today' : ''}${dayKind(c, h)}" data-day="${ymd(c)}" aria-label="${c.getDate()}.${c.getMonth() + 1}, ${esc(hebDate(c))}${h?.hol.length ? ', ' + esc(h.hol.join(', ')) : ''}, ${list.length ? list.length + ' דברים' : 'פנוי'}">
+      ${hebMain() ? `<b>${hebDay(c)}</b><small>${c.getDate()}</small>` : `<b>${c.getDate()}</b><small>${hebDay(c)}</small>`}${h?.hol.length ? `<em>${esc(h.hol[0])}</em>` : ''}<span class="cal-dots">${dots.map(x => `<i style="background:${x}"></i>`).join('')}${list.length > 4 ? '+' : ''}</span></button>`;
   }).join('')}</div>
   <p class="note" style="padding:8px 16px">לחיצה על יום פותחת אותו לפי שעות.</p>`;
 }
@@ -2464,6 +2474,8 @@ $('#calToday').onclick = () => { CAL.day = sod(new Date()); CAL.jump = true; ent
 $('#calWho').onclick = async e => {
   const b = e.target.closest('[data-p]'); if (!b) return;
   const cur = calWho(), id = b.dataset.p, on = !cur.includes(id);
+  if (id === 'me') { S.settings.calMe = S.settings.calMe === false; await db.setKV('settings', S.settings); return renderCal(); }
+  if (id === '*') { const all = S.settings.calMe !== false && others().every(p => cur.includes(p.id)); S.settings.calMe = true; S.settings.calWho = all ? [] : others().map(p => p.id); await db.setKV('settings', S.settings); return renderCal(true); }
   S.settings.calWho = on ? [...cur, id] : cur.filter(x => x !== id); await db.setKV('settings', S.settings);
   await renderCal(true);
   const p = person(id);
@@ -2529,9 +2541,12 @@ function drawCalCard() {
     ${S.uid ? S.people.map(p => `<div class="set-row"><span>${esc(p.e)} ${esc(p.id === S.myP ? 'אני' : pName(p.id))}</span><button class="color-dot" data-pc="${p.id}" style="background:${colorOf(p.id)}" aria-label="הצבע של ${esc(p.name)}${canColor(p.id) ? ' — לשינוי' : ''}"></button></div>`).join('') : '<p class="note">אחרי כניסה אפשר לבחור צבע לכל אחד.</p>'}
     <p class="note" style="margin-top:10px">🏥 שעות משמרות (בשביל "תכניס לפסי משמרות בראשון ערב…"):</p>
     ${[['morning', 'בוקר'], ['evening', 'ערב'], ['night', 'לילה']].map(([k, l]) => `<div class="set-row"><span>${l}</span><span style="display:flex;gap:6px;align-items:center"><input type="time" data-sh="${k}" data-i="0" value="${shiftHours()[k][0]}">–<input type="time" data-sh="${k}" data-i="1" value="${shiftHours()[k][1]}"></span></div>`).join('')}
+    <p class="note" style="margin-top:10px">📅 התאריך הגדול (הראשי):</p>
+    <div class="seg" id="setMainDate" style="margin-top:6px"><button data-md="greg" class="${hebMain() ? '' : 'on'}">לועזי (20.10)</button><button data-md="heb" class="${hebMain() ? 'on' : ''}">עברי (ח׳ חשוון)</button></div>
     <p class="note">את מי עוד רואים ביומן בוחרים בראש מסך היומן. מי רואה את היומן <b>שלך</b> נקבע בכל קבוצה, ב"👥 הקבוצות שלי".</p>`;
   el.querySelectorAll('[data-show]').forEach(c => c.onchange = async () => { S.settings.calShow = { ...calShow(), [c.dataset.show]: c.checked }; await db.setKV('settings', S.settings); toast('נשמר ✓'); });
   el.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => openColorPick(b.dataset.pc));
+  el.querySelectorAll('[data-md]').forEach(b => b.onclick = async () => { S.settings.mainDate = b.dataset.md; await db.setKV('settings', S.settings); drawCalCard(); renderAll(); toast(hebMain() ? '📅 עכשיו התאריך העברי גדול' : '📅 עכשיו התאריך הלועזי גדול'); });
   el.querySelectorAll('[data-sh]').forEach(c => c.onchange = async () => {
     const sh = shiftHours(); sh[c.dataset.sh] = [...sh[c.dataset.sh]]; sh[c.dataset.sh][+c.dataset.i] = c.value || sh[c.dataset.sh][+c.dataset.i];
     S.settings.shifts = sh; await db.setKV('settings', S.settings); toast('🏥 נשמר');
@@ -2860,7 +2875,7 @@ function renderChat() {
 }
 function renderAll() {
   const n = new Date();
-  $('#hdate').textContent = `יום ${DAYS[n.getDay()]}, ${n.getDate()}.${n.getMonth() + 1} · ${hebDate(n)}`;
+  $('#hdate').textContent = hebMain() ? `יום ${DAYS[n.getDay()]}, ${hebDate(n)} · ${n.getDate()}.${n.getMonth() + 1}` : `יום ${DAYS[n.getDay()]}, ${n.getDate()}.${n.getMonth() + 1} · ${hebDate(n)}`;
   renderTop3(); renderDayline(); renderTasks(); renderThoughts(); renderRes(); renderCal(); renderShop(); renderKids();
   document.querySelectorAll('.tabs2 [data-v="kids"]').forEach(b => { b.hidden = !kidsList().length; });
   const s = streak(); $('#streak').textContent = s >= 2 ? `🔥 ${s} ימים ברצף` : s === 1 ? '🔥 יום 1' : '';
