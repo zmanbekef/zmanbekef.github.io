@@ -198,7 +198,8 @@ export function init(api) {
   };
   fab.onclick = openNotes;
   tour.addEventListener('click', e => { if (e.target === tour || e.target.id === 'tourSpot') next(1); });
-  addEventListener('resize', () => { if (step >= 0) place(); });
+  // מקלדת שנפתחת באנדרואיד = resize. בזמן כתיבה לא מזיזים כלום
+  addEventListener('resize', () => { if (step >= 0 && !$('#sheetBg').classList.contains('on') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) place(); });
   drawCount();
 }
 
