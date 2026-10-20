@@ -503,3 +503,14 @@ html.no-anim *,html.no-anim *::before,html.no-anim *::after{animation:none!impor
 .hero.fold .t3fold{top:50%;transform:translateY(-50%)}
 .hero.fold .t3h{padding-left:44px}
 .t3h{position:static}
+
+/* ⭐ כפתור הקיפול: גדול, בולט, בצבע אחר ומונפש — שיבינו שאפשר לקפל */
+.t3fold{width:auto;height:34px;padding:0 12px;border-radius:17px;background:linear-gradient(135deg,#FACC15,#F97316);color:#1F1300;font-weight:800;font-size:13px;display:flex;align-items:center;gap:4px;box-shadow:0 4px 14px rgba(250,204,21,.55);animation:foldHint 2.4s ease-in-out infinite}
+.t3fold b{font-size:16px;line-height:1;display:inline-block;transition:transform .3s}
+.t3fold:active{transform:scale(.92)}
+@keyframes foldHint{0%,70%,100%{transform:translateY(0);box-shadow:0 4px 14px rgba(250,204,21,.55)}80%{transform:translateY(-3px);box-shadow:0 8px 22px rgba(250,204,21,.9)}90%{transform:translateY(1px)}}
+.hero.fold .t3fold{transform:translateY(-50%);animation:none}
+.hero .streak{left:auto;right:auto;top:auto;position:static;display:inline-block;margin-bottom:6px}
+.no-anim .t3fold{animation:none}
+.t3fold{height:40px;padding:0 16px;border-radius:20px;font-size:15px;top:10px}.t3fold b{font-size:18px}
+.hero.fold{padding:16px 16px;min-height:58px}.hero.fold .t3h{padding-left:110px}

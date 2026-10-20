@@ -1390,7 +1390,7 @@ function renderTop3() {
   $('#t3txt').textContent = !list.length ? 'עוד לא נבחרו' : n === list.length ? '🎉 סיימת את כל החשובים!' : `${n} מתוך ${list.length} בוצעו`;
   $('#t3edit').hidden = !list.length;
   const fold = (() => { try { return localStorage.getItem('zman-t3fold') === '1'; } catch { return false; } })();
-  $('.hero').classList.toggle('fold', fold); $('#t3fold').textContent = fold ? '▾' : '▴'; $('#t3fold').setAttribute('aria-expanded', String(!fold));
+  $('.hero').classList.toggle('fold', fold); $('#t3fold').innerHTML = fold ? '<b>▾</b> לפתוח' : '<b>▴</b> לקפל'; $('#t3fold').setAttribute('aria-expanded', String(!fold));
   $('#t3title').textContent = fold && list.length ? `⭐ החשובים · ${n}/${list.length}${n === list.length ? ' 🎉' : ''}` : '⭐ החשובים של היום';
 }
 // ⭐ נעוץ למעלה בשיחה, ואפשר לקפל לשורה אחת
