@@ -1915,16 +1915,19 @@ function habitsCard() {
   const hs = habits();
   return `<div class="card habits"><h4>🔥 הרגלים · היום<button class="act" id="hbNew" style="margin-inline-start:auto">➕ הרגל</button></h4>
     ${hs.length ? hs.map(h => { const today = habitDue(h, new Date()), done = habitDone(h, new Date()), st = habitStreak(h), g = habitGoal(h), n = habitCount(h, new Date());
-      const cnt = g > 1 ? `<span class="hb-cnt">${today && n ? '<button class="act hb-minus" data-hop="minus" aria-label="אחד פחות">−</button>' : ''}<b class="hb-n" dir="ltr">${n}/${g}</b></span>` : '';
+      // [ − ] 3/8 [ + ] יחד, ו-+ פועם כדי שיבינו שלוחצים עליו בכל פעם
+      const cnt = g > 1 && today ? `<span class="hb-cnt" dir="ltr"><button class="hb-btn hb-minus" data-hop="minus" ${n ? '' : 'disabled'} aria-label="אחד פחות">−</button><b class="hb-n">${n}/${g}</b><button class="hb-btn hb-plus${done ? '' : ' pulse'}" data-hop="tick" aria-label="עוד אחד">${done ? '✓' : '+'}</button></span>` : g > 1 ? `<b class="hb-n" dir="ltr">${n}/${g}</b>` : '';
       const dots = g > 1 && g <= 12 ? `<span class="hb-dots">${Array.from({ length: g }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>` : '';
-      return `<div class="hb-row${done ? ' done' : ''}${today ? '' : ' off'}" data-h="${h.id}"><button class="cb${g > 1 && !done ? ' plus' : ''}" data-hop="tick" ${today ? '' : 'disabled'} aria-label="${g > 1 ? (done ? 'לאפס' : 'עוד אחד') : done ? 'בטל' : 'עשיתי היום'}">${done ? '✓' : g > 1 ? '+' : ''}</button><span class="sh-t" data-hop="edit">${esc(h.icon || '⭐')} ${esc(h.text)}${today ? '' : ' <small>(לא היום)</small>'}${dots}</span>${cnt}<b class="hb-st" title="ימים ברצף">🔥${st}</b></div>`; }).join('')
+      const hint = g > 1 && today && !n ? `<small class="hb-hint">👉 לוחצים <b>+</b> על כל ${/כוס/.test(h.text) ? 'כוס' : 'פעם'}</small>` : '';
+      return `<div class="hb-row${done ? ' done' : ''}${today ? '' : ' off'}" data-h="${h.id}">${g > 1 ? `<span class="hb-ic">${esc(h.icon || '⭐')}</span>` : `<button class="cb" data-hop="tick" ${today ? '' : 'disabled'} aria-label="${done ? 'בטל' : 'עשיתי היום'}">${done ? '✓' : ''}</button>`}<span class="sh-t" data-hop="edit">${g > 1 ? '' : esc(h.icon || '⭐') + ' '}${esc(h.text)}${today ? '' : ' <small>(לא היום)</small>'}${dots}${hint}</span>${cnt}<b class="hb-st" title="ימים ברצף">🔥${st}</b></div>`; }).join('')
       : '<p class="note">משהו קטן שרוצים לעשות כל יום (או בימים מסוימים): לשתות מים, לקרוא 10 דקות, הליכה. מסמנים כל יום — והרצף 🔥 גדל.</p>'}</div>`;
 }
 async function tickHabit(id, btn, minus) {
   const h = item(id); if (!h) return;
   const k = ymd(new Date()), g = habitGoal(h), was = habitCount(h, new Date()); h.log = { ...(h.log || {}) };
   if (g > 1) { // עוד כוס: 3/8 → 4/8. בסוף, לחיצה נוספת מאפסת
-    const n = minus ? Math.max(0, was - 1) : was >= g ? 0 : was + 1;
+    if (!minus && was >= g) return toast(`✓ ${g}/${g} — כל הכבוד! (− כדי להוריד)`);
+    const n = minus ? Math.max(0, was - 1) : was + 1;
     if (n) h.log[k] = n; else delete h.log[k];
     btn?.classList.add('pop'); if (!minus && n && n < g) toast(`${h.icon || '💧'} ${n}/${g}`);
   } else if (h.log[k]) delete h.log[k]; else { h.log[k] = true; btn?.classList.add('pop'); }

@@ -545,3 +545,16 @@ html.no-anim *,html.no-anim *::before,html.no-anim *::after{animation:none!impor
 .mn-ar{align-self:center;font-style:normal;color:#FDBA74;font-size:14px}
 @keyframes mnGlow{0%,28%{border-color:rgba(251,191,36,.9);transform:translateY(-3px);box-shadow:0 6px 18px rgba(251,191,36,.3)}34%,100%{border-color:var(--line);transform:none;box-shadow:none}}
 .no-anim .mn-st{animation:none}
+/* 💧 [−] 3/8 [+] יחד, + פועם */
+.hb-cnt{display:flex;align-items:center;gap:6px;flex:none;background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);border-radius:22px;padding:3px}
+.hb-btn{width:36px;height:36px;border-radius:50%;border:none;font:inherit;font-size:22px;font-weight:800;cursor:pointer;display:grid;place-items:center;line-height:1}
+.hb-plus{background:linear-gradient(135deg,#38BDF8,#3B82F6);color:#fff;box-shadow:0 4px 14px rgba(56,189,248,.5)}
+.hb-plus.pulse{animation:hbPulse 1.6s ease-in-out infinite}
+.hb-minus{background:rgba(255,255,255,.12);color:#fff}
+.hb-minus:disabled{opacity:.3}
+.hb-btn:active{transform:scale(.88)}
+.hb-cnt .hb-n{min-width:38px;font-size:15px}
+.hb-ic{font-size:22px;flex:none;width:28px;text-align:center}
+.hb-hint{display:block;color:#7DD3FC!important;font-size:12px;margin-top:3px;animation:fade .6s}
+@keyframes hbPulse{0%,100%{transform:scale(1);box-shadow:0 4px 14px rgba(56,189,248,.5)}50%{transform:scale(1.12);box-shadow:0 0 0 8px rgba(56,189,248,.18)}}
+.no-anim .hb-plus.pulse{animation:none}
