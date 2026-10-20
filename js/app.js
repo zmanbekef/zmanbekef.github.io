@@ -2752,11 +2752,12 @@ pullDown($('#main'), () => $('#main'), () => !$('#v-chat').classList.contains('o
 // ➕ הוספה מהירה בלי צ'אט
 function openQuick(pre = {}) {
   let kind = pre.kind || 'task';
-  sheet(`<h3>➕ מה להוסיף?</h3>
-    <div class="qa-tiles">${[['qaTimer', '⏱️', 'טיימר'], ['qaShop', '🛒', 'קניות'], ['qaMenu', '🍲', 'תפריט שבת'], ['qaHabit', '🔥', 'הרגל'], ['qaMed', '💊', 'תרופה / קבוע']].map(([id, ic, l], i) => `<button class="qa-tile" id="${id}" style="--d:${i * 60}ms"><span>${ic}</span>${l}</button>`).join('')}</div>
-    <div class="qa-sep">או משימה / פגישה / מחשבה:</div>
-    <label>📋 מתבנית (לא חובה)</label><div class="chips" id="qTpl" style="padding:0;flex-wrap:wrap">${allTemplates().map(t => `<button class="chip" data-t="${t.id}">${t.ic} ${esc(t.name)}</button>`).join('')}</div>
-    <div class="seg" id="qKind" style="margin-top:10px">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
+  const KT = { task: ['📌', 'משימה חדשה'], remind: ['⏰', 'תזכורת'], meeting: ['👥', 'פגישה'], thought: ['💭', 'מחשבה'] }, focus = pre.mode || null;
+  if (pre.mode === 'remind') kind = 'task';
+  const plc = PLUS.find(x => x[0] === (pre.tpl ? 'tpl' : focus));
+  sheet(`${focus ? `<div class="pl-head"><span class="pl-ic" style="background:${plc?.[3] || 'var(--g1)'}">${pre.tpl ? '📋' : KT[focus][0]}</span><h3>${pre.tpl ? 'מתבנית' : pre.stars != null && pre.forP ? `מטלה ל${esc(pName(pre.forP))}` : KT[focus][1]}</h3><button class="chip" id="qBack">↩️ החלפה</button></div>` : '<h3>➕ הוספה</h3>'}
+    <div ${pre.tpl ? '' : 'hidden'}><label>📋 בוחרים תבנית</label><div class="chips" id="qTpl" style="padding:0;flex-wrap:wrap">${allTemplates().map(t => `<button class="chip" data-t="${t.id}">${t.ic} ${esc(t.name)}</button>`).join('')}</div></div>
+    <div class="seg" id="qKind" style="margin-top:10px" ${focus ? 'hidden' : ''}>${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
     <label>מה</label><input id="qText" placeholder="למשל: לקנות מתנה לאמא" enterkeyhint="done" value="${esc(pre.text || '')}">
     <div id="qWhen"><label>מתי</label><div class="chips" id="qDay" style="padding:0;flex-wrap:wrap">${[['0', 'היום'], ['1', 'מחר'], ['x', '📅 תאריך'], ['', 'בלי תאריך']].map(([k, l]) => `<button class="chip ${k === '0' ? 'on' : ''}" data-d="${k}">${l}</button>`).join('')}</div>
     <input type="date" id="qDate" hidden style="margin-top:8px">
@@ -2764,15 +2765,10 @@ function openQuick(pre = {}) {
     <div><label>כמה זמן</label><select id="qDur"><option value="">לא ידוע</option><option value="0">רק תזכורת</option>${[15, 30, 45, 60, 90, 120, 180].map(m => `<option value="${m}">${durLbl(m)}</option>`).join('')}</select></div></div></div>
     ${pre.stars != null ? starPicker(pre.stars) : ''}
     <label>קטגוריה</label><div id="qCat">${catChips(defGroup()?.id || null, '')}</div>
-    <button class="btn" id="qRecur" style="margin-top:12px">🔁 קבוע / 💊 תרופה (חוזר, ולכמה זמן)</button>
+    <button class="btn" id="qRecur" style="margin-top:12px" ${focus === 'thought' ? 'hidden' : ''}>🔁 חוזר? (כל יום / שבוע…, ולכמה זמן)</button>
     <button class="btn pri" id="qSave" style="margin-top:8px">➕ הוסף</button>
     <button class="btn" id="qCancel">ביטול</button>`);
   $('#qRecur').onclick = () => openRecur(null, { text: $('#qText').value.trim(), time: $('#qTime').value });
-  $('#qaTimer').onclick = () => pickFocusTask();
-  $('#qaShop').onclick = () => { closeSheet(); showView('shop'); setTimeout(() => $('#shopIn')?.focus(), 350); };
-  $('#qaMenu').onclick = () => openMenu();
-  $('#qaHabit').onclick = () => openHabit(null);
-  $('#qaMed').onclick = () => openRecur(null, { text: $('#qText').value.trim() });
   let qcat = '', qsteps = null, qstars = pre.stars || 0;
   if ($('#stPick')) pickChips($('#stPick'), 'data-n', v => { qstars = +v; });
   pickChips($('#qCat'), 'data-cat', v => { qcat = v; });
@@ -2798,6 +2794,12 @@ function openQuick(pre = {}) {
     $('#qDate').hidden = day !== 'x'; if (day === 'x') { $('#qDate').value ||= ymd(addDays(new Date(), 2)); try { $('#qDate').showPicker?.(); } catch { /* */ } }
   };
   $('#qCancel').onclick = closeSheet;
+  $('#qBack')?.addEventListener('click', () => openPlus());
+  const PH = { task: 'למשל: לקנות מתנה לאמא', remind: 'למשל: להתקשר לבנק', meeting: 'למשל: פגישה עם רואה החשבון', thought: 'למשל: רעיון לטיול בחופש' };
+  if (focus) $('#qText').placeholder = PH[focus];
+  if (focus === 'remind') $('#qTime').previousElementSibling.textContent = '⏰ באיזו שעה להזכיר';
+  if (focus === 'remind') { $('#qTime').value ||= hm(new Date(Math.ceil((Date.now() + 30 * 60e3) / 9e5) * 9e5)); $('#qDur').value = '0'; }
+  if (focus === 'thought') $('#qWhen').style.display = 'none';
   setTimeout(() => $('#qText')?.focus(), 300);
   $('#qSave').onclick = async () => {
     const text = $('#qText').value.trim(); if (!text) return toast('צריך לכתוב מה', true);
@@ -2813,7 +2815,42 @@ function openQuick(pre = {}) {
     toast('✅ נוסף');
   };
 }
-$('#plusBtn').onclick = () => openQuick();
+// ➕ הכפתור הראשי: רק אריחים גדולים ויפים. לוחצים על אחד — נפתח רק מה ששייך אליו
+const PLUS = [
+  ['task', '📌', 'משימה', 'linear-gradient(135deg,#7C3AED,#A855F7)'],
+  ['remind', '⏰', 'תזכורת', 'linear-gradient(135deg,#F59E0B,#F97316)'],
+  ['meeting', '👥', 'פגישה', 'linear-gradient(135deg,#3B82F6,#06B6D4)'],
+  ['shop', '🛒', 'קניות', 'linear-gradient(135deg,#22C55E,#14B8A6)'],
+  ['med', '💊', 'תרופה / קבוע', 'linear-gradient(135deg,#14B8A6,#0EA5E9)'],
+  ['habit', '🔥', 'הרגל', 'linear-gradient(135deg,#F97316,#EF4444)'],
+  ['timer', '⏱️', 'טיימר', 'linear-gradient(135deg,#6366F1,#8B5CF6)'],
+  ['thought', '💭', 'מחשבה', 'linear-gradient(135deg,#A855F7,#EC4899)'],
+  ['menu', '🍲', 'תפריט שבת', 'linear-gradient(135deg,#EAB308,#F59E0B)'],
+  ['kid', '⭐', 'מטלה לילד', 'linear-gradient(135deg,#FACC15,#FB923C)'],
+  ['tpl', '📋', 'מתבנית', 'linear-gradient(135deg,#64748B,#475569)'],
+];
+function openPlus() {
+  const kids = kidsList();
+  sheet(`<h3>➕ מה מוסיפים?</h3>
+    <div class="plus-grid">${PLUS.filter(([k]) => k !== 'kid' || kids.length).map(([k, ic, l, bg], i) => `<button class="plus-tile" data-pl="${k}" style="--d:${i * 40}ms"><span class="pl-ic" style="background:${bg}">${ic}</span>${l}</button>`).join('')}</div>
+    <p class="note plus-tip">💡 אפשר גם פשוט לכתוב או להגיד בשיחה, למשל "תזכיר לי מחר ב-10 להתקשר לבנק"</p>`);
+  $('#sheet').querySelector('.plus-grid').onclick = e => {
+    const k = e.target.closest('[data-pl]')?.dataset.pl; if (!k) return;
+    if (['task', 'remind', 'meeting', 'thought'].includes(k)) return openQuick({ mode: k, kind: k === 'remind' ? 'task' : k });
+    if (k === 'tpl') return openQuick({ mode: 'task', kind: 'task', tpl: true });
+    if (k === 'shop') { closeSheet(); showView('shop'); return setTimeout(() => $('#shopIn')?.focus(), 350); }
+    if (k === 'med') return openRecur(null, {});
+    if (k === 'habit') return openHabit(null);
+    if (k === 'timer') return pickFocusTask();
+    if (k === 'menu') return openMenu();
+    if (k === 'kid') {
+      if (kids.length === 1) return openQuick({ mode: 'task', forP: kids[0].id, kind: 'task', stars: 1 });
+      sheet(`<h3>⭐ מטלה ל…</h3><div class="plus-grid">${kids.map(p => `<button class="plus-tile" data-kid="${p.id}"><span class="pl-ic" style="background:linear-gradient(135deg,#FACC15,#FB923C)">${esc(p.e)}</span>${esc(pName(p.id))}</button>`).join('')}</div>`);
+      $('#sheet').querySelector('.plus-grid').onclick = ev => { const id = ev.target.closest('[data-kid]')?.dataset.kid; if (id) openQuick({ mode: 'task', forP: id, kind: 'task', stars: 1 }); };
+    }
+  };
+}
+$('#plusBtn').onclick = () => openPlus();
 
 function openEdit(id, focus, forceKind) {
   const it = item(id); if (!it) return toast('המשימה הזאת כבר לא קיימת', true);
