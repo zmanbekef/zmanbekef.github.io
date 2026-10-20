@@ -1,5 +1,8 @@
 // שמירת הנתונים בתוך המכשיר (IndexedDB) — נשמר גם אחרי סגירת האפליקציה
-const DB_NAME = 'zman-bekef';
+// 🎭 מצב הדגמה: ארון נפרד לגמרי — הנתונים האמיתיים לא נוגעים בו
+export const DEMO = (() => { try { return localStorage.getItem('zman-demo') === '1'; } catch { return false; } })();
+export const DEMO_DB = 'zman-bekef-demo';
+const DB_NAME = DEMO ? DEMO_DB : 'zman-bekef';
 let dbp;
 
 function open() {

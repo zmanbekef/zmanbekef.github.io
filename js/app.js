@@ -8,6 +8,7 @@ import * as help from './help.js';
 import * as lock from './lock.js';
 import { smartParse, iconFor } from './smart.js';
 import { DEPTS, deptOf, guessDept, shopItems } from './shop.js';
+import * as demo from './demo.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -700,6 +701,30 @@ function openFeedback(text = '', hint = text) {
     e.target.disabled = false; e.target.textContent = '📨 שליחה';
     $('#fErr').innerHTML = `לא הצלחתי לשלוח (אין אינטרנט?). אפשר <a href="mailto:${FEEDBACK_TO}?subject=${encodeURIComponent('משוב — זמן בכיף')}&body=${encodeURIComponent(message)}" style="color:#F9A8D4">לשלוח במייל רגיל</a>`;
   };
+}
+
+// 🎭 מצב הדגמה — רק למנהל האפליקציה. ההערות נשלחות במייל אחד (FormSubmit, לא דרך הענן שלנו)
+async function drawDemoCard() {
+  const el = $('#demoCard'); if (!el) return;
+  if (!demo.DEMO && !(await sync.isAppAdmin())) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = demo.DEMO
+    ? `<h4>🎭 מצב הדגמה <small>פועל</small></h4><p class="note">הנתונים כאן מזויפים, ושום דבר לא נשמר בענן. ביציאה חוזרים הנתונים האמיתיים בדיוק כמו שהיו.</p>
+       <div class="two"><button class="btn pri" id="dmTour" style="margin:0">🧭 סיור</button><button class="btn" id="dmOut" style="margin:0">יציאה מההדגמה</button></div>`
+    : `<h4>🎭 מצב הדגמה <small>רק למנהל</small></h4><p class="note">משפחה מזויפת שממלאת כל מסך, סיור מודרך על כל האפשרויות, וכפתור 💬 שאוסף הערות ושולח הכל בבת אחת. הנתונים האמיתיים לא נפגעים.</p>
+       <button class="btn pri" id="dmIn">🎭 להיכנס למצב הדגמה</button>`;
+  $('#dmIn')?.addEventListener('click', () => demo.enter());
+  $('#dmTour')?.addEventListener('click', () => demo.startTour(0));
+  $('#dmOut')?.addEventListener('click', () => demo.exit());
+}
+async function sendDemoNotes(text, n) {
+  try {
+    const r = await fetch(`https://formsubmit.co/ajax/${FEEDBACK_FORM}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ _subject: `🎭 הערות מצב הדגמה — זמן בכיף (${n})`, _template: 'box', _captcha: 'false', 'אפליקציה': 'זמן בכיף ⏰', 'סוג': 'הערות מצב הדגמה', 'הערות': text }),
+    });
+    return r.ok;
+  } catch { return false; }
 }
 
 // ---------- עזרה: שאלות ותשובות בחלון נפרד ----------
@@ -1496,6 +1521,7 @@ $('#kidList').addEventListener('click', async e => {
   }
   if (op === 'cash') {
     const have = starsOf(kid); if (have <= 0) return toast(`ל${name} אין כוכבים להמרה`, true);
+    if (demo.DEMO) return toast('🎭 בהדגמה לא שולחים באמת לכסף בכיף');
     window.open(`${KESEF_URL}?stars=${have}&kid=${encodeURIComponent(name)}`, '_blank', 'noopener');
     sheet(`<h3>⭐ המרה לשקלים</h3><p class="note">נפתח "כסף בכיף" עם ⭐ ${have} של ${esc(name)}. אחרי שאישרת שם —</p><button class="btn pri" id="csY">✅ המרתי — לאפס את הכוכבים כאן</button><button class="btn" id="csN">עוד לא</button>`);
     $('#csY').onclick = async () => { await starEntry(kid, -have, '💰 הומר לשקלים בכסף בכיף'); closeSheet(); renderKids(); toast('💰 הכוכבים הומרו'); };
@@ -1683,6 +1709,7 @@ function openToKesef(id) {
   setTimeout(() => $('#kfAmt')?.focus(), 300);
   $('#kfGo').onclick = () => {
     const a = Math.max(0, +$('#kfAmt').value || 0);
+    if (demo.DEMO) return toast('🎭 בהדגמה לא שולחים באמת לכסף בכיף');
     window.open(`${KESEF_URL}?${a ? 'add=' + a + '&' : 'add=&'}desc=${encodeURIComponent(it.text)}`, '_blank', 'noopener');
     closeSheet(); toast('💰 נפתח כסף בכיף — לוחצים שם "שמירה"');
   };
@@ -2479,7 +2506,7 @@ function openPicker(mustSwapFor) {
 
 // ---------- ניווט ותצוגה ----------
 function showView(v) {
-  if (v === 'settings') { renderProfile(); drawPush(); drawLockCard(); drawMonthly(); drawCalCard(); drawCatCard(); drawViewCard(); drawGcal(); }
+  if (v === 'settings') { drawDemoCard(); renderProfile(); drawPush(); drawLockCard(); drawMonthly(); drawCalCard(); drawCatCard(); drawViewCard(); drawGcal(); }
   document.querySelectorAll('nav button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === (['thoughts', 'shop', 'kids'].includes(v) ? 'tasks' : v)));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
   enterAnim($('#v-' + v));
@@ -3095,7 +3122,7 @@ function renderFamily() {
         ${g.kind !== 'pair' ? `<button class="chip ${S.settings.defGroup === g.id ? 'on' : ''}" data-def="${g.id}">⭐ ראשית</button>` : ''}
       </div></div>`;
   };
-  el.innerHTML = `<h4>👥 הקבוצות שלי<small id="syncState">${navigator.onLine ? 'מסונכרן ✓' : 'ממתין לרשת…'}</small></h4>
+  el.innerHTML = `<h4>👥 הקבוצות שלי<small id="syncState">${demo.DEMO ? '🎭 הדגמה, בלי ענן' : navigator.onLine ? 'מסונכרן ✓' : 'ממתין לרשת…'}</small></h4>
     ${gs.length ? gs.map(card).join('') : '<p class="note">עוד אין קבוצות. משימות שתרשום יהיו רק שלך — עד שתפתח קבוצה או תצטרף לאחת.</p>'}
     <div class="two" style="margin-top:10px"><button class="btn pri" id="gNewBtn" style="margin:0">➕ קבוצה חדשה</button><button class="btn" id="gJoinBtn" style="margin:0">🔑 הצטרפות עם קוד</button></div>
     <button class="btn" id="gPairBtn">👤 קשר ישיר עם אדם אחד</button>
@@ -3258,7 +3285,9 @@ async function boot() {
 }
 
 (async () => {
+  if (demo.DEMO) await demo.ensureSeed();
   await load();
+  demo.init({ showView, sheet, closeSheet, toast, confetti, sendNotes: sendDemoNotes, calMode: m => { CAL.mode = m; CAL.jump = true; renderCal(); } });
   await sync.start({
     onItem: onRemoteItem,
     onRemote: () => { clearTimeout(S._rr); S._rr = setTimeout(() => { renderAll(); renderFamily(); if (started) scanConflicts(); }, 250); },
@@ -3285,4 +3314,4 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 // לבדיקות מהדפדפן
-window.__zman = { startFocus, endFocus, renderAll, CAL, renderCal, showView, bell, openBell, bumpTask, openCatEdit, drawCatCard, renderTasks, openQuick, showIncoming, showReply, openEdit, buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };
+window.__zman = { demo, startFocus, endFocus, renderAll, CAL, renderCal, showView, bell, openBell, bumpTask, openCatEdit, drawCatCard, renderTasks, openQuick, showIncoming, showReply, openEdit, buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };

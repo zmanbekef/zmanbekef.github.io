@@ -8,7 +8,8 @@ const CONFIG = {
   // מפתח ציבורי (anon) — האבטחה נשמרת ע"י הרשאות בשרת (RLS): כל משפחה רואה רק את עצמה
   key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtaHhvdmxlcGRvb2Jrb2l5amhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzNDUxNDIsImV4cCI6MjEwNzkyMTE0Mn0.qao1CRL1QWJhMnWsAaPXKt-WxbgySqIlH68iIdCYH1o',
 };
-track.init({ app: 'zman', url: CONFIG.url, key: CONFIG.key });
+const DEMO = db.DEMO;
+if (!DEMO) track.init({ app: 'zman', url: CONFIG.url, key: CONFIG.key });
 const LOCAL_ONLY = ['askedKey']; // "כבר שאלתי" — שייך לטלפון הזה בלבד
 
 let sb = null, hh = null, me = null, channel = null, flushing = false, cb = {};
@@ -30,6 +31,7 @@ function loadLib() {
   return loading;
 }
 async function client() {
+  if (DEMO) throw new Error('🎭 במצב הדגמה לא מתחברים לענן');
   if (sb) return sb;
   await loadLib();
   sb = window.supabase.createClient(CONFIG.url, CONFIG.key, { auth: { persistSession: true, autoRefreshToken: true } });
@@ -234,7 +236,7 @@ export async function saveFeedback(f) {
 
 // ---------- תור שליחה (עובד גם כשאין רשת) ----------
 export async function queue(it) {
-  if (!me) return;
+  if (!me || DEMO) return;
   const box = (await db.getKV('outbox', [])).filter(o => o.id !== it.id);
   box.push({ id: it.id, at: Date.now() });
   await db.setKV('outbox', box);
@@ -242,7 +244,7 @@ export async function queue(it) {
 }
 /** אחרי שחזור מגיבוי: כל המשימות נכנסות לתור ועולות לענן */
 export async function queueMany(items) {
-  if (!me || !items?.length) return;
+  if (!me || DEMO || !items?.length) return;
   const ids = new Set(items.map(x => x.id)), now = Date.now();
   const box = (await db.getKV('outbox', [])).filter(o => !ids.has(o.id));
   for (const id of ids) box.push({ id, at: now });
@@ -254,7 +256,7 @@ const rowOf = it => {
   return { id: it.id, group_id: it.group_id || null, data, deleted: it.status === 'deleted', created_by: it.by || me?.id, assignee: it.forU || null, private: !!it.private };
 };
 export async function flush() {
-  if (!me || flushing || !navigator.onLine) return;
+  if (!me || DEMO || flushing || !navigator.onLine) return;
   flushing = true;
   try {
     const c = await client();
@@ -358,6 +360,11 @@ export const whenReady = () => ready;
 /** פתיחה: מה שבטלפון מיד (בלי לחכות לרשת), והענן ממשיך ברקע. בפעם הראשונה במכשיר — מחכים לפרופיל */
 export async function start(callbacks) {
   cb = callbacks;
+  if (DEMO) { // 🎭 משתמש, קבוצות ופרופיל מזויפים מתוך הארון של ההדגמה — בלי ענן בכלל
+    me = await db.getKV('demoUser', null); groups = await db.getKV('groups', []) || []; profile = await db.getKV('profile', null);
+    cb.onCats?.(await db.getKV('cats', []));
+    return { user: me };
+  }
   try { await currentUser(); } catch (e) { console.warn('sync start', e); }
   if (!me) return { user: null };
   track.ping(sb);
@@ -418,16 +425,24 @@ export async function savePrefs(prefs) {
 }
 // תור ההתראות בענן
 export async function upsertNotify(rows) {
-  if (!me || !rows.length || !navigator.onLine) return false;
+  if (!me || DEMO || !rows.length || !navigator.onLine) return false;
   const { error } = await (await client()).from('zman_notify').upsert(rows.map(r => ({ household_id: null, created_by: me.id, sent_at: null, ...r })));
   if (error) { console.warn('notify', error); return false; }
   return true;
 }
 export async function deleteNotify(ids) {
-  if (!me || !ids.length || !navigator.onLine) return false;
+  if (!me || DEMO || !ids.length || !navigator.onLine) return false;
   const { error } = await (await client()).from('zman_notify').delete().in('id', ids).is('sent_at', null);
   return !error;
 }
 
 // לבדיקות בלבד (בדפדפן של המפתח): מצב מדומה בלי חשבון אמיתי
+let adminOf = null;
+/** האם אני מנהל האפליקציה (בשביל כפתור "מצב הדגמה") — בדיקה בשרת */
+export async function isAppAdmin() {
+  if (DEMO) return true;
+  if (!me || !navigator.onLine) return false;
+  if (adminOf === me.id) return true;
+  try { const ok = !!(await rpc('is_app_admin')); if (ok) adminOf = me.id; return ok; } catch { return false; }
+}
 export function _testState(st) { if (st.user) me = st.user; if (st.groups) groups = st.groups; if (st.profile) profile = st.profile; }
