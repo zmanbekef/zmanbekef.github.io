@@ -786,6 +786,7 @@ function openFeedback(text = '', hint = text) {
 
 // 🚪 הוציאו אותי מקבוצה (או שיצאתי): כל מה ששייך לקבוצה נמחק מהטלפון הזה
 async function removedFromGroups(gone) {
+  const lost = [];
   for (const g of gone) {
     const mine = S.items.filter(x => x.group_id === g.id);
     for (const it of mine) await db.del('items', it.id);
@@ -793,12 +794,35 @@ async function removedFromGroups(gone) {
     const box = (await db.getKV('outbox', [])).filter(o => mine.every(it => it.id !== o.id)); await db.setKV('outbox', box);
     if (S.settings.defGroup === g.id) { S.settings.defGroup = null; await db.setKV('settings', S.settings); }
     if (g.self) toast(`🚪 יצאת מ"${g.name}"`);
+    else if (!sync.myGroups().length) { lost.push(g.name); continue; }
     else {
       await bot('🚪', 'linear-gradient(135deg,#64748B,#334155)', `הוצאת מהקבוצה "${g.name || ''}"`, `מנהל הקבוצה הסיר אותך. כל מה ששייך לקבוצה (${mine.length} פריטים) נמחק מהטלפון הזה.`);
       await bell('🚪', `הוצאת מ"${g.name || 'קבוצה'}"`, 'מה ששייך לקבוצה נמחק מהטלפון', null, 'gone:' + g.id);
     }
   }
+  if (lost.length) return startOver(lost.filter(Boolean).map(n => `"${n}"`).join(' ו'));
   buildPeople(); renderAll(); renderFamily();
+}
+// 🚪 הוסרתי מהקבוצה האחרונה: מתחילים מחדש כמו משתמש חדש. נשארים רק החשבון והמשימות הפרטיות שלי
+async function startOver(names) {
+  for (const it of S.items.filter(x => x.group_id || (x.by && x.by !== S.uid))) await db.del('items', it.id);
+  S.items = S.items.filter(x => !x.group_id && (!x.by || x.by === S.uid));
+  for (const m of S.msgs) await db.del('msgs', m.id);
+  S.msgs = []; S.bell = []; S.top3 = null;
+  for (const k of ['bell', 'top3', 'welcomed2:' + S.uid, 'sched']) await db.setKV(k, null);
+  drawBellBadge(); buildPeople(); renderAll(); renderChat(); renderFamily();
+  const gate = $('#gate'), body = $('#gateBody');
+  gate.classList.add('on');
+  body.innerHTML = `<div class="g-logo">🚪</div><h2>הוסרת מהקבוצה</h2>
+    <p class="note">הוסרת מ${esc(names || 'הקבוצה')}, ומה ששייך ${names?.includes('" ו"') ? 'לקבוצות' : 'לקבוצה'} נמחק מהטלפון הזה. החשבון שלך והמשימות הפרטיות שלך נשארו.<br>מה עכשיו?</p>
+    <button class="btn pri" id="soNew">➕ לפתוח קבוצה חדשה</button>
+    <button class="btn" id="soJoin">🔑 להצטרף לקבוצה עם קוד</button>
+    <button class="link" id="soSolo">🙋 להמשיך לבד בינתיים</button>`;
+  const next = async fn => { gate.classList.remove('on'); if (fn) fn(); else { S.restart = false; showView('chat'); await welcomeMe(); openEditMe(); } };
+  $('#soNew').onclick = () => next(openNewGroup);
+  $('#soJoin').onclick = () => next(openJoin);
+  $('#soSolo').onclick = () => next(null);
+  S.restart = true; // אחרי הקבוצה / השם — שוב ההיכרות של ההתחלה
 }
 // 🎭 מצב הדגמה — רק למנהל האפליקציה. ההערות נשלחות במייל אחד (FormSubmit, לא דרך הענן שלנו)
 async function drawDemoCard() {
@@ -3413,6 +3437,7 @@ function openNewGroup() {
       const gid = await sync.createGroup(name, kind, $('#ngNick').value.trim() || pr?.full_name, pr?.emoji);
       closeSheet(); buildPeople(); renderAll(); renderFamily(); confetti();
       const g = groupOf(gid);
+      if (S.restart) { S.restart = false; setTimeout(() => { welcomeMe(); openEditMe(); }, 1200); }
       await bot(KINDS[kind][0], 'var(--g6)', `הקבוצה "${name}" נוצרה!`, `קוד הצטרפות: ${g?.code || ''}${g?.child_code ? `\nקוד לילד: ${g.child_code}` : ''}\nשלח/י את הקישור למי שצריך להצטרף 👇`,
         [{ l: '💬 שליחה בוואטסאפ', op: 'shareGroup', a: [gid], pri: true }]);
       showView('chat');
@@ -3422,12 +3447,12 @@ function openNewGroup() {
 function openJoin() {
   if (!S.uid) return showGate();
   const pr = sync.myProfile();
-  sheet(`<h3>🔑 הצטרפות לקבוצה</h3><label>הקוד שקיבלת (6 תווים)</label><input id="jCode" dir="ltr" style="text-transform:uppercase;letter-spacing:3px;text-align:center">
+  sheet(`<h3>🔑 הצטרפות לקבוצה</h3><label>הקוד שקיבלת (8 תווים)</label><input id="jCode" dir="ltr" style="text-transform:uppercase;letter-spacing:3px;text-align:center">
     <label>איך יקראו לך בקבוצה?</label><input id="jNick" value="${esc(pr?.full_name?.split(' ')[0] || '')}">
     <button class="btn pri" id="jGo" style="margin-top:14px">🔑 הצטרפות</button>`);
   $('#jGo').onclick = async () => {
-    const c = $('#jCode').value.trim(); if (c.length < 6) return toast('הקוד הוא 6 תווים', true);
-    try { const gid = await sync.joinGroup(c, $('#jNick').value.trim() || pr?.full_name, pr?.emoji); announceJoin(gid); closeSheet(); buildPeople(); renderAll(); renderFamily(); confetti(); toast(`🎉 הצטרפת ל"${groupOf(gid)?.name || 'קבוצה'}"`); }
+    const c = $('#jCode').value.trim(); if (c.length < 6) return toast('הקוד הוא 8 תווים', true);
+    try { const gid = await sync.joinGroup(c, $('#jNick').value.trim() || pr?.full_name, pr?.emoji); announceJoin(gid); if (S.restart) { S.restart = false; setTimeout(() => { welcomeMe(); openEditMe(); }, 1200); } closeSheet(); buildPeople(); renderAll(); renderFamily(); confetti(); toast(`🎉 הצטרפת ל"${groupOf(gid)?.name || 'קבוצה'}"`); }
     catch (x) { toast(x.message, true); }
   };
 }
