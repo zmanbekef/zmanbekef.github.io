@@ -145,7 +145,9 @@ const cleanT = v => typeof v === 'string' ? v.replace(/[<>]/g, '').slice(0, 60) 
 const cleanP = p => p && { ...p, full_name: cleanT(p.full_name), emoji: cleanE(p.emoji) };
 
 // ---------- קבוצות ----------
+const leaving = new Set();
 export async function loadGroups() {
+  const prev = (groups.length ? groups : await db.getKV('groups', []) || []).map(g => ({ id: g.id, name: g.name }));
   try {
     const c = await client();
     const { data: gs, error } = await c.from('zman_groups').select('id,name,kind,source_household,created_by,created_at').order('created_at');
@@ -162,6 +164,12 @@ export async function loadGroups() {
       return { ...g, name: cleanT(g.name), code: cd?.code || null, child_code: cd?.child_code || null, members, myRole: members.find(m => m.user_id === me.id)?.role || 'member' };
     });
     await db.setKV('groups', groups);
+    // 🚪 קבוצה שנעלמה מהשרת = הוציאו אותי (או שיצאתי). מוחקים מהטלפון את מה ששייך לה
+    let gone = prev.filter(p => !groups.some(g => g.id === p.id));
+    // זהירות: מוחקים רק אם השרת באמת מכיר אותי (חיבור שפג תוקפו מחזיר רשימה ריקה)
+    if (gone.length && !(await c.auth.getUser()).data?.user) gone = [];
+    if (gone.length) cb.onRemoved?.(gone.map(g => ({ ...g, self: leaving.has(g.id) })));
+    gone.forEach(g => leaving.delete(g.id));
   } catch (e) { console.warn('groups', e); groups = await db.getKV('groups', []) || []; }
   return groups;
 }
@@ -208,7 +216,12 @@ export async function calendarOf(uid) {
 }
 export const addName = async (g, nick, emo) => { const m = await rpc('zman_add_name', { g, nick, emo }); await loadGroups(); return m; };
 export const setRole = async (mid, role) => { await rpc('zman_set_role', { mid, new_role: role }); await loadGroups(); };
-export const removeMember = async mid => { await rpc('zman_remove_member', { mid }); await loadGroups(); };
+export const removeMember = async mid => {
+  const g = groups.find(x => x.members.some(m => m.id === mid && m.user_id === me?.id)); if (g) leaving.add(g.id); // יוצא בעצמי — בלי הודעת "הוציאו אותך"
+  await rpc('zman_remove_member', { mid }); await loadGroups();
+};
+// 🔄 קוד חדש לקבוצה: הקוד, הקישור וה-QR הישנים מפסיקים לעבוד
+export const rotateCodes = async g => { await rpc('zman_rotate_codes', { g }); await loadGroups(); };
 export const renameGroup = async (g, name) => { const { error } = await (await client()).from('zman_groups').update({ name }).eq('id', g); if (error) throw new Error(nice(error)); await loadGroups(); };
 export const importHousehold = async h => { const g = await rpc('zman_import_household', { h }); await loadGroups(); return g; };
 

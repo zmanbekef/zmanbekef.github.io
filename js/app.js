@@ -784,6 +784,22 @@ function openFeedback(text = '', hint = text) {
   };
 }
 
+// 🚪 הוציאו אותי מקבוצה (או שיצאתי): כל מה ששייך לקבוצה נמחק מהטלפון הזה
+async function removedFromGroups(gone) {
+  for (const g of gone) {
+    const mine = S.items.filter(x => x.group_id === g.id);
+    for (const it of mine) await db.del('items', it.id);
+    S.items = S.items.filter(x => x.group_id !== g.id);
+    const box = (await db.getKV('outbox', [])).filter(o => mine.every(it => it.id !== o.id)); await db.setKV('outbox', box);
+    if (S.settings.defGroup === g.id) { S.settings.defGroup = null; await db.setKV('settings', S.settings); }
+    if (g.self) toast(`🚪 יצאת מ"${g.name}"`);
+    else {
+      await bot('🚪', 'linear-gradient(135deg,#64748B,#334155)', `הוצאת מהקבוצה "${g.name || ''}"`, `מנהל הקבוצה הסיר אותך. כל מה ששייך לקבוצה (${mine.length} פריטים) נמחק מהטלפון הזה.`);
+      await bell('🚪', `הוצאת מ"${g.name || 'קבוצה'}"`, 'מה ששייך לקבוצה נמחק מהטלפון', null, 'gone:' + g.id);
+    }
+  }
+  buildPeople(); renderAll(); renderFamily();
+}
 // 🎭 מצב הדגמה — רק למנהל האפליקציה. ההערות נשלחות במייל אחד (FormSubmit, לא דרך הענן שלנו)
 async function drawDemoCard() {
   const el = $('#demoCard'); if (!el) return;
@@ -3280,7 +3296,7 @@ async function migrateToGroups() {
       const map = v => { if (!v || v === 'any' || /^[um]:/.test(v)) return v; const op = oldPeople.find(x => x.id === v); return op?.uid ? 'u:' + op.uid : null; };
       it.forP = map(it.forP); if (it.from) it.from = map(it.from); if (it.doneBy) it.doneBy = map(it.doneBy);
       if (it.replies) it.replies = it.replies.map(r => ({ ...r, p: map(r.p) }));
-      if (!it.group_id && gid && !it.private && it.status !== 'deleted') it.group_id = gid;
+      if (!it.group_id && gid && !it.private && it.status !== 'deleted' && (!it.by || it.by === S.uid)) it.group_id = gid; // רק מה שלי עובר לקבוצה
       if (!it.by) it.by = S.uid;
       await db.put('items', it);
       if (it.by === S.uid) await sync.queue(it);
@@ -3333,6 +3349,7 @@ function renderFamily() {
       <div class="chips" style="padding:8px 0 0;flex-wrap:wrap">
         <button class="chip" data-nick="${g.id}">✏️ הכינוי שלי</button>
         ${admin && g.kind !== 'pair' ? `<button class="chip" data-addname="${g.id}">➕ רק שם (בלי טלפון)</button><button class="chip" data-rename="${g.id}">✏️ שם הקבוצה</button>` : ''}
+        ${admin && g.kind !== 'pair' && g.code ? `<button class="chip" data-rotate="${g.id}">🔄 להחליף קודים</button>` : ''}
         <button class="chip" data-leave="${me?.id || ''}">🚪 יציאה</button>
         ${g.kind !== 'pair' ? `<button class="chip ${S.settings.defGroup === g.id ? 'on' : ''}" data-def="${g.id}">⭐ ראשית</button>` : ''}
       </div></div>`;
@@ -3353,7 +3370,14 @@ function renderFamily() {
   el.querySelectorAll('[data-zoom]').forEach(b => b.onclick = () => zoomQR(b.dataset.zoom, b.dataset.zl));
   el.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = '✅ הועתק'; } catch { b.textContent = b.dataset.copy; } });
   el.querySelectorAll('[data-role]').forEach(b => b.onclick = () => run(() => sync.setRole(b.dataset.role, b.dataset.to)));
-  el.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'להסיר?'; return; } run(() => sync.removeMember(b.dataset.rm)); });
+  el.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'להסיר?'; return; } run(async () => { await sync.removeMember(b.dataset.rm); toast('✅ הוסר. הוא כבר לא רואה את הקבוצה'); }); });
+  el.querySelectorAll('[data-rotate]').forEach(b => b.onclick = () => {
+    const g = groupOf(b.dataset.rotate);
+    sheet(`<h3>🔄 להחליף את קודי ההצטרפות</h3><p class="note" style="margin-bottom:12px">ל"${esc(g.name)}" יהיה קוד חדש${g.child_code ? ' (וגם קוד ילד חדש)' : ''}. <b>הקוד הישן, הקישור הישן וה-QR הישן יפסיקו לעבוד מיד.</b><br>מי שכבר בקבוצה נשאר בה. מישהו שלא אמור להיות שם? מוציאים אותו עם ✕ ליד השם.</p>
+      <button class="btn danger" id="rtGo">🔄 כן, להחליף קודים</button><button class="btn" id="rtNo">ביטול</button>`);
+    $('#rtNo').onclick = closeSheet;
+    $('#rtGo').onclick = () => { closeSheet(); run(async () => { await sync.rotateCodes(g.id); toast('🔄 הקודים הוחלפו. הישנים כבר לא עובדים'); }); };
+  });
   el.querySelectorAll('[data-leave]').forEach(b => b.onclick = () => { if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'בטוח? לצאת'; return; } run(() => sync.removeMember(b.dataset.leave)); });
   el.querySelectorAll('[data-def]').forEach(b => b.onclick = async () => { S.settings.defGroup = b.dataset.def; await db.setKV('settings', S.settings); renderFamily(); toast('⭐ זו הקבוצה הראשית'); });
   el.querySelectorAll('[data-nick]').forEach(b => b.onclick = () => openNick(b.dataset.nick));
@@ -3507,6 +3531,7 @@ async function boot() {
     onItem: onRemoteItem,
     onRemote: () => { clearTimeout(S._rr); S._rr = setTimeout(() => { renderAll(); renderFamily(); if (started) scanConflicts(); }, 250); },
     onGroups: () => { buildPeople(); renderAll(); renderFamily(); renderMe(); watchJoins(); },
+    onRemoved: gone => removedFromGroups(gone),
     onBusy: b => { S.busy = b; },
     onCats: c => { S.cats = c; renderAll(); drawCatCard(); },
     onRes: async r => { await db.setKV('resources', r); S.resources = C.DEFAULT_RES.concat(r); renderRes(); },
@@ -3532,4 +3557,4 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 // לבדיקות מהדפדפן
-window.__zman = { demo, startFocus, endFocus, renderAll, CAL, renderCal, showView, bell, openBell, bumpTask, openCatEdit, drawCatCard, renderTasks, openQuick, showIncoming, showReply, openEdit, buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };
+window.__zman = { demo, removedFromGroups, startFocus, endFocus, renderAll, CAL, renderCal, showView, bell, openBell, bumpTask, openCatEdit, drawCatCard, renderTasks, openQuick, showIncoming, showReply, openEdit, buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };
