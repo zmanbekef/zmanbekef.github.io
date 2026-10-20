@@ -189,6 +189,44 @@ async function markDone(id, quiet) {
   confetti(inTop3AllDone() ? 140 : 70);
 }
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+// ❓ שאלה בצ'אט ("איך מוחקים משימה?") — תשובה מהעזרה בתוך השיחה, ולא משימה חדשה
+const plain = h => h.replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+async function helpInChat(text, voice) {
+  await me(text, voice); await think();
+  const kid = !sync.isParent() && sync.myGroups().length > 0;
+  const ts = help.answer(text).filter(t => !kid || !['roles', 'add'].includes(t.id));
+  if (!ts.length) return bot('🤔', 'var(--card2)', 'לא בטוח שהבנתי את השאלה', 'אפשר לנסח אחרת, לפתוח את העזרה, או לשלוח את השאלה למוישי.\nרצית לרשום את זה כמשימה? לחצו "📌 לרשום כמשימה".',
+    [{ l: '❓ עזרה', op: 'help', a: [text] }, { l: '📌 לרשום כמשימה', op: 'asTask', a: [text] }, { l: '💌 לשאול את מוישי', op: 'feedback', a: [text] }]);
+  const [t, t2] = ts;
+  await bot('❓', 'var(--g2)', t.t, plain(t.a), [{ l: '❓ עוד בעזרה', op: 'help', a: [text] }, ...(t2 ? [{ l: t2.t.slice(0, 30), op: 'helpTopic', a: [t2.id] }] : [])]);
+}
+// 🗑️ כל מחיקה שואלת "בטוח?" — ואחרי המחיקה יש ↩️ בטל
+function askRemove(id, after) {
+  const it = item(id); if (!it) return toast('זה כבר לא קיים', true);
+  sheet(`<h3>🗑️ למחוק?</h3><p class="note" style="margin-bottom:14px"><b>${esc(it.text)}</b>${it.due ? ' · ' + esc(whenLabel(it)) : ''}${it.repeat ? '<br>🔁 זה קבוע: כל הפעמים הבאות יימחקו' : ''}<br>אפשר לבטל מיד אחרי (↩️ בטל).</p>
+    <button class="btn danger" id="rmYes">🗑️ כן, למחוק</button><button class="btn" id="rmNo">ביטול</button>`);
+  $('#rmNo').onclick = closeSheet;
+  $('#rmYes').onclick = async () => { closeSheet(); await OPS.removeNow(id); after?.(); };
+}
+// "תמחק את הפגישה עם יוסי" / "בטל את התור לרופא" — מחיקה מהצ'אט (רק בציווי: "לבטל את המנוי" זו משימה)
+const DEL_RE = /^(?:תמחק|תמחקי|מחק|מחקי|תבטל|תבטלי|בטל|בטלי|תוריד|תורידי|תסיר|תסירי)\s+(?:לי\s+)?(?:את\s+)?(.+?)\s*[.!?]*$/;
+async function deleteByText(text, voice) {
+  const m = text.match(DEL_RE); if (!m) return false;
+  const q = m[1].replace(/^(?:ה)?(?:משימה|פגישה|תזכורת|אירוע)\s+(?:של\s+)?/, '').trim();
+  const cands = S.items.filter(x => ['open', 'paused'].includes(x.status) && x.text && !['msg', 'star'].includes(x.kind) && (byMe(x) || isMine(x)))
+    .map(x => ({ x, s: matchScore(q, x.text) })).filter(c => c.s >= 0.45).sort((a, b) => b.s - a.s).slice(0, 4);
+  await me(text, voice); await think();
+  if (!cands.length) { await bot('🔎', 'var(--card2)', 'לא מצאתי מה למחוק', `חיפשתי "${q}". אפשר גם ללחוץ על המשימה ← 🗑️, או להחליק אותה הצידה במסך המשימות.`); return true; }
+  const lbl = x => `${x.text}${x.due ? ' · ' + whenLabel(x) : ''}`;
+  if (cands.length === 1 || cands[0].s - cands[1].s > 0.2) {
+    const x = cands[0].x;
+    await bot('🗑️', 'linear-gradient(135deg,#F43F5E,#BE123C)', 'בטוח למחוק?', lbl(x), [{ l: '🗑️ כן, למחוק', op: 'removeNow', a: [x.id], pri: true }, { l: '✋ לא', op: 'noop' }]);
+  } else {
+    await bot('🤔', 'var(--card2)', 'איזה מהם למחוק?', cands.map((c, i) => `${i + 1}. ${lbl(c.x)}`).join('\n'),
+      [...cands.map((c, i) => ({ l: `🗑️ ${i + 1}. ${c.x.text.slice(0, 22)}`, op: 'remove', a: [c.x.id] })), { l: '✋ אף אחד', op: 'noop' }]);
+  }
+  return true;
+}
 
 const OPS = {
   bump: id => bumpTask(id),
@@ -255,7 +293,13 @@ const OPS = {
     if (S.top3) S.top3.ids = S.top3.ids.filter(x => x !== id), await db.setKV('top3', S.top3);
     renderAll(); await think(250); await bot('↩️', 'var(--card2)', 'בוטל', `"${it.text}" נמחק`);
   },
-  async remove(id) {
+  remove: id => askRemove(id),
+  noop: () => toast('👍 בסדר, לא נמחק'),
+  help: q => openHelp(q || ''),
+  feedback: q => openFeedback(q || ''),
+  async asTask(q) { const t = String(q || '').replace(/[?？]+\s*$/, '').trim(); if (!t) return; const p = parse(t); await createItem({ ...p, kind: p.kind === 'thought' ? 'task' : p.kind, text: p.text || t }, t); },
+  async helpTopic(id) { const t = help.TOPICS.find(x => x.id === id); if (t) await bot('❓', 'var(--g2)', t.t, plain(t.a), [{ l: '❓ עוד בעזרה', op: 'help', a: [''] }]); },
+  async removeNow(id) {
     const it = item(id); if (!it) return;
     const was = it.status;
     it.status = 'deleted'; await save(it); await addLog(it, 'deleted');
@@ -284,7 +328,6 @@ const OPS = {
     if (it.kind === 'thought') { it.kind = 'task'; it.due = sod(new Date()).toISOString(); it.hasTime = false; await save(it); }
     const t3 = curTop3();
     if (t3.ids.includes(id)) { t3.ids = t3.ids.filter(x => x !== id); toast('הוסר מהחשובים'); }
-    else if (t3.ids.filter(x => item(x)).length >= 3) { toast('כבר יש 3 חשובים. בחר מי יוצא'); return openPicker(id); }
     else { t3.ids.push(id); toast('⭐ נוסף לחשובים של היום'); }
     S.top3 = t3; await db.setKV('top3', t3); renderAll();
   },
@@ -348,8 +391,13 @@ async function send(text, voice) {
   // משוב ("משוב: …", "תקלה: …") — חלון משוב שנשלח למייל של מוישי, בלי לשמור בשיחה
   if (FEEDBACK_RE.test(text)) { $('#inp').blur(); return openFeedback(text.replace(FEEDBACK_RE, '').trim(), text); }
   // שאלה על האפליקציה ("איך מוסיפים את אשתי?") — תשובה בחלון עזרה, בלי ללכלך את השיחה
+  if (DEL_RE.test(text) && await deleteByText(text, voice)) return;
   const pi = parse(text).intent;
-  if (!['query', 'summary', 'morning', 'yes', 'no', 'done'].includes(pi) && help.isHelpRequest(text)) { $('#inp').blur(); return openHelp(text, help.wantsGuide(text) && !help.answer(text).length); }
+  const p0 = parse(text), asks = /[?？]\s*$/.test(text) && pi === 'item' && !p0.due && !p0.repeat;
+  if (!['query', 'summary', 'morning', 'yes', 'no', 'done'].includes(pi) && (help.isHelpRequest(text) || asks)) {
+    if (help.wantsGuide(text) && !help.answer(text).length) { $('#inp').blur(); return openHelp(text, true); }
+    return helpInChat(text, voice);
+  }
   if (/^(?:תקפיץ|תקפיצי|להקפיץ|הקפץ|הקפיצי)\s/.test(text) && await bumpByText(text)) return;
   // "הרגל: לשתות 8 כוסות מים" → הרגל חדש (עם רצף 🔥)
   const hm2 = text.match(/^(?:הרגל(?:\s+חדש)?|תוסיף\s+הרגל|הרגל\s+יומי)\s*[:\-–]?\s*(.+)$/);
@@ -692,10 +740,10 @@ async function morning(force) {
   if (!t3 || !t3.ids.length) {
     const cand = rankForToday(tasksOpen().filter(x => x.kind === 'task' && (!x.due || dueToday(x)))).slice(0, 3);
     if (cand.length) {
-      await bot('⭐', 'var(--g1)', cand.length === 3 ? 'אלה 3 החשובים של היום?' : 'אלה החשובים של היום?', cand.map((x, i) => `${i + 1}. ${x.text}`).join('\n'),
+      await bot('⭐', 'var(--g1)', 'אלה החשובים של היום?', cand.map((x, i) => `${i + 1}. ${x.text}`).join('\n'),
         [{ l: '👍 מתאים', op: 'top3ok', a: [cand.map(x => x.id)], pri: true }, { l: '✏️ לבחור אחרים', op: 'pickTop3' }]);
     } else {
-      await bot('⭐', 'var(--g1)', 'מה הכי חשוב לך היום?', 'כתוב לי עד 3 דברים, ואז לחץ ⭐ כדי לשים אותם למעלה');
+      await bot('⭐', 'var(--g1)', 'מה הכי חשוב לך היום?', 'כתוב לי מה חשוב היום, ואז לחץ ⭐ כדי לשים אותם למעלה');
     }
   }
 }
@@ -948,7 +996,7 @@ function desiredSchedule() {
   for (let i = 0; i < 7; i++) {
     const d = addDays(sod(new Date()), i), at = (hhmm) => { const [h, m] = hhmm.split(':'); const x = new Date(d); x.setHours(+h, +m, 0, 0); return x; };
     const am = at(S.settings.morning), pm = at(S.settings.evening);
-    if (!Z.quietAt(am)) add(`am:${ymd(d)}`, am, 'summary', '☀️ בוקר טוב!', 'בוא נראה מה יש היום ונבחר את 3 החשובים');
+    if (!Z.quietAt(am)) add(`am:${ymd(d)}`, am, 'summary', '☀️ בוקר טוב!', 'בוא נראה מה יש היום ונבחר את החשובים');
     if (!Z.quietAt(pm)) add(`pm:${ymd(d)}`, pm, 'summary', '🌙 סיכום היום', 'בוא נסגור את היום: מה הספקת ומה עובר למחר');
   }
   return out;
@@ -1332,7 +1380,7 @@ function renderTop3() {
     b.onclick = () => d ? OPS.undoDone(it.id) : markDone(it.id, true).then(() => toast('✅ ' + it.text));
     box.appendChild(b);
   });
-  if (list.length < 3) {
+  {
     const b = document.createElement('button'); b.className = 't3 empty';
     b.textContent = list.length ? '＋ להוסיף עוד חשוב' : '⭐ לבחור את החשובים של היום';
     b.onclick = () => openPicker(); box.appendChild(b);
@@ -1341,7 +1389,12 @@ function renderTop3() {
   $('#t3bar').style.width = list.length ? (n / list.length * 100) + '%' : '0';
   $('#t3txt').textContent = !list.length ? 'עוד לא נבחרו' : n === list.length ? '🎉 סיימת את כל החשובים!' : `${n} מתוך ${list.length} בוצעו`;
   $('#t3edit').hidden = !list.length;
+  const fold = (() => { try { return localStorage.getItem('zman-t3fold') === '1'; } catch { return false; } })();
+  $('.hero').classList.toggle('fold', fold); $('#t3fold').textContent = fold ? '▾' : '▴'; $('#t3fold').setAttribute('aria-expanded', String(!fold));
+  $('#t3title').textContent = fold && list.length ? `⭐ החשובים · ${n}/${list.length}${n === list.length ? ' 🎉' : ''}` : '⭐ החשובים של היום';
 }
+// ⭐ נעוץ למעלה בשיחה, ואפשר לקפל לשורה אחת
+$('#t3fold').onclick = e => { e.stopPropagation(); const f = !$('.hero').classList.contains('fold'); try { localStorage.setItem('zman-t3fold', f ? '1' : '0'); } catch { /* */ } renderTop3(); };
 
 function streak() {
   const days = new Set(S.log.filter(l => l.action === 'done').map(l => ymd(new Date(l.ts))));
@@ -1407,7 +1460,7 @@ function renderTasks() {
   list.addEventListener('touchend', async () => {
     if (!row) return; const r = row, id = r.dataset.id; row = null;
     r.style.transition = 'transform .2s';
-    if (Math.abs(dx) > 90) { r.style.transform = `translateX(${dx > 0 ? 120 : -120}%)`; setTimeout(() => OPS.remove(id), 180); }
+    if (Math.abs(dx) > 90) { r.style.transform = ''; r.classList.remove('swipe-del'); askRemove(id); }
     else { r.style.transform = ''; r.classList.remove('swipe-del'); }
   });
 })();
@@ -2453,7 +2506,7 @@ function openCalEvent(id, t) {
     ${canBump(it) ? `<button class="btn" id="ceBump">🔔 להקפיץ ל${esc(pName(it.forP))}</button>` : ''}
     ${S.uid ? '<button class="btn" id="ceAssign">📎 שיוך</button>' : ''}`);
   // מחיקה מיידית — ו"↩️ בטל" מופיע מיד למעלה
-  $('#ceDel').onclick = async () => { closeSheet(); await OPS.remove(id); renderCal(); };
+  $('#ceDel').onclick = () => askRemove(id, renderCal);
   $('#ceDone')?.addEventListener('click', async () => { closeSheet(); await markDone(id, true); toast('✅ ' + it.text); renderCal(); });
   $('#ceEdit').onclick = () => openEdit(id);
   $('#ceBump')?.addEventListener('click', () => { closeSheet(); bumpTask(id); });
@@ -2503,8 +2556,29 @@ $('#thoughtList').addEventListener('click', e => {
 });
 
 // ---------- חלון עריכה ----------
-function sheet(html) { $('#sheet').innerHTML = html; $('#sheetBg').classList.add('on'); }
-function closeSheet() { $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = ''; }
+// ↩️ כפתור "חזור" (אנדרואיד): סוגר חלון → חוזר למסך הקודם → רק מהשיחה יוצאים מהאפליקציה
+const NAV = { depth: 0, target: null };
+try { history.replaceState({ v: 'chat', z: 0 }, ''); } catch { /* */ }
+const curView = () => document.querySelector('.view.on')?.id?.slice(2) || 'chat';
+const navPush = st => { try { history.pushState({ ...st, z: ++NAV.depth }, ''); } catch { /* */ } };
+const navBack = n => { if (n <= 0) return; NAV.depth -= n; NAV.target = NAV.depth; history.go(-n); };
+function sheet(html) { const was = $('#sheetBg').classList.contains('on'); $('#sheet').innerHTML = html; $('#sheetBg').classList.add('on'); if (!was) navPush({ v: curView(), sheet: 1 }); }
+function closeSheet() {
+  const on = $('#sheetBg').classList.contains('on');
+  $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = '';
+  if (on && history.state?.sheet) navBack(1);
+}
+addEventListener('popstate', e => {
+  const z = e.state?.z || 0;
+  if (NAV.target != null) { // אנחנו ביקשנו לחזור (סגירת חלון / מעבר לשיחה) — לא לחיצה של המשתמש
+    if (z > NAV.target) return;
+    const mine = z === NAV.target; NAV.target = null; if (mine) return;
+  }
+  NAV.depth = z;
+  if ($('#sheetBg').classList.contains('on')) { $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = ''; return; }
+  if (!$('#tour')?.hidden) { $('#tourX')?.click(); return; }
+  showView(e.state?.v || 'chat', true);
+});
 $('#sheetBg').addEventListener('click', e => { if (e.target.id === 'sheetBg') closeSheet(); });
 
 // משיכה כלפי מטה: בחלון — סוגרת אותו; במסך (משימות, מחשבות, הגדרות) — חוזרת לשיחה
@@ -2631,7 +2705,7 @@ function openEdit(id, focus, forceKind) {
   $('#eFocus')?.addEventListener('click', () => startFocus(id));
   if (focus === 'date') setTimeout(() => { try { $('#eDate').showPicker?.(); } catch { $('#eDate').focus(); } }, 350);
   $('#eCancel').onclick = closeSheet;
-  $('#eDel').onclick = () => { closeSheet(); OPS.remove(id); };
+  $('#eDel').onclick = () => askRemove(id);
   $('#eSave').onclick = async () => {
     const text = $('#eText').value.trim(); if (!text) return toast('צריך לכתוב מה', true);
     const ds = $('#eDate').value, ts = $('#eTime').value, rt = $('#eRep').value;
@@ -2732,9 +2806,9 @@ function openPicker(mustSwapFor) {
   const draw = () => {
     $('#pickList').innerHTML = all.length ? all.map(x => `<div class="pick${sel.includes(x.id) ? ' on' : ''}" data-id="${x.id}"><div class="ck">${sel.includes(x.id) ? '✓' : ''}</div>${esc(x.text)}<small>${esc(whenLabel(x))}</small></div>`).join('')
       : '<p class="note" style="padding:6px 0">אין משימות פתוחות. כתוב כאן משימה חדשה:</p>';
-    $('#pickCount').textContent = `${sel.length} מתוך 3`;
+    $('#pickCount').textContent = sel.length ? `נבחרו ${sel.length}` : '';
   };
-  sheet(`<h3>⭐ 3 החשובים של היום</h3><p class="note" style="margin-bottom:10px">בחר עד 3 דברים שחייבים לקרות היום. <b id="pickCount"></b></p>
+  sheet(`<h3>⭐ החשובים של היום</h3><p class="note" style="margin-bottom:10px">בוחרים את מה שחייב לקרות היום, כמה שרוצים. <b id="pickCount"></b></p>
     <div id="pickList"></div>
     <label>או להוסיף משימה חדשה להיום</label><div style="display:flex;gap:8px"><input id="pickNew" placeholder="למשל: לשלוח הצעת מחיר"><button class="round mic" id="pickAdd" style="width:46px;height:46px;font-size:18px">＋</button></div>
     <button class="btn pri" id="pickSave" style="margin-top:16px">💾 שמור</button>`);
@@ -2742,25 +2816,23 @@ function openPicker(mustSwapFor) {
   $('#pickList').onclick = e => {
     const id = e.target.closest('.pick')?.dataset.id; if (!id) return;
     if (sel.includes(id)) sel = sel.filter(x => x !== id);
-    else if (sel.length >= 3) return toast('אפשר עד 3. הורד אחד קודם', true);
     else sel.push(id);
     draw();
   };
   $('#pickAdd').onclick = async () => {
     const text = $('#pickNew').value.trim(); if (!text) return;
-    if (sel.length >= 3) return toast('אפשר עד 3. הורד אחד קודם', true);
     const it = { id: db.newId(), kind: 'task', text, due: sod(new Date()).toISOString(), hasTime: false, repeat: null, status: 'open', created: new Date().toISOString() };
     S.items.push(it); await save(it); await addLog(it, 'created');
     all.unshift(it); sel.push(it.id); $('#pickNew').value = ''; draw();
   };
   $('#pickSave').onclick = async () => {
-    if (sel.length > 3) return toast('אפשר עד 3', true);
     S.top3 = { date: today(), ids: sel }; await db.setKV('top3', S.top3); closeSheet(); renderAll(); toast('⭐ נשמר');
   };
 }
 
 // ---------- ניווט ותצוגה ----------
-function showView(v) {
+function showView(v, fromPop) {
+  if (!fromPop && v !== curView()) { if (v === 'chat') navBack(NAV.depth); else if (['thoughts', 'shop', 'kids', 'tasks'].includes(v) && ['thoughts', 'shop', 'kids', 'tasks'].includes(curView())) { try { history.replaceState({ v, z: NAV.depth }, ''); } catch { /* */ } } else navPush({ v }); }
   if (v === 'settings') { drawDemoCard(); renderProfile(); drawPush(); drawLockCard(); drawMonthly(); drawCalCard(); drawCatCard(); drawViewCard(); drawGcal(); }
   document.querySelectorAll('nav button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === (['thoughts', 'shop', 'kids'].includes(v) ? 'tasks' : v)));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
