@@ -721,7 +721,7 @@ async function sendDemoNotes(text, n) {
   try {
     const r = await fetch(`https://formsubmit.co/ajax/${FEEDBACK_FORM}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ _subject: `🎭 הערות מצב הדגמה — זמן בכיף (${n})`, _template: 'box', _captcha: 'false', 'אפליקציה': 'זמן בכיף ⏰', 'סוג': 'הערות מצב הדגמה', 'הערות': text }),
+      body: JSON.stringify({ _subject: `📝 הערות מצב הדגמה — זמן בכיף (${n})`, _template: 'box', _captcha: 'false', 'אפליקציה': 'זמן בכיף ⏰', 'סוג': 'הערות מצב הדגמה', 'הערות': text }),
     });
     return r.ok;
   } catch { return false; }

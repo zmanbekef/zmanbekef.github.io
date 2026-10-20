@@ -5,7 +5,7 @@ import * as db from './db.js';
 import { nextOccurrence, sod, addDays, ymd } from './parse.js';
 
 export const DEMO = db.DEMO;
-const FLAG = 'zman-demo', NOTES = 'zman-demo-notes';
+const FLAG = 'zman-demo', NOTES = 'zman-demoNotes';
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -169,7 +169,7 @@ export const TOUR = [
   { v: 'settings', sel: '#lockCard', t: '🔒 נעילה', d: 'קוד או טביעת אצבע, עם "שכחתי את הקוד".' },
   { v: 'settings', sel: '#feedbackBtn', t: '💌 משוב', d: 'רעיון, תקלה או מחמאה, ישר למייל.' },
   { v: 'settings', sel: '#backupBtn', t: '💾 גיבוי', d: 'שומרים עותק לקובץ, ומשחזרים ממנו מתי שצריך.' },
-  { v: 'chat', sel: '#demoNotes', t: '🎉 סוף הסיור', d: 'כל הערה שרשמתם ב-💬 מחכה כאן. בסוף לוחצים "📤 שלח את כל ההערות".' },
+  { v: 'chat', sel: '#demoNotes', t: '🎉 סיימנו!', d: 'כל הערה שרשמתם ב-💬 מחכה כאן. בסוף לוחצים "📤 שלח את כל ההערות".' },
 ];
 
 // ---------- הפעלה בתוך האפליקציה ----------
@@ -182,7 +182,7 @@ export function init(api) {
   if (!DEMO) return;
   document.documentElement.classList.add('demo-on');
   const bar = document.createElement('div'); bar.className = 'demo-bar'; bar.id = 'demoBar';
-  bar.innerHTML = '<span>🎭 <b>מצב הדגמה</b> — הנתונים לא אמיתיים</span><button class="chip" id="demoTour">🧭 סיור</button><button class="chip" id="demoExit">יציאה</button>';
+  bar.innerHTML = '<span>🎭 <b>מצב הדגמה</b> — הנתונים לא אמיתיים</span><button class="chip" id="demoTour">🧭 סיור</button><button class="chip" id="demoExit">יציאה ✕</button>';
   $('#app').prepend(bar);
   const fab = document.createElement('button'); fab.className = 'demo-fab'; fab.id = 'demoNotes'; fab.setAttribute('aria-label', 'הערות לתיקון');
   fab.innerHTML = '💬<i class="badge" id="demoCount" hidden></i>';
@@ -193,7 +193,7 @@ export function init(api) {
   $('#demoTour').onclick = () => startTour(0);
   $('#demoExit').onclick = e => {
     const b = e.currentTarget, n = notes().length;
-    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = n ? `${nN(n)} ${n === 1 ? 'לא נשלחה' : 'לא נשלחו'} — לצאת?` : 'לצאת? לחיצה נוספת'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'יציאה'; }, 4000); return; }
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = n ? `${nN(n)} ${n === 1 ? 'לא נשלחה' : 'לא נשלחו'} — לצאת?` : 'לצאת? לחיצה נוספת'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'יציאה ✕'; }, 4000); return; }
     exit();
   };
   fab.onclick = openNotes;
@@ -204,7 +204,14 @@ export function init(api) {
 
 // ---------- הסיור ----------
 export function startTour(i = 0) { step = -1; $('#tour').hidden = false; go(i); }
-function stopTour() { step = -1; $('#tour').hidden = true; }
+function stopTour() { step = -1; $('#tour').hidden = true; liftFab(); }
+// כפתור ההערות לא מסתיר את כרטיס הסיור: כשהכרטיס למטה — הכפתור עולה מעליו
+function liftFab() {
+  const fab = $('#demoNotes'), card = $('#tourCard'); if (!fab) return;
+  if (step < 0 || card.classList.contains('top')) { fab.style.bottom = ''; return; }
+  const box = $('#app').getBoundingClientRect();
+  fab.style.bottom = Math.round(box.bottom - card.getBoundingClientRect().top + 10) + 'px';
+}
 const next = d => go(Math.min(TOUR.length - 1, Math.max(0, step + d)));
 function target(s) {
   for (const sel of s.sel.split(',').map(x => x.trim())) {
@@ -225,7 +232,7 @@ async function go(i) {
   await new Promise(r => setTimeout(r, 260));
   const el = target(s);
   if (el) { el.scrollIntoView({ block: 'center', behavior: 'instant' }); await new Promise(r => setTimeout(r, 60)); }
-  drawCard(); place();
+  drawCard(); place(); liftFab();
 }
 function place() {
   const s = TOUR[step]; if (!s) return;
@@ -236,13 +243,14 @@ function place() {
     const set = (d, l, t, ww, hh) => Object.assign(d.style, { left: l + 'px', top: t + 'px', width: Math.max(0, ww) + 'px', height: Math.max(0, hh) + 'px' });
     set(dims[0], 0, 0, W, y); set(dims[1], 0, y + h, W, H - y - h); set(dims[2], 0, y, x, h); set(dims[3], x + w, y, W - x - w, h);
   };
-  if (!el) { spot.style.opacity = 0; hole(W / 2, H / 2, 0, 0); card.classList.remove('top'); return; }
+  if (!el) { spot.style.opacity = 0; hole(W / 2, H / 2, 0, 0); card.classList.remove('top'); liftFab(); return; }
   const r = el.getBoundingClientRect(), pad = 6;
   const top = Math.max(box.top + 4, r.top - pad), bottom = Math.min(box.bottom - 4, r.bottom + pad);
   const x = Math.max(4, r.left - box.left - pad), y = top - box.top, w = Math.min(W - 8, r.width + pad * 2), h = Math.max(30, bottom - top);
   Object.assign(spot.style, { opacity: 1, top: y + 'px', left: x + 'px', width: w + 'px', height: h + 'px' });
   hole(x, y, w, h);
   card.classList.toggle('top', (top + bottom) / 2 > box.top + box.height * 0.55);
+  liftFab();
 }
 function drawCard(list) {
   const s = TOUR[step], n = TOUR.length, card = $('#tourCard');
@@ -257,13 +265,14 @@ function drawCard(list) {
   card.innerHTML = `<div class="tour-h"><small>שלב ${step + 1} מתוך ${n}</small><button class="tour-x" id="tourX" aria-label="סגירת הסיור">✕</button></div>
     <div class="tour-bar"><i style="width:${((step + 1) / n) * 100}%"></i></div>
     <h4 class="tour-t">${esc(s.t)}</h4><p class="tour-d">${esc(s.d)}</p>
-    <div class="tour-btns"><button class="btn" id="tourPrev" ${step ? '' : 'disabled'}>→ הקודם</button><button class="btn" id="tourAll">📋</button>
+    <div class="tour-btns"><button class="btn" id="tourPrev" ${step ? '' : 'disabled'}>→ הקודם</button><button class="btn" id="tourAll" aria-label="כל השלבים">☰</button>
     <button class="btn pri" id="tourNext">${step === n - 1 ? '✅ סיום' : 'הבא ←'}</button></div>`;
   card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop');
   $('#tourX').onclick = stopTour;
   $('#tourPrev').onclick = () => next(-1);
   $('#tourAll').onclick = () => drawCard(true);
   $('#tourNext').onclick = () => step === n - 1 ? stopTour() : next(1);
+  if (step === n - 1) A.confetti?.();
 }
 
 // ---------- 💬 הערות ----------
@@ -271,16 +280,16 @@ const notes = () => { try { return JSON.parse(localStorage.getItem(NOTES)) || []
 const setNotes = l => { try { localStorage.setItem(NOTES, JSON.stringify(l)); } catch { /* */ } drawCount(); };
 function drawCount() { const c = $('#demoCount'); if (!c) return; const n = notes().length; c.hidden = !n; c.textContent = n; }
 const nN = n => n === 1 ? 'הערה אחת' : `${n} הערות`;
-const where = () => step >= 0 ? `🧭 שלב ${step + 1}: ${TOUR[step].t}` : `📱 מסך: ${viewName[curView()] || curView()}`;
+const where = () => `📍 מסך: ${viewName[curView()] || curView()}${step >= 0 ? ` · שלב ${step + 1}: ${TOUR[step].t}` : ''}`;
 const allText = () => notes().map((x, i) => `${i + 1}. [${x.w}]\n${x.t}`).join('\n\n');
 function openNotes() {
   const w = where(), list = notes();
-  A.sheet(`<h3>💬 מה לתקן / לשפר כאן?</h3>
+  A.sheet(`<h3>💬 הערות לתיקון</h3>
     <p class="note" style="margin-bottom:8px">${esc(w)}</p>
-    <textarea id="dnTxt" rows="4" class="fb-txt" placeholder="למשל: הכפתור קטן מדי, הייתי רוצה ש…"></textarea>
-    <button class="btn pri" id="dnSave">📝 לשמור הערה</button>
+    <textarea id="dnTxt" rows="4" class="fb-txt" placeholder="מה לתקן / לשפר כאן?"></textarea>
+    <button class="btn pri" id="dnSave">➕ שמירת הערה</button>
     ${list.length ? `<h4 style="margin:14px 0 6px">📝 ${nN(list.length)} ${list.length === 1 ? 'מחכה' : 'מחכות'}</h4>
-    <div class="dn-list">${list.map((x, i) => `<div class="dn-row"><div><small>${esc(x.w)}</small><div>${esc(x.t)}</div></div><button class="act" data-dnx="${i}" aria-label="מחיקת ההערה">✕</button></div>`).join('')}</div>
+    <div class="dn-list">${list.map((x, i) => `<div class="dn-row"><div><small>${esc(x.w)}</small><div>${esc(x.t)}</div></div><button class="act" data-dnx="${i}" aria-label="מחיקת ההערה">🗑️</button></div>`).join('')}</div>
     <button class="btn pri" id="dnSend">📤 שלח את כל ההערות (${list.length})</button>
     <button class="btn" id="dnCopy">📋 העתק (להדביק בצ'אט עם Claude)</button>` : '<p class="note" style="margin-top:10px">ההערות נשמרות בטלפון עד שלוחצים "שלח", גם אם יוצאים מההדגמה.</p>'}
     <div id="dnErr" style="color:#FB7185;font-size:13px;min-height:16px"></div>`);
