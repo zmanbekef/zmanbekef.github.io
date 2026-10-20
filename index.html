@@ -75,8 +75,9 @@
     <!-- קניות -->
     <section class="view" id="v-shop">
       <div class="seg tabs2"><button data-v="tasks">📋 משימות</button><button data-v="thoughts">💭 מחשבות</button><button class="on" data-v="shop">🛒 קניות</button><button data-v="kids" hidden>⭐ ילדים</button></div>
-      <div class="h2">רשימת קניות 🛒</div>
+      <div class="h2" id="shopTitle">רשימת קניות 🛒</div>
       <div class="chips" id="shopWho" style="padding:0 16px 10px" hidden></div>
+      <div class="chips shop-lists" id="shopLists" style="padding:0 16px 10px"></div>
       <div style="padding:0 16px 10px"><button class="btn" id="menuBtn" style="margin:0">🍲 תפריט שבת ← מצרכים לרשימה</button></div>
       <div class="shop-add"><input id="shopIn" placeholder="למשל: חלב, ביצים, עגבניות" enterkeyhint="done" autocomplete="off"><button class="round mic" id="shopAdd" aria-label="הוספה" style="width:46px;height:46px;font-size:20px">＋</button></div>
       <div class="cards" id="shopList"></div>

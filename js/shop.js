@@ -18,12 +18,12 @@ export const deptOf = id => DEPTS.find(d => d[0] === id) || DEPTS[DEPTS.length -
 export function guessDept(text) {
   const t = ' ' + text.trim() + ' ';
   let best = null, len = 0;
-  for (const [id, , , kws] of DEPTS) for (const k of kws) if (t.includes(k) && k.length > len) { best = id; len = k.length; }
+  for (const [id, , , kws] of DEPTS) for (const k of kws) if ((t.startsWith(' ' + k) || t.startsWith(' ה' + k) || t.startsWith(' ו' + k)) && k.length > len) { best = id; len = k.length; } // לפי תחילת הפריט: "צבע לבן" זה לא לבן, "מיץ ענבים" זה משקה
   return best || 'other';
 }
 // "קניות: חלב, ביצים ולחם" / "תוסיף לקניות חלב" / "לקנות בסופר עגבניות" → ['חלב', 'ביצים', 'לחם']
 const SHOP_RE = /^(?:(?:רשימת\s+)?קניות|לקניות|לרשימת\s+(?:ה)?קניות|(?:תוסיף|תוסיפי|הוסף|תכניס|תכניסי|תרשום|תרשמי)\s+(?:ל|את\s+)?(?:רשימת\s+)?(?:ה)?קניות|(?:צריך\s+)?לקנות\s+בסופר|לסופר)\s*[:\-–]?\s*/;
-export function shopItems(text) {
+export function shopItems(text, loose) { // loose: ברשימה בשם (טמבור…) מפצלים ב-ו גם מילים שלא במילון
   let t = text.trim(), m = t.match(SHOP_RE);
   if (!m) { // "תוסיף חלב וביצים לקניות"
     const m2 = t.match(/^(?:תוסיף|תוסיפי|הוסף|תכניס|תכניסי|תרשום|תרשמי)\s+(.+?)\s+(?:ל|אל\s+)(?:רשימת\s+)?(?:ה)?קניות$/);
@@ -34,7 +34,7 @@ export function shopItems(text) {
     // "חלב וביצים": מפצלים ב-ו רק כשהמילה שאחרי מוכרת (לא "ויטמינים")
     const words = chunk.split(/\s+/); let cur = [];
     for (const w of words) {
-      if (cur.length && /^ו[^ו]/.test(w) && guessDept(w.slice(1)) !== 'other') { parts.push(cur.join(' ')); cur = [w.slice(1)]; }
+      if (cur.length && /^ו[^ו]/.test(w) && (guessDept(w.slice(1)) !== 'other' || (loose && w.length > 3))) { parts.push(cur.join(' ')); cur = [w.slice(1)]; }
       else cur.push(w);
     }
     if (cur.length) parts.push(cur.join(' '));

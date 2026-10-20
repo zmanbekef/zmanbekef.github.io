@@ -1,5 +1,5 @@
 // מאפשר לאפליקציה להיפתח גם בלי אינטרנט
-const CACHE = 'zman-20261020193218';
+const CACHE = 'zman-20261020193830';
 const FILES = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/db.js', 'js/parse.js', 'js/hebdate.js', 'js/sync.js', 'js/conflicts.js', 'js/zmanim.js', 'js/help.js', 'js/lock.js', 'js/track.js', 'js/smart.js', 'js/shop.js', 'js/demo.js', 'guide/', 'vendor/supabase.js', 'vendor/qrcode.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png'];
 

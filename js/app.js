@@ -231,10 +231,12 @@ async function deleteByText(text, voice) {
 const OPS = {
   bump: id => bumpTask(id),
   toKesef: id => openToKesef(id),
-  focus: id => startFocus(id, 'work'),
+  focus: id => openFocusPick(id),
+  focusAgain: id => startFocus(id, 'work'),
   focusBreak: id => startFocus(id, 'break'),
   habitTick: id => tickHabit(id),
   shopView: gid => { S.shopG = gid || null; showView('shop'); },
+  shopList: (gid, lid) => { S.shopG = gid || null; S.shopL = { ...(S.shopL || {}), [gid || '']: lid || null }; showView('shop'); },
   calDay(iso) { CAL.day = sod(new Date(iso)); CAL.mode = 'day'; showView('cal'); },
   async undoMany(...ids) {
     for (const id of ids) { const it = item(id); if (!it) continue; it.status = 'deleted'; await save(it); }
@@ -407,7 +409,7 @@ async function send(text, voice) {
     DAYS.forEach((d, i) => { const re = new RegExp(`(^|\\s)(?:ו?ב?יום\\s+|ו?ב)?${d}(?=[\\s,]|$)`); if (re.test(t)) { dows.push(i); t = t.replace(re, ' '); } });
     t = t.replace(/(^|\s)(?:כל\s+יום|כל\s+בוקר|כל\s+ערב|כל|יומי|בכל\s+יום)(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
     const ICON = [[/מים|לשתות/, '💧'], [/לקרוא|קריאה|ספר/, '📖'], [/ריצה|לרוץ/, '🏃'], [/הליכה|ללכת/, '🚶'], [/מדיטציה|נשימות/, '🧘'], [/תפילה|להתפלל|תהילים|שיעור|דף יומי/, '🙏'], [/שיניים/, '🦷'], [/לישון|שינה/, '😴'], [/ויטמין|כדור|תרופה/, '💊'], [/פרי|ירק|לאכול/, '🥗'], [/טלפון|מסך/, '📵'], [/לכתוב|יומן/, '✍️']].find(([r]) => r.test(t))?.[1] || '⭐';
-    const h = { id: db.newId(), kind: 'habit', text: t, icon: ICON, dows: dows.length ? dows.sort() : null, status: 'open', created: new Date().toISOString(), log: {}, group_id: null, private: true, due: null, hasTime: false, repeat: null };
+    const h = { id: db.newId(), kind: 'habit', text: t, icon: ICON, goal: goalOf(t), dows: dows.length ? dows.sort() : null, status: 'open', created: new Date().toISOString(), log: {}, group_id: null, private: true, due: null, hasTime: false, repeat: null };
     S.items.push(h); await save(h); renderTasks();
     return bot('🔥', 'var(--g4)', `הרגל חדש: ${ICON} ${t}`, `${h.dows ? 'בימים: ' + h.dows.map(d => DAYS[d]).join(', ') : 'כל יום'}\nמסמנים במסך 📋 משימות ← 🔥 הרגלים, והרצף גדל`, [{ l: '✅ עשיתי היום', op: 'habitTick', a: [h.id], pri: true }, { l: '📋 להרגלים', op: 'goto', a: ['tasks'] }]);
   }
@@ -420,6 +422,17 @@ async function send(text, voice) {
     return createItem({ kind: 'task', text: t.name, steps: mkSteps(t.steps), due: null, hasTime: false, repeat: null }, null).then(() => { const n = S.items[S.items.length - 1]; if (n?.steps) openSteps(n.id); });
   }
   if (/^(?:תפריט\s+(?:ל)?שבת|מה\s+מבשלים\s+לשבת|מה\s+נבשל\s+לשבת)\??$/.test(text.trim())) { await me(text, voice); return openMenu(); }
+  // "טמבור: מסמרים, צבע" → לרשימה בשם הזה (רק אם פתחו רשימה כזאת — בלי ניחוש אוטומטי)
+  const nl = text.match(/^(?:ל|לרשימת\s+|לרשימה\s+)?([^:]{2,25}?)\s*:\s*(.+)$/);
+  if (nl) {
+    const gid = defGroup()?.id || null, l = shopLists(gid).find(x => x.text.trim() === nl[1].trim());
+    if (l) {
+      await me(text, voice); await think();
+      const a = await addShop(shopItems('קניות: ' + nl[2], true) || [nl[2]], gid, l.id);
+      return bot(l.icon || '🏪', 'var(--g3)', a.length ? `נוסף${a.length > 1 ? 'ו ' + a.length : ''} לרשימה "${l.text}"` : 'כבר ברשימה', a.map(x => `${deptOf(x.dept)[1]} ${x.text}`).join('\n'),
+        [{ l: `${l.icon || '🏪'} לרשימה`, op: 'shopList', a: [gid || '', l.id], pri: true }]);
+    }
+  }
   // "קניות: חלב, ביצים" → רשימת הקניות של הקבוצה הראשית
   const shopL = shopItems(text);
   if (shopL?.length) {
@@ -695,7 +708,7 @@ async function followUps(medOnly) {
           { l: '✅ כן', op: 'done', a: [it.id], pri: true }, { l: '⏰ נדחתה', op: 'snoozeAsk', a: [it.id] }, { l: '🗑️ בוטלה', op: 'remove', a: [it.id] }]);
       } else {
         await bot(it.repeat ? '🔁' : '⏰', 'var(--g4)', `${it.text}?`, `הגיע הזמן (${hm(new Date(t))}). עשית את זה?`, [
-          { l: '✅ כן, עשיתי', op: 'done', a: [it.id], pri: true }, { l: '⏰ עוד לא', op: 'snoozeAsk', a: [it.id] }, { l: `⏱️ פוקוס ${FOCUS_MIN}`, op: 'focus', a: [it.id] },
+          { l: '✅ כן, עשיתי', op: 'done', a: [it.id], pri: true }, { l: '⏰ עוד לא', op: 'snoozeAsk', a: [it.id] }, { l: '⏱️ פוקוס', op: 'focus', a: [it.id] },
           { l: '✏️ תקן', op: 'edit', a: [it.id] }, { l: '🗑️ כבר לא רלוונטי', op: 'remove', a: [it.id] }]);
       }
       buzz();
@@ -1416,7 +1429,7 @@ function rowHtml(it) {
   const tint = S.uid ? colorOf(it.forP && it.forP !== 'any' ? it.forP : ownerP(it) || S.myP) : null;
   return `<div class="row${d}" data-id="${it.id}"${tint ? ` style="--pc:${tint}"` : ''}><button class="cb" data-op="check">${d ? '✓' : ''}</button>${warn}
     <div class="nm" data-op="edit">${esc(it.text)}${meta ? `<small class="${late ? 'late' : ''}">${esc(meta)}</small>` : ''}</div>
-    ${it.comments?.length ? `<button class="star on cm-n" data-op="comments" aria-label="${it.comments.length} תגובות">💬<small>${it.comments.length}</small></button>` : ''}${canBump(it) ? '<button class="star on" data-op="bump" aria-label="להקפיץ" style="font-size:16px">🔔</button>' : ''}${S.uid && it.status === 'open' ? '<button class="star on" data-op="assign" aria-label="שיוך" style="font-size:16px">📎</button>' : ''}${it.status === 'open' && it.kind === 'task' && isMine(it) ? `<button class="star${star ? ' on' : ''}" data-op="star" aria-label="לחשובים של היום">⭐</button>` : ''}${byMe(it) ? '<button class="star del-x" data-op="del" aria-label="מחיקה">🗑️</button>' : ''}</div>`;
+    ${it.prog?.of > 1 && it.status === 'open' ? `<button class="prog-b" data-op="prog" aria-label="עוד אחד" dir="ltr">${it.prog.n || 0}/${it.prog.of} ＋</button>` : ''}${it.comments?.length ? `<button class="star on cm-n" data-op="comments" aria-label="${it.comments.length} תגובות">💬<small>${it.comments.length}</small></button>` : ''}${canBump(it) ? '<button class="star on" data-op="bump" aria-label="להקפיץ" style="font-size:16px">🔔</button>' : ''}${S.uid && it.status === 'open' ? '<button class="star on" data-op="assign" aria-label="שיוך" style="font-size:16px">📎</button>' : ''}${it.status === 'open' && it.kind === 'task' && isMine(it) ? `<button class="star${star ? ' on' : ''}" data-op="star" aria-label="לחשובים של היום">⭐</button>` : ''}${byMe(it) ? '<button class="star del-x" data-op="del" aria-label="מחיקה">🗑️</button>' : ''}</div>`;
 }
 function renderTasks() {
   const now = new Date(), t0 = sod(now), t1 = addDays(t0, 1), t2 = addDays(t0, 2);
@@ -1466,7 +1479,7 @@ function renderTasks() {
 })();
 $('#catFilter').addEventListener('click', e => { const b = e.target.closest('[data-cf]'); if (b) { S.catF = b.dataset.cf || null; renderTasks(); } });
 $('#whoFilter').addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (b) { S.who = b.dataset.w; renderTasks(); } });
-$('#taskList').addEventListener('click', e => {
+$('#taskList').addEventListener('click', async e => {
   const op = e.target.closest('[data-op]')?.dataset.op, id = e.target.closest('.row')?.dataset.id;
   if (!op || !id) return;
   const it = S.items.find(x => x.id === id);
@@ -1475,6 +1488,11 @@ $('#taskList').addEventListener('click', e => {
   if (op === 'edit') return openEdit(id);
   if (op === 'star') return OPS.star(id);
   if (op === 'del') return askRemove(id);
+  if (op === 'prog') { // 🔢 עוד אחד: 2/5 → 3/5. בסוף — בוצע
+    it.prog = { ...it.prog, n: Math.min(it.prog.of, (it.prog.n || 0) + 1) }; await save(it);
+    if (it.prog.n >= it.prog.of) { await markDone(id, true); if (it.repeat) { it.prog.n = 0; await save(it); } toast(`🎉 ${it.text}: ${it.prog.of}/${it.prog.of}`); } else { toast(`🔢 ${it.prog.n}/${it.prog.of}`); renderTasks(); }
+    return;
+  }
   if (op === 'conf') return openConflict(id);
   if (op === 'assign') return openAssign(id);
   if (op === 'bump') return bumpTask(id);
@@ -1543,13 +1561,16 @@ function openComments(id) {
 
 // 🛒 רשימת קניות משותפת לקבוצה, לפי מחלקות בסופר
 const shopGid = () => S.shopG !== undefined ? S.shopG : (defGroup()?.id || null);
-const shopOf = gid => S.items.filter(x => x.kind === 'shop' && x.status !== 'deleted' && (x.group_id || null) === (gid || null));
-async function addShop(texts, gid = shopGid()) {
-  const have = shopOf(gid).filter(x => x.status === 'open').map(x => x.text.trim());
+// 🏪 רשימות בשמות חופשיים (טמבור, ירקן, סופר…): כל רשימה היא פריט shoplist בקבוצה. בלי רשימה = "🛒 קניות" הרגילה
+const shopLists = gid => S.items.filter(x => x.kind === 'shoplist' && x.status !== 'deleted' && (x.group_id || null) === (gid || null)).sort((a, b) => (a.created || '').localeCompare(b.created || ''));
+const shopLid = gid => { const l = S.shopL?.[gid || ''] || null; return l && shopLists(gid).some(x => x.id === l) ? l : null; };
+const shopOf = (gid, lid = shopLid(gid)) => S.items.filter(x => x.kind === 'shop' && x.status !== 'deleted' && (x.group_id || null) === (gid || null) && (x.list || null) === (lid || null));
+async function addShop(texts, gid = shopGid(), lid = shopLid(gid)) {
+  const have = shopOf(gid, lid).filter(x => x.status === 'open').map(x => x.text.trim());
   const added = [];
   for (const t of texts) {
     if (have.includes(t)) continue;
-    const it = { id: db.newId(), kind: 'shop', text: t.slice(0, 60), dept: guessDept(t), status: 'open', created: new Date().toISOString(), group_id: gid || null, private: !gid, forP: null, forU: null, due: null, hasTime: false, repeat: null };
+    const it = { id: db.newId(), kind: 'shop', text: t.slice(0, 60), dept: guessDept(t), list: lid || null, status: 'open', created: new Date().toISOString(), group_id: gid || null, private: !gid, forP: null, forU: null, due: null, hasTime: false, repeat: null };
     S.items.push(it); await save(it); added.push(it);
   }
   renderShop(); return added;
@@ -1560,7 +1581,15 @@ function renderShop() {
   const gid = shopGid();
   $('#shopWho').hidden = !gs.length;
   $('#shopWho').innerHTML = [[null, '🔒 רק שלי'], ...gs.map(g => [g.id, gLabel(g)])].map(([id, l]) => `<button class="chip ${(gid || null) === id ? 'on' : ''}" data-sg="${id || ''}">${esc(l)}</button>`).join('');
-  const list = shopOf(gid), open = list.filter(x => x.status === 'open'), done = list.filter(x => x.status === 'done');
+  const lid = shopLid(gid), lists = shopLists(gid);
+  const cnt = l => S.items.filter(x => x.kind === 'shop' && x.status === 'open' && (x.group_id || null) === (gid || null) && (x.list || null) === l).length;
+  $('#shopLists').innerHTML = [`<button class="chip ${!lid ? 'on' : ''}" data-sl="">🛒 קניות${cnt(null) ? ` <small>${cnt(null)}</small>` : ''}</button>`,
+    ...lists.map(l => `<button class="chip ${lid === l.id ? 'on' : ''}" data-sl="${l.id}">${esc(l.icon || '🏪')} ${esc(l.text)}${cnt(l.id) ? ` <small>${cnt(l.id)}</small>` : ''}</button>`),
+    '<button class="chip sl-new" data-sl="+">➕ רשימה חדשה</button>', lid ? '<button class="chip" data-sl="edit" aria-label="עריכת הרשימה">✏️</button>' : ''].join('');
+  $('#menuBtn').parentElement.hidden = !!lid; // תפריט שבת — רק ברשימת הקניות הרגילה
+  $('#shopTitle').textContent = lid ? `${lists.find(l => l.id === lid)?.icon || '🏪'} ${lists.find(l => l.id === lid)?.text}` : 'רשימת קניות 🛒';
+  $('#shopIn').placeholder = lid ? `מה צריך ב${lists.find(l => l.id === lid)?.text}? למשל: מסמרים, צבע` : 'למשל: חלב, ביצים, עגבניות';
+  const list = shopOf(gid, lid), open = list.filter(x => x.status === 'open'), done = list.filter(x => x.status === 'done');
   const row = x => `<div class="shop-row${x.status === 'done' ? ' done' : ''}" data-id="${x.id}"><button class="cb" data-sop="check" aria-label="${x.status === 'done' ? 'החזר לרשימה' : 'נקנה'}">${x.status === 'done' ? '✓' : ''}</button><span class="sh-t" data-sop="edit">${esc(x.text)}</span>${x.by && x.by !== S.uid ? `<i class="sh-by" style="background:${colorOf(personOfUid(x.by)?.id)}" title="${esc(personOfUid(x.by)?.name || '')}"></i>` : ''}</div>`;
   el.innerHTML = (open.length ? DEPTS.map(([id, ic, name]) => { const l = open.filter(x => (x.dept || 'other') === id); return l.length ? `<div class="card"><h4>${ic} ${name}<small>${l.length}</small></h4>${l.map(row).join('')}</div>` : ''; }).join('')
     : `<div class="empty-state"><span class="em">🛒</span>הרשימה ריקה.<br>כותבים למעלה, או בצ'אט: "קניות: חלב, ביצים, לחם"</div>`)
@@ -1571,9 +1600,37 @@ function renderShop() {
   });
 }
 $('#shopWho').onclick = e => { const b = e.target.closest('[data-sg]'); if (!b) return; S.shopG = b.dataset.sg || null; renderShop(); };
+const SL_ICONS = ['🏪', '🛒', '🔨', '🥬', '💊', '🧸', '👕', '📚', '🧹', '🎁', '🐟', '🍞', '🌸', '⛽', '🖥️', '🧴'];
+function openShopList(l) {
+  const gid = shopGid(); let icon = l?.icon || '🏪';
+  sheet(`<h3>${l ? '✏️ עריכת רשימה' : '➕ רשימה חדשה'}</h3>
+    <label>שם הרשימה</label><input id="slN" maxlength="30" value="${esc(l?.text || '')}" placeholder="למשל: טמבור, ירקן, בית מרקחת">
+    <label>אייקון</label><div class="ic-grid" id="slI">${SL_ICONS.map(x => `<button type="button" class="${x === icon ? 'on' : ''}" data-i="${x}">${x}</button>`).join('')}</div>
+    <p class="note" style="margin-top:8px">מה שמוסיפים כשהרשימה פתוחה נכנס אליה, ומסתדר בה לפי מחלקות.${gid ? ' כולם בקבוצה רואים אותה.' : ''}</p>
+    <button class="btn pri" id="slS" style="margin-top:12px">💾 שמור</button>${l ? '<button class="btn danger" id="slD">🗑️ מחיקת הרשימה</button>' : ''}`);
+  pickChips($('#slI'), 'data-i', v => { icon = v; });
+  $('#slS').onclick = async () => {
+    const text = $('#slN').value.trim(); if (!text) return toast('צריך שם לרשימה', true);
+    const it = l || { id: db.newId(), kind: 'shoplist', status: 'open', created: new Date().toISOString(), group_id: gid || null, private: !gid, forP: null, forU: null, due: null, hasTime: false, repeat: null };
+    Object.assign(it, { text, icon }); if (!l) S.items.push(it); await save(it);
+    S.shopL = { ...(S.shopL || {}), [gid || '']: it.id }; closeSheet(); renderShop(); toast(l ? '💾 נשמר' : `🏪 נפתחה הרשימה "${text}"`);
+  };
+  $('#slD')?.addEventListener('click', () => {
+    const n = shopOf(gid, l.id).length;
+    sheet(`<h3>🗑️ למחוק את "${esc(l.text)}"?</h3><p class="note" style="margin-bottom:12px">${n ? `גם ${n} הפריטים שבה יימחקו.` : 'הרשימה ריקה.'}</p><button class="btn danger" id="slY">🗑️ כן, למחוק</button><button class="btn" id="slNo">ביטול</button>`);
+    $('#slNo').onclick = closeSheet;
+    $('#slY').onclick = async () => { for (const x of shopOf(gid, l.id)) { x.status = 'deleted'; await save(x); } l.status = 'deleted'; await save(l); S.shopL = { ...(S.shopL || {}), [gid || '']: null }; closeSheet(); renderShop(); toast('🗑️ הרשימה נמחקה'); };
+  });
+}
+$('#shopLists').onclick = e => {
+  const b = e.target.closest('[data-sl]'); if (!b) return; const v = b.dataset.sl, gid = shopGid();
+  if (v === '+') return openShopList(null);
+  if (v === 'edit') return openShopList(item(shopLid(gid)));
+  S.shopL = { ...(S.shopL || {}), [gid || '']: v || null }; renderShop();
+};
 const shopGo = async () => {
   const v = $('#shopIn').value.trim(); if (!v) return;
-  const parts = shopItems('קניות: ' + v) || [v];
+  const parts = shopItems('קניות: ' + v, !!shopLid(shopGid())) || [v];
   $('#shopIn').value = ''; const a = await addShop(parts);
   if (a.length) toast(`🛒 נוסף${a.length > 1 ? 'ו ' + a.length : ''}`); else toast('כבר ברשימה');
 };
@@ -1727,7 +1784,12 @@ $('#kidList').addEventListener('click', async e => {
 const HABIT_ICONS = ['💧', '📖', '🏃', '🧘', '🙏', '🦷', '🥗', '😴', '💊', '🚶', '✍️', '🎸', '🧹', '📵', '🍎', '⭐'];
 const habits = () => S.items.filter(x => x.kind === 'habit' && x.status === 'open');
 const habitDue = (h, d) => !h.dows?.length || h.dows.includes(d.getDay());
-const habitDone = (h, d) => !!h.log?.[ymd(d)];
+// 💧 הרגל עם ספירה (8 כוסות): ביומן נשמר מספר. בלי יעד — true כמו קודם
+const habitGoal = h => Math.max(1, +h.goal || 1);
+const habitCount = (h, d) => { const v = h.log?.[ymd(d)]; return v === true ? habitGoal(h) : +v || 0; };
+const habitDone = (h, d) => habitCount(h, d) >= habitGoal(h);
+// כמה פעמים בטקסט: "לשתות 8 כוסות מים" → 8
+const goalOf = t => { const m = String(t || '').match(/(?:^|\s)(\d{1,2})\s*(?:כוסות|פעמים|כוס|דפים|עמודים|פרקים|סטים|חזרות|דקות של)?(?=\s|$)/); return m && +m[1] > 1 && +m[1] <= 30 && /כוס|פעמ|דפ|עמוד|פרק|סט|חזר/.test(t) ? +m[1] : null; };
 function habitStreak(h) {
   let n = 0, d = sod(new Date());
   if (habitDue(h, d) && habitDone(h, d)) n++;
@@ -1852,25 +1914,32 @@ function openRecur(it, pre = {}) {
 function habitsCard() {
   const hs = habits();
   return `<div class="card habits"><h4>🔥 הרגלים · היום<button class="act" id="hbNew" style="margin-inline-start:auto">➕ הרגל</button></h4>
-    ${hs.length ? hs.map(h => { const today = habitDue(h, new Date()), done = habitDone(h, new Date()), st = habitStreak(h);
-      return `<div class="hb-row${done ? ' done' : ''}${today ? '' : ' off'}" data-h="${h.id}"><button class="cb" data-hop="tick" ${today ? '' : 'disabled'} aria-label="${done ? 'בטל' : 'עשיתי היום'}">${done ? '✓' : ''}</button><span class="sh-t" data-hop="edit">${esc(h.icon || '⭐')} ${esc(h.text)}${today ? '' : ' <small>(לא היום)</small>'}</span><b class="hb-st" title="ימים ברצף">🔥${st}</b></div>`; }).join('')
+    ${hs.length ? hs.map(h => { const today = habitDue(h, new Date()), done = habitDone(h, new Date()), st = habitStreak(h), g = habitGoal(h), n = habitCount(h, new Date());
+      const cnt = g > 1 ? `<span class="hb-cnt">${today && n ? '<button class="act hb-minus" data-hop="minus" aria-label="אחד פחות">−</button>' : ''}<b class="hb-n" dir="ltr">${n}/${g}</b></span>` : '';
+      const dots = g > 1 && g <= 12 ? `<span class="hb-dots">${Array.from({ length: g }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>` : '';
+      return `<div class="hb-row${done ? ' done' : ''}${today ? '' : ' off'}" data-h="${h.id}"><button class="cb${g > 1 && !done ? ' plus' : ''}" data-hop="tick" ${today ? '' : 'disabled'} aria-label="${g > 1 ? (done ? 'לאפס' : 'עוד אחד') : done ? 'בטל' : 'עשיתי היום'}">${done ? '✓' : g > 1 ? '+' : ''}</button><span class="sh-t" data-hop="edit">${esc(h.icon || '⭐')} ${esc(h.text)}${today ? '' : ' <small>(לא היום)</small>'}${dots}</span>${cnt}<b class="hb-st" title="ימים ברצף">🔥${st}</b></div>`; }).join('')
       : '<p class="note">משהו קטן שרוצים לעשות כל יום (או בימים מסוימים): לשתות מים, לקרוא 10 דקות, הליכה. מסמנים כל יום — והרצף 🔥 גדל.</p>'}</div>`;
 }
-async function tickHabit(id, btn) {
+async function tickHabit(id, btn, minus) {
   const h = item(id); if (!h) return;
-  const k = ymd(new Date()); h.log = { ...(h.log || {}) };
-  if (h.log[k]) delete h.log[k]; else { h.log[k] = true; btn?.classList.add('pop'); }
+  const k = ymd(new Date()), g = habitGoal(h), was = habitCount(h, new Date()); h.log = { ...(h.log || {}) };
+  if (g > 1) { // עוד כוס: 3/8 → 4/8. בסוף, לחיצה נוספת מאפסת
+    const n = minus ? Math.max(0, was - 1) : was >= g ? 0 : was + 1;
+    if (n) h.log[k] = n; else delete h.log[k];
+    btn?.classList.add('pop'); if (!minus && n && n < g) toast(`${h.icon || '💧'} ${n}/${g}`);
+  } else if (h.log[k]) delete h.log[k]; else { h.log[k] = true; btn?.classList.add('pop'); }
   // ניקיון: שומרים רק שנה אחורה
   const old = ymd(addDays(new Date(), -400)); for (const d of Object.keys(h.log)) if (d < old) delete h.log[d];
   await save(h);
   const st = habitStreak(h);
-  if (h.log[k]) { if ([3, 7, 14, 21, 30, 50, 100, 200, 365].includes(st)) { confetti(140); toast(`🔥 ${st} ימים ברצף! אלוף/ה`); } else toast(`🔥 ${st} ${st === 1 ? 'יום' : 'ימים'} ברצף`); }
+  if (habitDone(h, new Date()) && !(g > 1 && was >= g)) { if ([3, 7, 14, 21, 30, 50, 100, 200, 365].includes(st)) { confetti(140); toast(`🔥 ${st} ימים ברצף! אלוף/ה`); } else toast(`🔥 ${st} ${st === 1 ? 'יום' : 'ימים'} ברצף`); }
   renderTasks();
 }
 function openHabit(h, preText) {
   let icon = h?.icon || '💧'; const dows = new Set(h?.dows || []);
   sheet(`<h3>${h ? '✏️ עריכת הרגל' : '🔥 הרגל חדש'}</h3><label>מה</label><input id="hbN" maxlength="50" value="${esc(h?.text || preText || '')}" placeholder="למשל: לשתות 8 כוסות מים">
     <label>אייקון</label><div class="ic-grid" id="hbI">${HABIT_ICONS.map(x => `<button type="button" class="${x === icon ? 'on' : ''}" data-i="${x}">${x}</button>`).join('')}</div>
+    <label>💧 כמה פעמים ביום (למשל 8 כוסות). 1 = פעם אחת</label><input type="number" id="hbG" min="1" max="30" value="${h ? habitGoal(h) : goalOf(preText) || 1}" class="num" style="width:90px">
     <label>באילו ימים (בלי בחירה = כל יום)</label><div class="chips" id="hbD" style="padding:0;flex-wrap:wrap">${DAYS.map((d, i) => `<button type="button" class="chip ${dows.has(i) ? 'on' : ''}" data-d="${i}">${d}</button>`).join('')}</div>
     <button class="btn pri" id="hbS" style="margin-top:14px">💾 שמור</button>${h ? '<button class="btn danger" id="hbX">🗑️ מחיקת ההרגל</button>' : ''}`);
   pickChips($('#hbI'), 'data-i', v => { icon = v; });
@@ -1878,7 +1947,8 @@ function openHabit(h, preText) {
   $('#hbS').onclick = async () => {
     const text = $('#hbN').value.trim(); if (!text) return toast('צריך לכתוב מה', true);
     const it = h || { id: db.newId(), kind: 'habit', status: 'open', created: new Date().toISOString(), log: {}, group_id: null, private: true, due: null, hasTime: false, repeat: null };
-    Object.assign(it, { text, icon, dows: dows.size && dows.size < 7 ? [...dows].sort() : null });
+    const goal = Math.min(30, Math.max(1, +$('#hbG').value || 1));
+    Object.assign(it, { text, icon, goal: goal > 1 ? goal : null, dows: dows.size && dows.size < 7 ? [...dows].sort() : null });
     if (!h) S.items.push(it); await save(it); closeSheet(); showView('tasks'); renderTasks(); toast(h ? '💾 נשמר' : '🔥 הרגל חדש! מסמנים כל יום');
   };
   $('#hbX')?.addEventListener('click', async e => { if (!tapAgain(e.currentTarget, '🗑️ בטוח? לחץ שוב')) return; h.status = 'deleted'; await save(h); closeSheet(); renderTasks(); });
@@ -1887,18 +1957,34 @@ $('#v-tasks').addEventListener('click', e => {
   if (e.target.closest('#hbNew')) return openHabit(null);
   const op = e.target.closest('[data-hop]')?.dataset.hop, id = e.target.closest('[data-h]')?.dataset.h; if (!op || !id) return;
   if (op === 'tick') return tickHabit(id, e.target.closest('.cb'));
+  if (op === 'minus') return tickHabit(id, null, true);
   openHabit(item(id));
 });
 
 // ---------- ⏱️ טיימר פוקוס: 25 דקות עבודה, 5 הפסקה, ובסוף "סיימת?" ----------
-const FOCUS_MIN = 25, BREAK_MIN = 5;
+// ⏱️ כמה זמן עבודה וכמה הפסקה — בוחרים לפני שמתחילים (נשמר לפעם הבאה)
+const fMin = () => S.settings.focusWork || 25, bMin = () => S.settings.focusBreak ?? 5;
+function openFocusPick(id) {
+  const it = item(id); if (!it) return;
+  let w = fMin(), b = bMin();
+  const chips = (arr, cur, attr, lbl) => `<div class="chips" style="padding:0;flex-wrap:wrap">${arr.map(x => `<button class="chip ${x === cur ? 'on' : ''}" ${attr}="${x}">${lbl(x)}</button>`).join('')}</div>`;
+  sheet(`<h3>⏱️ טיימר פוקוס</h3><p class="note" style="margin-bottom:6px">על: <b>${esc(it.text)}</b></p>
+    <label>כמה זמן לעבוד</label>${chips([10, 15, 25, 30, 45, 60, 90], w, 'data-fw', x => durLbl(x))}
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><span class="note">או בדיוק:</span><input type="number" id="fwN" min="1" max="240" class="num" style="width:90px" value="${w}"><span class="note">דקות</span></div>
+    <label>הפסקה אחרי</label>${chips([0, 5, 10, 15, 20], b, 'data-fb', x => x ? durLbl(x) : 'בלי הפסקה')}
+    <button class="btn pri" id="fGo" style="margin-top:14px">▶️ להתחיל</button>`);
+  pickChips($('#sheet').querySelector('[data-fw]').parentElement, 'data-fw', v => { w = +v; $('#fwN').value = v; });
+  pickChips($('#sheet').querySelector('[data-fb]').parentElement, 'data-fb', v => { b = +v; });
+  $('#fwN').oninput = e => { w = Math.min(240, Math.max(1, +e.target.value || 25)); };
+  $('#fGo').onclick = async () => { S.settings.focusWork = w; S.settings.focusBreak = b; await db.setKV('settings', S.settings); startFocus(id, 'work'); };
+}
 let focusT = null;
 async function startFocus(id, phase = 'work') {
   const it = item(id); if (!it) return;
-  const mins = phase === 'work' ? FOCUS_MIN : BREAK_MIN, now = Date.now();
+  const mins = phase === 'work' ? fMin() : bMin(), now = Date.now();
   S.focus = { id, phase, start: now, end: now + mins * 60e3 };
   await db.setKV('focus', S.focus);
-  if (S.uid) queueNotify(S.uid, 'task', phase === 'work' ? `⏱️ ${FOCUS_MIN} דקות עברו` : '☕ ההפסקה נגמרה', phase === 'work' ? `סיימת את "${it.text}"?` : `חוזרים ל"${it.text}"?`, `focus:${id}:${now}`);
+  if (S.uid) queueNotify(S.uid, 'task', phase === 'work' ? `⏱️ ${fMin()} דקות עברו` : '☕ ההפסקה נגמרה', phase === 'work' ? `סיימת את "${it.text}"?` : `חוזרים ל"${it.text}"?`, `focus:${id}:${now}`);
   closeSheet(); drawFocus(true);
 }
 function drawFocus(open) {
@@ -1926,11 +2012,11 @@ async function endFocus() {
   buzz();
   if (f.phase === 'work') {
     confetti(40); showView('chat');
-    await bot('⏱️', 'var(--g5)', `${FOCUS_MIN} דקות על "${it.text}" 💪`, 'סיימת?', [
-      { l: '✅ סיימתי', op: 'done', a: [it.id], pri: true }, { l: `☕ הפסקה ${BREAK_MIN} דק׳`, op: 'focusBreak', a: [it.id] }, { l: `⏱️ עוד ${FOCUS_MIN}`, op: 'focus', a: [it.id] }]);
+    await bot('⏱️', 'var(--g5)', `${fMin()} דקות על "${it.text}" 💪`, 'סיימת?', [
+      { l: '✅ סיימתי', op: 'done', a: [it.id], pri: true }, ...(bMin() ? [{ l: `☕ הפסקה ${bMin()} דק׳`, op: 'focusBreak', a: [it.id] }] : []), { l: `⏱️ עוד ${fMin()}`, op: 'focusAgain', a: [it.id] }]);
   } else {
     showView('chat');
-    await bot('☕', 'var(--g2)', 'ההפסקה נגמרה', `חוזרים ל"${it.text}"?`, [{ l: `⏱️ עוד ${FOCUS_MIN}`, op: 'focus', a: [it.id], pri: true }, { l: '✅ כבר סיימתי', op: 'done', a: [it.id] }]);
+    await bot('☕', 'var(--g2)', 'ההפסקה נגמרה', `חוזרים ל"${it.text}"?`, [{ l: `⏱️ עוד ${fMin()}`, op: 'focusAgain', a: [it.id], pri: true }, { l: '✅ כבר סיימתי', op: 'done', a: [it.id] }]);
   }
 }
 async function stopFocus() {
@@ -1973,7 +2059,13 @@ async function openMenu() {
   S.menu ||= await db.getKV('shabMenu', null) || Object.fromEntries(MEALS.map(([k, , d]) => [k, [...d]]));
   S.dishes ||= await db.getKV('dishes', {});
   const all = [...new Set([...Object.keys(DISHES), ...Object.keys(S.dishes)])];
-  sheet(`<h3>🍲 תפריט שבת</h3><p class="note">בוחרים מנות לכל סעודה, ובלחיצה אחת כל המצרכים נכנסים לרשימת הקניות.</p>
+  sheet(`<h3>🍲 תפריט שבת</h3>
+    <div class="mn-how" aria-label="איך זה עובד: בוחרים מנות, רואים את המצרכים, ומכניסים לרשימת הקניות">
+      <div class="mn-st s1"><b>1</b><span>🍲</span>בוחרים מנות<small>ליל שבת, שחרית, סעודה שלישית</small></div><i class="mn-ar">←</i>
+      <div class="mn-st s2"><b>2</b><span>🥕🧅🍗</span>המצרכים מחושבים לבד<small>מכל המנות יחד</small></div><i class="mn-ar">←</i>
+      <div class="mn-st s3"><b>3</b><span>🛒</span>לחיצה אחת ← לרשימה<small>מסודר לפי מחלקות</small></div>
+    </div>
+    <p class="note">לחיצה על מנה (✕) מוציאה אותה. ➕ מוסיף מנה, ואפשר גם מנה משלכם עם המצרכים שלה.</p>
     ${MEALS.map(([k, l]) => `<label>${l}</label><div class="chips" style="padding:0;flex-wrap:wrap">${S.menu[k].map((d, i) => `<button class="chip on" data-mk="${k}" data-mi="${i}" title="להסיר">${esc(d)} ✕</button>`).join('')}<button class="chip" data-madd="${k}">➕</button></div>`).join('')}
     <button class="btn pri" id="mnShop" style="margin-top:14px">🛒 להוסיף את המצרכים לרשימה</button>
     <button class="btn" id="mnReset">↺ להתחיל מהתפריט הרגיל</button>`);
@@ -2168,8 +2260,10 @@ const scopeOf = gid => gid || null;
 // כל הקטגוריות של "מקום" אחד (קבוצה, או רק שלי): המוכנות (עם השינויים של הקבוצה) + מה שהוסיפו
 function catsIn(gid) {
   const rows = (S.cats || []).filter(r => (r.group_id || null) === scopeOf(gid) && (r.group_id || r.owner === S.uid));
-  const built = CAT_BUILTIN.map(b => { const o = rows.find(r => r.builtin === b.key && !r.deleted); return { id: b.key, builtin: b.key, name: o?.name || b.name, icon: o?.icon || b.icon, color: o?.color || b.color, row: o || null }; });
-  return built.concat(rows.filter(r => !r.builtin && !r.deleted).map(r => ({ id: r.id, name: r.name, icon: r.icon || '🏷️', color: r.color || '#64748B', row: r })));
+  // מוכנה שנמחקה (שורה עם builtin + deleted) לא מופיעה. סדר: לפי ord, ואם אין — הסדר המקורי
+  const built = CAT_BUILTIN.filter(b => !rows.some(r => r.builtin === b.key && r.deleted)).map((b, i) => { const o = rows.find(r => r.builtin === b.key && !r.deleted); return { id: b.key, builtin: b.key, name: o?.name || b.name, icon: o?.icon || b.icon, color: o?.color || b.color, row: o || null, ord: o?.ord ?? i }; });
+  return built.concat(rows.filter(r => !r.builtin && !r.deleted).map((r, i) => ({ id: r.id, name: r.name, icon: r.icon || '🏷️', color: r.color || '#64748B', row: r, ord: r.ord ?? 100 + i })))
+    .sort((a, b) => a.ord - b.ord);
 }
 // הקטגוריה של משימה (קטגוריה שנמחקה או לא קיימת → שונות)
 function catOf(it) {
@@ -2189,11 +2283,23 @@ function drawCatCard() {
   el.innerHTML = `<h4>🏷️ קטגוריות</h4>
     ${S.uid && gs.length ? `<div class="chips" style="padding:0 0 8px;flex-wrap:wrap">${[[null, '🔒 רק שלי'], ...gs.map(g => [g.id, gLabel(g)])].map(([id, l]) => `<button class="chip ${catScope === id ? 'on' : ''}" data-cs="${id || ''}">${esc(l)}</button>`).join('')}</div>
       <p class="note">${catScope ? 'הקטגוריות של הקבוצה — כולם בקבוצה רואים ויכולים לשנות.' : 'קטגוריות שרק את/ה רואה.'}</p>` : ''}
-    ${catsIn(catScope).map(c => `<div class="set-row"><span><b class="cat-dot" style="background:${c.color}"></b>${esc(c.icon)} ${esc(c.name)}</span><button class="act" data-ce="${esc(c.id)}">✏️</button></div>`).join('')}
+    ${catsIn(catScope).map((c, i, a) => `<div class="set-row"><span><b class="cat-dot" style="background:${c.color}"></b>${esc(c.icon)} ${esc(c.name)}</span><span class="cat-acts"><button class="act" data-cu="${i}" ${i ? '' : 'disabled'} aria-label="למעלה">▲</button><button class="act" data-cd="${i}" ${i < a.length - 1 ? '' : 'disabled'} aria-label="למטה">▼</button><button class="act" data-ce="${esc(c.id)}" aria-label="עריכה">✏️</button></span></div>`).join('')}
     <button class="btn" id="catNew">➕ קטגוריה חדשה</button>
     ${!S.uid ? '<p class="note">בלי חשבון הקטגוריות נשמרות רק בטלפון הזה.</p>' : ''}`;
   el.querySelectorAll('[data-cs]').forEach(b => b.onclick = () => { catScope = b.dataset.cs || null; drawCatCard(); });
   el.querySelectorAll('[data-ce]').forEach(b => b.onclick = () => openCatEdit(catsIn(catScope).find(c => c.id === b.dataset.ce)));
+  // ▲▼ סדר: שומרים ord לכל הקטגוריות של המקום הזה (גם למוכנות — נוצרת להן שורה)
+  const move = async (i, d) => {
+    const list = catsIn(catScope), j = i + d; if (j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    for (const [k, c] of list.entries()) {
+      const row = c.row ? { ...c.row, ord: k } : { id: `${catScope || 'me-' + (S.uid || 'local')}|${c.builtin}`, group_id: catScope, builtin: c.builtin, name: c.name, icon: c.icon, color: c.color, deleted: false, ord: k };
+      if (c.row?.ord !== k) await saveCat(row, true);
+    }
+    drawCatCard(); renderAll();
+  };
+  el.querySelectorAll('[data-cu]').forEach(b => b.onclick = () => move(+b.dataset.cu, -1));
+  el.querySelectorAll('[data-cd]').forEach(b => b.onclick = () => move(+b.dataset.cd, 1));
   $('#catNew').onclick = () => openCatEdit(null);
 }
 function openCatEdit(c) {
@@ -2203,7 +2309,7 @@ function openCatEdit(c) {
     <label>אייקון</label><div class="ic-grid" id="ceIcons">${CAT_ICONS.map(x => `<button type="button" class="${x === icon ? 'on' : ''}" data-i="${x}">${x}</button>`).join('')}</div>
     <label>צבע</label><div class="col-grid" id="ceColors">${CAT_COLORS.map(x => `<button type="button" class="${x === color ? 'on' : ''}" data-c="${x}" style="background:${x}" aria-label="צבע ${x}"></button>`).join('')}</div>
     <button class="btn pri" id="ceSave" style="margin-top:16px">💾 שמור</button>
-    ${c && !c.builtin ? '<button class="btn danger" id="ceDel">🗑️ מחיקה</button>' : c?.builtin ? '<p class="note">זו קטגוריה מוכנה: אפשר לשנות שם, אייקון וצבע, אבל לא למחוק.</p>' : ''}`);
+    ${c ? '<button class="btn danger" id="ceDel">🗑️ מחיקה</button>' : ''}`);
   pickChips($('#ceIcons'), 'data-i', v => { icon = v; });
   pickChips($('#ceColors'), 'data-c', v => { color = v; });
   $('#ceSave').onclick = async () => {
@@ -2213,16 +2319,16 @@ function openCatEdit(c) {
   };
   $('#ceDel')?.addEventListener('click', async e => {
     if (!tapAgain(e.currentTarget, '🗑️ בטוח? המשימות יעברו ל"שונות"')) return;
-    await saveCat({ ...c.row, deleted: true });
-    for (const it of S.items.filter(x => x.cat === c.id)) { it.cat = 'misc'; await save(it); }
+    await saveCat(c.row ? { ...c.row, deleted: true } : { id: `${catScope || 'me-' + (S.uid || 'local')}|${c.builtin}`, group_id: catScope, builtin: c.builtin, name: c.name, icon: c.icon, color: c.color, deleted: true });
+    for (const it of S.items.filter(x => x.cat === c.id)) { it.cat = c.id === 'misc' ? null : 'misc'; await save(it); }
     closeSheet(); renderAll(); toast('🗑️ נמחקה. המשימות עברו ל"שונות"');
   });
 }
-async function saveCat(row) {
+async function saveCat(row, quiet) {
   S.cats = (S.cats || []).filter(r => r.id !== row.id).concat({ ...row, owner: row.owner || S.uid });
   await db.setKV('cats', S.cats);
-  if (S.uid) { try { await sync.saveCategory(row); } catch (x) { toast(x.message, true); } }
-  drawCatCard(); renderAll();
+  if (S.uid && !demo.DEMO) { try { await sync.saveCategory(row); } catch (x) { toast(x.message, true); } }
+  if (!quiet) { drawCatCard(); renderAll(); }
 }
 
 // ---------- 🔔 פעמון: כל מה שקשור אליי, עם מספר של מה שלא נקרא ----------
@@ -2513,7 +2619,7 @@ function openCalEvent(id, t) {
   sheet(`<h3>${evIcon({ kind: it.kind, it, done: !open })} ${esc(it.text)}</h3>
     <p class="note">${it.due ? whenLabel(it) : 'בלי תאריך'}${it.dur ? ' · ⏱️ ' + durLbl(it.dur) : ''}${it.place ? ' · 📍 ' + esc(it.place) : ''}${S.uid ? ' · ' + esc(assignLabel(it)) : ''}</p>
     <div class="three" style="margin-top:14px">${open ? '<button class="btn pri" id="ceDone">✅ עשיתי</button>' : '<button class="btn" disabled>✅ בוצע</button>'}<button class="btn" id="ceEdit">✏️ עריכה</button><button class="btn danger" id="ceDel">🗑️ מחיקה</button></div>
-    ${open ? `<button class="btn" id="ceFocus">⏱️ פוקוס ${FOCUS_MIN} דק׳</button>` : ''}
+    ${open ? `<button class="btn" id="ceFocus">⏱️ טיימר פוקוס</button>` : ''}
     <button class="btn" id="ceSteps">${it.steps?.length ? `📝 שלבים (${stepsLbl(it).slice(3)})` : '✂️ לפרק לשלבים'}</button>
     ${S.uid ? `<button class="btn" id="ceCm">💬 תגובות${it.comments?.length ? ` (${it.comments.length})` : ''}</button>` : ''}
     ${canBump(it) ? `<button class="btn" id="ceBump">🔔 להקפיץ ל${esc(pName(it.forP))}</button>` : ''}
@@ -2525,7 +2631,7 @@ function openCalEvent(id, t) {
   $('#ceBump')?.addEventListener('click', () => { closeSheet(); bumpTask(id); });
   $('#ceCm')?.addEventListener('click', () => openComments(id));
   $('#ceSteps').onclick = () => openSteps(id);
-  $('#ceFocus')?.addEventListener('click', () => startFocus(id));
+  $('#ceFocus')?.addEventListener('click', () => openFocusPick(id));
   $('#ceAssign')?.addEventListener('click', () => openAssign(id));
   $('#ceClose')?.addEventListener('click', closeSheet);
 }
@@ -2701,9 +2807,10 @@ function openEdit(id, focus, forceKind) {
     <div id="eWhen2"><div class="two"><div><label>כמה זמן</label><select id="eDur"><option value="">לא ידוע</option><option value="0">רק תזכורת</option>${[15, 30, 45, 60, 90, 120, 180, 240].map(m => `<option value="${m}">${durLbl(m)}</option>`).join('')}</select></div>
     <div><label>איפה (לא חובה)</label><input id="ePlace" value="${esc(it.place || '')}" list="placeList"><datalist id="placeList">${knownPlaces().concat(C.CITIES).map(x => `<option value="${esc(x)}">`).join('')}</datalist></div></div></div>
     ${it.forP && isKid(it.forP) ? starPicker(it.stars || 0) : ''}
+    ${it.kind !== 'thought' ? `<label>🔢 ספירה: מתוך כמה (למשל 5 פרקים). ריק = בלי</label><div style="display:flex;gap:8px;align-items:center"><input type="number" id="eProg" min="2" max="99" class="num" style="width:90px" value="${it.prog?.of || ''}">${it.prog?.of ? `<span class="note">עכשיו: ${it.prog.n || 0}/${it.prog.of}</span>` : ''}</div>` : ''}
     <label>קטגוריה</label><div id="eCat">${catChips(it.group_id, it.cat || '')}</div>
     ${S.uid ? `<label>שייכת ל</label><div class="set-row" style="border:none;padding:4px 0"><b>${esc(assignLabel(it))}</b><button class="act pri" id="eAssign">📎 שיוך</button></div>` : ''}
-    ${it.kind !== 'thought' ? `<button class="btn" id="eFocus" style="margin-top:12px">⏱️ פוקוס ${FOCUS_MIN} דק׳ על זה</button>` : ''}
+    ${it.kind !== 'thought' ? `<button class="btn" id="eFocus" style="margin-top:12px">⏱️ טיימר פוקוס על זה</button>` : ''}
     <button class="btn" id="eSteps">${it.steps?.length ? `📝 שלבים (${stepsLbl(it).slice(3)})` : '✂️ לפרק לשלבים'}</button>
     ${S.uid ? `<button class="btn" id="eCm">💬 תגובות${it.comments?.length ? ` (${it.comments.length})` : ''}</button>` : ''}
     <button class="btn pri" id="eSave" style="margin-top:16px">💾 שמור</button>
@@ -2721,7 +2828,7 @@ function openEdit(id, focus, forceKind) {
   $('#eCm')?.addEventListener('click', () => openComments(id));
   $('#eSteps').onclick = () => openSteps(id);
   $('#eRecur')?.addEventListener('click', () => openRecur(it));
-  $('#eFocus')?.addEventListener('click', () => startFocus(id));
+  $('#eFocus')?.addEventListener('click', () => openFocusPick(id));
   if (focus === 'date') setTimeout(() => { try { $('#eDate').showPicker?.(); } catch { $('#eDate').focus(); } }, 350);
   $('#eCancel').onclick = closeSheet;
   $('#eDel').onclick = () => askRemove(id);
@@ -2741,6 +2848,7 @@ function openEdit(id, focus, forceKind) {
       }
     } else hasTime = false;
     Object.assign(it, { kind, text, due: due ? due.toISOString() : null, hasTime: kind === 'thought' ? false : hasTime, repeat, askAt: null, askedKey: null });
+    const pv = +($('#eProg')?.value || 0); it.prog = pv > 1 ? { n: Math.min(pv, it.prog?.n || 0), of: pv } : null;
     const dv = $('#eDur').value; it.dur = dv === '' ? null : +dv; it.place = $('#ePlace').value.trim() || null; it.cat = ecat || null; if ($('#stPick')) it.stars = estars || null;
     it.res = C.findRes(text, S.resources); if (!it.res.length) it.res = null;
     await save(it); closeSheet(); renderAll();
