@@ -936,8 +936,10 @@ async function drawDemoCard() {
   el.innerHTML = demo.DEMO
     ? `<h4>🎭 מצב הדגמה <small>פועל</small></h4><p class="note">הנתונים כאן מזויפים, ושום דבר לא נשמר בענן. ביציאה חוזרים הנתונים האמיתיים בדיוק כמו שהיו.</p>
        <div class="two"><button class="btn pri" id="dmTour" style="margin:0">🧭 סיור</button><button class="btn" id="dmOut" style="margin:0">יציאה מההדגמה</button></div>`
-    : `<h4>🎭 מצב הדגמה <small>רק למנהל</small></h4><p class="note">משפחה מזויפת שממלאת כל מסך, סיור מודרך על כל האפשרויות, וכפתור 💬 שאוסף הערות ושולח הכל בבת אחת. הנתונים האמיתיים לא נפגעים.</p>
-       <button class="btn pri" id="dmIn">🎭 להיכנס למצב הדגמה</button>`;
+    : `<h4>🛠️ למנהל האפליקציה <small>רק לך</small></h4><p class="note">משפחה מזויפת שממלאת כל מסך, סיור מודרך על כל האפשרויות, וכפתור 💬 שאוסף הערות ושולח הכל בבת אחת. הנתונים האמיתיים לא נפגעים.</p>
+       <button class="btn pri" id="dmIn">🎭 להיכנס למצב הדגמה</button>
+       <a class="btn" href="https://kesefbekef.github.io/admin/" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;text-decoration:none">📊 לוח בקרה: מי מתקין ומשתמש (כל האפליקציות)</a>
+       <p class="note">נפתח בכסף בכיף. אם צריך — נכנסים שם עם אותו מייל וסיסמה.</p>`;
   $('#dmIn')?.addEventListener('click', () => demo.enter());
   $('#dmTour')?.addEventListener('click', () => demo.startTour(0));
   $('#dmOut')?.addEventListener('click', () => demo.exit());
