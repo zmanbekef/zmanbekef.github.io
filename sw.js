@@ -1,5 +1,5 @@
 // מאפשר לאפליקציה להיפתח גם בלי אינטרנט
-const CACHE = 'zman-20261020085939';
+const CACHE = 'zman-20261020093409';
 const FILES = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/db.js', 'js/parse.js', 'js/hebdate.js', 'js/sync.js', 'js/conflicts.js', 'js/zmanim.js', 'js/help.js', 'js/lock.js', 'js/track.js', 'js/smart.js', 'js/shop.js', 'js/demo.js', 'guide/', 'vendor/supabase.js', 'vendor/qrcode.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png'];
 
@@ -28,13 +28,18 @@ self.addEventListener('push', e => {
   e.waitUntil(self.registration.showNotification(d.title || 'זמן בכיף', {
     body: d.body || '', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: d.tag, dir: 'rtl', lang: 'he',
     data: { url: d.url || './' }, vibrate: [120, 60, 120],
+    ...(d.cat === 'med' ? { actions: [{ action: 'take', title: '✅ לקחתי' }], requireInteraction: true } : {}),
   }));
 });
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  const url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  // 💊 "✅ לקחתי" → ?take= (נרשם מיד). לחיצה על ההתראה עצמה → ?dose= (שואל באפליקציה)
+  let url = new URL(e.notification.data?.url || './', self.registration.scope);
+  const dose = url.searchParams.get('dose');
+  if (dose && e.action === 'take') { url.searchParams.delete('dose'); url.searchParams.set('take', dose); }
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
     const c = list.find(x => x.url.startsWith(self.registration.scope));
-    return c ? c.focus() : self.clients.openWindow(url);
+    if (c && dose) c.postMessage({ type: 'dose', kind: e.action === 'take' ? 'take' : 'dose', id: dose, at: url.searchParams.get('at') });
+    return c ? c.focus() : self.clients.openWindow(url.href);
   }));
 });

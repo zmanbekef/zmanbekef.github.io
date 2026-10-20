@@ -14,6 +14,7 @@ const NOT_VERBS = new Set(['אחותי', 'אשתי', 'בתי', 'סבתי', 'דו
 const MEETING_RE = new RegExp(`${S}(פגישה|פגישת|ישיבה|ישיבת|תור|אסיפה|אסיפת|ראיון|נפגש|נפגשים|להיפגש|להפגש|זום|שיחת זום|כנס)${E}`);
 const THOUGHT_RE = /^(רעיון|מחשבה|פתק|לזכור|אולי)\s*[:\-–]?\s*/; // "הערה" = משוב לאפליקציה
 const TASK_RE = /^(משימה|צריך|אני צריך|אני צריכה|חייב|אני חייב|לא לשכוח|אל תשכח|אל תשכחי)\s*[:\-–]?\s*/;
+export const MED_RE = /(^|\s)(?:ל?כדור|כדורים|ה?תרופה|ה?תרופות|אנטיביוטיקה|ויטמין|טיפות|משחה|סירופ|אקמול|נורופן|אופטלגין|זריקה|זריקת|אינסולין|אינהלציה|משאף|תוסף|ברזל|אומגה|פרוביוטיקה|כמוסה|כמוסות|גלולה|גלולות)(?=\s|$)/;
 const REMIND_RE = /^(תזכיר לי|תזכירי לי|תזכיר|תזכירי|להזכיר לי|תזכורת|הזכר לי)\s*[:\-–]?\s*/;
 
 const pad = n => String(n).padStart(2, '0');
@@ -65,6 +66,38 @@ function extractWhen(s, now) {
     if ((m = cut(new RegExp(`${S}ב(\\d{1,2})\\s+(?:ל|ב)חודש${E}`)))) repeat.dom = +m[1];
     // "כל חודש ב-10" — מספר בלי שעה מפורשת זה יום בחודש
     else if ((m = cut(new RegExp(`${S}ב(\\d{1,2})${E}(?!\\s*(?:בבוקר|בערב|בצהריים|בלילה|אחרי|וחצי|ורבע))`)))) repeat.dom = +m[1];
+  }
+
+  // --- 💊 כמה פעמים ביום / כל X שעות / כל X ימים / חצי שנה / שנה ---
+  let perDay = null, everyH = null, times = null;
+  const NUMS = { 'פעמיים': 2, 'שתי': 2, 'שלוש': 3, 'ארבע': 4, 'חמש': 5, 'שש': 6, 'שתיים': 2, 'שלושה': 3, 'ארבעה': 4 };
+  const num = t => +t || NUMS[t] || null;
+  if ((m = cut(new RegExp(`${S}(?:(\\d|שלוש|ארבע|חמש|שש|שתי)\\s+פעמים|פעמיים)\\s+ב(?:כל\\s+)?יום${E}`)))) { perDay = m[1] ? num(m[1]) : 2; repeat ||= { type: 'daily' }; }
+  if ((m = cut(new RegExp(`${S}כל\\s+(?:(\\d{1,2})\\s+שעות|(שעתיים)|(שלוש|ארבע|חמש|שש|שמונה|שתים עשרה)\\s+שעות)${E}`)))) {
+    everyH = m[1] ? +m[1] : m[2] ? 2 : { 'שלוש': 3, 'ארבע': 4, 'חמש': 5, 'שש': 6, 'שמונה': 8, 'שתים עשרה': 12 }[m[3]];
+    if (everyH < 2 || everyH > 12) everyH = null; else if (!repeat) repeat = { type: 'daily' };
+  }
+  if (!repeat && (m = cut(new RegExp(`${S}(?:ב?כל|פעם ב)\\s*(?:(\\d{1,2})\\s+ימים|(יומיים))${E}`)))) repeat = { type: 'days', n: m[1] ? +m[1] : 2 };
+  else if (!repeat && (m = cut(new RegExp(`${S}(?:ב?כל|פעם ב)\\s*חצי\\s+שנה${E}`)))) repeat = { type: 'months', n: 6 };
+  else if (!repeat && (m = cut(new RegExp(`${S}(?:ב?כל|פעם ב)\\s*(\\d{1,2})\\s+חודשים${E}`)))) repeat = { type: 'months', n: +m[1] };
+  else if (!repeat && (m = cut(new RegExp(`${S}(?:ב?כל|פעם ב)\\s*(?:שנה|שנתיים)${E}|${S}שנתי${E}`)))) repeat = /שנתיים/.test(m[0]) ? { type: 'months', n: 24 } : { type: 'yearly' };
+  // "ב-8 וב-20" / "ב8, 14 ו20" — כמה שעות ביום
+  if (repeat && (m = cut(new RegExp(`${S}ב-?\\d{1,2}(?::\\d{2})?(?:\\s*(?:,|ו|וב|ו-ב)\\s*-?\\d{1,2}(?::\\d{2})?)+${E}(?!\\s*(?:ימים|שעות|דקות|חודשים|לחודש))`)))) {
+    times = [...m[0].matchAll(/(\d{1,2})(?::(\d{2}))?/g)].map(x => [+x[1], +(x[2] || 0)]).filter(([h]) => h <= 23);
+    if (times.length < 2) times = null;
+  }
+  // --- לכמה זמן: "ל-10 ימים", "למשך חודשיים", "לשבוע", "עד 15.11" (רק לקבועים) ---
+  let until = null;
+  if (repeat) {
+    const unit = { 'יום': 1, 'ימים': 1, 'שבוע': 7, 'שבועות': 7, 'חודש': 30, 'חודשים': 30 };
+    const word = { 'יום': [1, 'd'], 'יומיים': [2, 'd'], 'שבוע': [7, 'd'], 'שבועיים': [14, 'd'], 'חודש': [1, 'm'], 'חודשיים': [2, 'm'], 'חצי שנה': [6, 'm'], 'שנה': [12, 'm'] };
+    if ((m = cut(new RegExp(`${S}(?:למשך|במשך|ל)\\s*-?(\\d{1,3})\\s+(ימים|יום|שבועות|חודשים)${E}`)))) until = /חודש/.test(m[2]) ? [+m[1], 'm'] : [+m[1] * unit[m[2]], 'd'];
+    else if ((m = cut(new RegExp(`${S}(?:למשך\\s+|במשך\\s+|ל)(יומיים|שבועיים|חודשיים|חצי שנה|שבוע|חודש|שנה)${E}(?!\\s+(?:הבא|הקרוב))`)))) until = word[m[1]];
+    else if ((m = cut(new RegExp(`${S}עד\\s*(?:ה|ל)?-?(\\d{1,2})[./](\\d{1,2})(?:[./](\\d{2,4}))?${E}`)))) {
+      let y = m[3] ? +m[3] : now.getFullYear(); if (y < 100) y += 2000;
+      const d = new Date(y, +m[2] - 1, +m[1]); if (!m[3] && d < sod(now)) d.setFullYear(y + 1);
+      until = d;
+    }
   }
 
   // --- זמן יחסי: בעוד ---
@@ -163,6 +196,22 @@ function extractWhen(s, now) {
     if (d > 0) dur = d;
   }
 
+  // 💊 השעות של היום: "3 פעמים ביום" → 08:00, 14:00, 20:00; "כל 8 שעות" → מהשעה הראשונה בקפיצות
+  if (repeat && (perDay || everyH || times)) {
+    const first = hour ?? 8;
+    if (!times && everyH) { times = []; for (let h = first * 60 + min; h < first * 60 + min + 24 * 60; h += everyH * 60) times.push([Math.floor(h / 60) % 24, h % 60]); }
+    if (!times && perDay) times = ({ 1: [[first, min]], 2: [[8, 0], [20, 0]], 3: [[8, 0], [14, 0], [20, 0]], 4: [[8, 0], [12, 0], [16, 0], [20, 0]] }[perDay])
+      || Array.from({ length: perDay }, (_, i) => [8 + Math.round(i * 14 / (perDay - 1)), 0]);
+    times = [...new Set(times.map(([h, mm]) => `${pad(h)}:${pad(mm)}`))].sort();
+    if (times.length > 1) repeat.times = times;
+    [hour, min] = times[0].split(':').map(Number);
+  }
+  if (repeat && until) {
+    const start = sod(date || now);
+    let end = until instanceof Date ? until : until[1] === 'd' ? addDays(start, until[0] - 1) : (() => { const x = new Date(start); x.setMonth(x.getMonth() + until[0]); return addDays(x, -1); })();
+    repeat.start = ymd(start); repeat.until = ymd(end);
+  }
+  if (repeat && ['days', 'months', 'yearly'].includes(repeat.type)) repeat.start ||= ymd(sod(date || now));
   return { date, hour, min, repeat, rel, dow, dur, rest: s };
 }
 
@@ -185,23 +234,46 @@ export function isRoshChodesh(d) {
 const CHAG = { Tishri: [1, 10, 15, 22], Nisan: [15, 21], Sivan: [6] };
 export function isErevChag(d) { const h = hebOf(addDays(d, 1)); return !!h && (CHAG[h.month] || []).includes(h.day); }
 
-// מחשב את המועד הבא של משימה קבועה (אחרי from)
+// מחשב את המועד הבא של משימה קבועה (אחרי from). rep.times = כמה שעות ביום, rep.until = היום האחרון (ואז null — נגמר)
+const dayD = t => sod(new Date(t + 'T00:00'));
+function dayOk(rep, d) {
+  const st = rep.start ? dayD(rep.start) : null;
+  if (st && d < st) return false;
+  switch (rep.type) {
+    case 'daily': return true;
+    case 'days': return Math.round((d - (st || d)) / 864e5) % (rep.n || 1) === 0;
+    case 'months': { if (!st) return false; const md = (d.getFullYear() - st.getFullYear()) * 12 + d.getMonth() - st.getMonth(); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); return md % (rep.n || 1) === 0 && d.getDate() === Math.min(st.getDate(), last); }
+    case 'yearly': { if (!st) return false; const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); return d.getMonth() === st.getMonth() && d.getDate() === Math.min(st.getDate(), last); }
+    case 'roshChodesh': return isRoshChodesh(d);
+    case 'erevChag': return isErevChag(d);
+    case 'hebDay': return hebOf(d)?.day === rep.hday;
+    case 'weekly': return !!rep.dows?.includes(d.getDay());
+    case 'monthly': { const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); return d.getDate() === Math.min(rep.dom, last); }
+  }
+  return false;
+}
 export function nextOccurrence(rep, hour, min, from) {
-  const at = d => { const x = new Date(d); x.setHours(hour ?? 9, min ?? 0, 0, 0); return x; };
-  for (let i = 0; i < 400; i++) {
-    const d = addDays(sod(from), i), c = at(d);
-    if (c <= from) continue;
-    if (rep.type === 'daily') return c;
-    if (rep.type === 'roshChodesh') { if (isRoshChodesh(d)) return c; continue; }
-    if (rep.type === 'erevChag') { if (isErevChag(d)) return c; continue; }
-    if (rep.type === 'hebDay') { if (hebOf(d)?.day === rep.hday) return c; continue; }
-    if (rep.type === 'weekly' && rep.dows.includes(d.getDay())) return c;
-    if (rep.type === 'monthly') {
-      const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-      if (d.getDate() === Math.min(rep.dom, last)) return c;
-    }
+  const times = rep.times?.length ? rep.times.map(t => t.split(':').map(Number)) : [[hour ?? 9, min ?? 0]];
+  const end = rep.until ? addDays(dayD(rep.until), 1) : null;
+  const n = ['yearly', 'months'].includes(rep.type) ? 800 : 400;
+  for (let i = 0; i < n; i++) {
+    const d = addDays(sod(from), i);
+    if (end && d >= end) return null;
+    if (!dayOk(rep, d)) continue;
+    for (const [h, m] of times) { const c = new Date(d); c.setHours(h, m, 0, 0); if (c > from) return c; }
   }
   return null;
+}
+// 💊 כמה מנות היו אמורות להיות עד עכשיו, כמה נלקחו, וכמה ימים נשארו
+export function doseStats(it, now = new Date()) {
+  const r = it.repeat; if (!r) return null;
+  const from = new Date(r.start ? dayD(r.start) - 1 : new Date(it.created || now) - 1);
+  let expected = 0, t = from, total = null;
+  for (let i = 0; i < 2000; i++) { const nx = nextOccurrence(r, 9, 0, t); if (!nx || nx > now) break; expected++; t = nx; }
+  if (r.until) { total = expected; let u = t; for (let i = 0; i < 2000; i++) { const nx = nextOccurrence(r, 9, 0, u); if (!nx) break; total++; u = nx; } }
+  const taken = Object.keys(it.doses || {}).length;
+  const daysLeft = r.until ? Math.max(0, Math.round((dayD(r.until) - sod(now)) / 864e5) + 1) : null;
+  return { expected: Math.max(expected, taken), taken, total: total == null ? null : Math.max(total, taken), daysLeft };
 }
 
 // ---------- ניקוי הטקסט ----------
@@ -272,7 +344,10 @@ export function parse(raw, now = new Date()) {
   if (kind === 'thought' && (due || w.repeat)) kind = 'task';
   if (!text) text = tidy(s0.replace(REMIND_RE, ''));
 
-  return { intent: 'item', kind, text, due, hasTime, repeat: w.repeat || null, dur: w.dur ?? null, remind, bare, needsWhen: (remind || kind === 'meeting') && !due };
+  const med = MED_RE.test(' ' + text + ' ') && kind !== 'meeting';
+  if (med && w.repeat) text = text.replace(/^(?:לקחת|ליטול|לתת)\s+/, '');
+  if (med && w.repeat) hasTime = true; // לתרופה תמיד יש שעה (ברירת מחדל 09:00)
+  return { intent: 'item', kind, text, due, hasTime, repeat: w.repeat || null, dur: w.dur ?? null, remind, bare, med, needsWhen: (remind || kind === 'meeting') && !due };
 }
 
 // ---------- התאמה בין "סיימתי X" לבין משימה פתוחה ----------
@@ -305,8 +380,11 @@ export function matchScore(query, text) {
 const gem = n => { const o = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'], t = ['', 'י', 'כ', 'ל']; let s = t[Math.floor(n / 10)] + o[n % 10]; s = s.replace('יה', 'טו').replace('יו', 'טז'); return s.length > 1 ? s.slice(0, -1) + '"' + s.slice(-1) : s + "'"; };
 export function whenLabel(item, now = new Date()) {
   if (item.repeat) {
-    const r = item.repeat, t = item.hasTime ? ' ב-' + hm(new Date(item.due)) : '';
-    if (r.type === 'daily') return 'כל יום' + t;
+    const r = item.repeat, t = (r.times?.length > 1 ? ' ב-' + r.times.join(', ') : item.hasTime && item.due ? ' ב-' + hm(new Date(item.due)) : '') + (r.until ? ` · עד ${+r.until.slice(8)}.${+r.until.slice(5, 7)}` : '');
+    if (r.type === 'daily') return (r.times?.length > 1 ? (r.times.length === 2 ? 'פעמיים ביום' : `${r.times.length} פעמים ביום`) : 'כל יום') + t;
+    if (r.type === 'days') return (r.n === 2 ? 'כל יומיים' : `כל ${r.n} ימים`) + t;
+    if (r.type === 'months') return (r.n === 6 ? 'כל חצי שנה' : r.n === 24 ? 'כל שנתיים' : `כל ${r.n} חודשים`) + t;
+    if (r.type === 'yearly') return 'כל שנה' + t;
     if (r.erev) return 'כל ערב שבת' + t;
     if (r.type === 'roshChodesh') return 'כל ראש חודש' + t;
     if (r.type === 'erevChag') return 'כל ערב חג' + t;

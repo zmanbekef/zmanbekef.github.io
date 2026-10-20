@@ -470,3 +470,24 @@ html.no-anim *,html.no-anim *::before,html.no-anim *::after{animation:none!impor
 .tour-list button.on{border-color:#FBBF24;background:rgba(251,191,36,.12)}
 .no-anim .demo-fab,.no-anim .tour-spot::after{animation:none}
 #tourNext{background:linear-gradient(135deg,#F59E0B,#F97316);color:#1F1300;box-shadow:0 6px 18px rgba(249,115,22,.4)}
+/* 🔁 הקבועים שלי */
+.recur h4{display:flex;align-items:center;gap:8px}
+.rc-row{padding:10px 0;border-bottom:1px solid var(--line)}
+.rc-row:last-child{border-bottom:none}
+.rc-row.off{opacity:.55}
+.rc-top{display:flex;align-items:center;gap:10px}
+.rc-ic{font-size:22px;flex:none;width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,rgba(20,184,166,.3),rgba(34,197,94,.25));display:grid;place-items:center}
+.rc-t{flex:1;min-width:0;cursor:pointer;overflow-wrap:anywhere}
+.rc-t small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.rc-acts{display:flex;gap:4px;flex:none}
+.rc-acts .act{padding:0 8px;min-width:36px}
+.rc-info{display:flex;flex-wrap:wrap;gap:6px 12px;margin:6px 46px 0 0;font-size:13px;color:var(--muted)}
+.rc-left{color:#5EEAD4}
+.rc-bar{margin:6px 46px 0 0;height:6px}
+.rc-bar i{background:linear-gradient(90deg,#14B8A6,#22C55E);transition:width 1s cubic-bezier(.2,.9,.3,1)}
+.rc-times{display:flex;flex-wrap:wrap;gap:6px}
+.rc-time{display:flex;align-items:center;gap:2px}
+.rc-time input{width:110px}
+.no-anim .rc-bar i{transition:none}
+.sheet input[type=checkbox]{width:24px;height:24px;min-height:0;flex:none;padding:0;accent-color:#14B8A6}
+.sheet label.set-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:15px;color:#fff;margin:0}

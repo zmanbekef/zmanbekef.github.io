@@ -79,6 +79,14 @@ export async function ensureSeed() {
   rep('לשלם לגננת', { type: 'weekly', dows: [4] }, 9, 0, { cat: 'kids' });
   rep('ראש חודש: לבדוק את החשבונות', { type: 'roshChodesh' }, 9, 0, { cat: 'home' });
   rep('ערב חג: להזמין פרחים', { type: 'erevChag' }, 10, 0, {});
+  // 💊 תרופות וקבועים שנעצרים לבד
+  const medRep = (text, r, extra) => { const it = add({ text, repeat: r, hasTime: true, med: true, shabbatOk: true, icon: '💊', cat: 'health', created: iso(new Date(r.start + 'T07:00')), ...extra });
+    const doses = {}; let t = new Date(r.start + 'T00:00'), n = 0;
+    for (let i = 0; i < 200; i++) { const d = nextOccurrence(r, 9, 0, t); if (!d || d > now) break; t = d; if (n++ % 7 !== 3) doses[d.toISOString()] = d.toISOString(); }
+    it.doses = doses; it.due = nextOccurrence(r, 9, 0, now)?.toISOString() || null; return it; };
+  medRep('אנטיביוטיקה', { type: 'daily', times: ['08:00', '14:00', '20:00'], start: ymd(addDays(now, -3)), until: ymd(addDays(now, 6)) });
+  medRep('ויטמין D', { type: 'daily', start: ymd(addDays(now, -20)), until: ymd(addDays(now, 40)) });
+  rep('להחליף פילטר במים', { type: 'months', n: 6, start: ymd(addDays(now, 12)) }, 10, 0, { cat: 'home' });
   // ✅ מה שכבר נעשה (בשביל הרצף והסיכומים)
   const doneT = ['לשלם ארנונה', 'לקבוע תור לרופא', 'לתקן את הברז', 'להזמין גז', 'לשלוח מייל לגננת', 'לאסוף חבילה מהדואר'];
   const log = [];
@@ -147,6 +155,7 @@ export const TOUR = [
   { v: 'cal', sel: '#calWho', t: '👀 היומן של אחרים', d: 'רואים גם את היומן של מי שהרשה (למשל משמרות של רותי), בצבע אחר.', run: a => a.calMode('week') },
   { v: 'cal', sel: '.cal-ev, #calBody', t: '🗑️ מחיקה מהירה', d: 'לוחצים על אירוע ← 🗑️ מחיקה. טעיתם? ↩️ בטל.', run: a => a.calMode('day') },
   { v: 'tasks', sel: '#taskList', t: '📋 המשימות', d: 'כל מה שפתוח, לפי זמן. מחליקים משימה הצידה כדי למחוק.' },
+  { v: 'tasks', sel: '#recurCard', t: '🔁 הקבועים שלי · 💊 תרופות', d: '"אנטיביוטיקה 3 פעמים ביום ל־10 ימים" נעצר לבד בסוף. "✅ לקחתי" בהתראה, ותזכורת שוב אחרי 10 דקות.' },
   { v: 'tasks', sel: '#whoFilter', t: '👥 לפי אנשים', d: 'רק שלי, של רותי, של הילדים, או של כולם.' },
   { v: 'tasks', sel: '#catFilter', t: '🏷️ קטגוריות', d: 'בית, עבודה, ילדים, בריאות, ומה שתוסיפו בעצמכם.' },
   { v: 'tasks', sel: '.habits, #taskList', t: '🔥 הרגלים', d: 'מסמנים כל יום ✓, ורואים את הרצף גדל.' },

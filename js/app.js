@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { parse, matchScore, whenLabel, nextOccurrence, sod, addDays, ymd, hm, DAYS } from './parse.js';
+import { parse, matchScore, whenLabel, nextOccurrence, doseStats, MED_RE, sod, addDays, ymd, hm, DAYS } from './parse.js';
 import { hebDate, gematria } from './hebdate.js';
 import * as sync from './sync.js';
 import * as C from './conflicts.js';
@@ -154,11 +154,14 @@ function snoozeDate(preset, it) {
 async function markDone(id, quiet) {
   const it = item(id); if (!it) return toast('המשימה הזאת כבר לא קיימת', true);
   const now = new Date();
+  let ended = false;
   if (it.repeat) {
     it.lastDone = now.toISOString();
+    if (it.due) it.doses = { ...(it.doses || {}), [it.due]: now.toISOString() }; // 💊 איזו מנה נלקחה
     const from = new Date(Math.max(now, new Date(it.due || now)));
     it.due = nextOccurrence(it.repeat, it.hasTime ? new Date(it.due).getHours() : 9, it.hasTime ? new Date(it.due).getMinutes() : 0, from)?.toISOString() || null;
-    it.askAt = null; it.askedKey = null;
+    it.askAt = null; it.askedKey = null; it.nag = 0;
+    if (!it.due && it.repeat.until) { it.status = 'done'; it.doneAt = now.toISOString(); it.ended = true; ended = true; }
   } else { it.status = 'done'; it.doneAt = now.toISOString(); }
   if (it.kind === 'thought') it.kind = 'task';
   it.doneBy = S.myP;
@@ -169,6 +172,12 @@ async function markDone(id, quiet) {
   if (it.by && it.by !== S.uid && S.uid) queueNotify(it.by, 'done', `✅ ${nameIn(S.myP, it.group_id)} סיים/ה`, it.text, it.id + ':' + now.getTime());
   if (S.pending === id) S.pending = null;
   renderAll();
+  if (ended) { await finishedMsg(it); confetti(140); return; }
+  if (!quiet && it.med && it.repeat) {
+    const st = doseStats(it);
+    await bot('💊', 'var(--g3)', `✅ נרשם: ${it.text}`, `${st ? `לקחת ${st.taken}/${st.expected} מנות` : ''}${st?.daysLeft != null ? ` · נשארו ${st.daysLeft} ימים` : ''}${it.due ? `\nהמנה הבאה: ${whenLabel1(it)}` : ''}`, [{ l: '↩️ בטל סימון', op: 'undoDone', a: [id] }]);
+    confetti(40); return;
+  }
   if (!quiet) {
     await think(300);
     const left = top3Items().filter(x => !isDoneToday(x)).length, inTop = S.top3?.ids.includes(id);
@@ -197,9 +206,18 @@ const OPS = {
   quickFor: (title, whoP) => openQuick({ text: title, kind: 'meeting', forP: whoP || null }),
   async bumpDone(id) { const m = item(id); if (!m) return; if (item(m.bump)?.status === 'open') await markDone(m.bump, true); await addReply(m, { r: 'done' }); toast('✅ נשלח שסיימת'); },
   done: id => markDone(id),
+  skipDose: id => skipDose(id),
+  async snoozeMed(id) { const it = item(id); if (!it) return; it.askAt = new Date(Date.now() + NAG_MIN * 60e3).toISOString(); it.askedKey = null; it.nag = Math.min(it.nag || 0, NAG_MAX - 1); await save(it); toast(`⏰ אזכיר שוב בעוד ${NAG_MIN} דקות`); },
+  recur: id => openRecur(S.items.find(x => x.id === id) || null),
+  recurList: () => { showView('tasks'); setTimeout(() => $('#recurCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250); },
   async undoDone(id) {
     const it = item(id); if (!it) return;
-    if (it.repeat) { it.lastDone = null; } else { it.status = 'open'; it.doneAt = null; }
+    if (it.repeat) {
+      it.lastDone = null;
+      const last = Object.entries(it.doses || {}).sort((a, b) => a[1].localeCompare(b[1])).pop();
+      if (last) { delete it.doses[last[0]]; it.due = last[0]; }
+      if (it.ended) { it.status = 'open'; it.ended = false; it.doneAt = null; }
+    } else { it.status = 'open'; it.doneAt = null; }
     const i = S.log.findLastIndex(l => l.itemId === id && l.action === 'done');
     if (i >= 0) { await db.del('log', S.log[i].id); S.log.splice(i, 1); }
     if (it.stars) await uncreditStars(it);
@@ -463,7 +481,8 @@ async function createItem(p, raw) {
     id: db.newId(), kind: p.kind === 'thought' && fp ? 'task' : p.kind, text: p.text || raw, due: p.due ? p.due.toISOString() : null, hasTime: !!p.hasTime,
     repeat: p.repeat, status: 'open', created: new Date().toISOString(), askAt: null, askedKey: null, raw: raw || null,
     forP: p.forP === 'any' ? 'any' : fp?.id || null, forU: fp?.uid || null, private: !!p.private, group_id: p.private ? null : (p.group || null),
-    dur: p.dur ?? null, place: p.place || null, res: p.res?.length ? p.res : null, cat: p.cat || null, steps: p.steps || null, stars: p.stars || null,
+    dur: p.dur ?? (p.med && p.repeat ? 0 : null), place: p.place || null, res: p.res?.length ? p.res : null, cat: p.cat || (p.med && p.repeat ? 'health' : null), steps: p.steps || null, stars: p.stars || null,
+    med: p.med && p.repeat ? true : null, shabbatOk: p.shabbatOk ?? (p.med && p.repeat ? true : null), icon: p.med && p.repeat ? '💊' : p.icon || null,
   };
   S.items.push(it); await save(it); await addLog(it, 'created'); renderAll();
   if (fp?.uid && fp.uid !== S.uid) queueNotify(fp.uid, 'share', `📥 ${nameIn(S.myP, it.group_id)} נתן/ה לך ${it.kind === 'meeting' ? 'פגישה' : 'משימה'}`, `${it.text}${it.due ? ' · ' + whenLabel(it) : ''}`, it.id);
@@ -471,7 +490,7 @@ async function createItem(p, raw) {
   await createReply(it, p, fp);
   const qw = it.due && it.hasTime && it.kind === 'task' && !it.dur ? Z.quietAt(new Date(it.due)) : null;
   if (qw) await bot('🕯️', 'linear-gradient(135deg,#F59E0B,#FACC15)', `זה נופל ב${qw.name}`, `בשבת ובחג אין תזכורות. אזכיר לך ב${qw.name === 'שבת' ? 'מוצאי שבת' : 'מוצאי החג'}, ב-${hm(new Date(qw.end))}`);
-  if (it.kind !== 'thought' && it.hasTime && it.dur == null) await askDur(it);
+  if (it.kind !== 'thought' && it.hasTime && it.dur == null && !it.med) await askDur(it);
   else await scanConflicts();
 }
 
@@ -499,6 +518,12 @@ async function createReply(it, p, fp) {
       { l: 'בעוד שעה', op: 'when', a: [it.id, 'hour'] }, { l: 'הערב', op: 'when', a: [it.id, 'evening'] },
       { l: 'מחר בבוקר', op: 'when', a: [it.id, 'tomorrowMorning'] }, { l: '📅 תאריך אחר', op: 'edit', a: [it.id, 'date'] },
       { l: 'בלי תאריך', op: 'when', a: [it.id, 'none'] }]);
+  }
+  if (it.repeat && (it.med || it.repeat.until || it.repeat.times)) {
+    const st = doseStats(it);
+    return bot(it.med ? '💊' : '🔁', it.med ? 'linear-gradient(135deg,#14B8A6,#22C55E)' : KIND.rep.bg, it.text,
+      `${whenLabel(it)}\n${it.repeat.until ? `⏹️ נעצר לבד אחרי ${+it.repeat.until.slice(8)}.${+it.repeat.until.slice(5, 7)}${st?.total ? ` (${st.total} מנות)` : ''}` : '♾️ ללא סוף'}\n${it.med ? 'בכל פעם תגיע תזכורת עם "✅ לקחתי". לא אישרת? אזכיר שוב אחרי 10 דקות' : 'אזכיר בכל פעם'}${it.med ? '\n🕯️ גם בשבת (אפשר לשנות)' : ''}`,
+      [{ l: '🔁 הקבועים שלי', op: 'recurList', a: [] }, { l: '✏️ לשנות', op: 'recur', a: [it.id] }, undo]);
   }
   const k = it.repeat ? KIND.rep : KIND.task;
   const how = !it.due ? 'בלי תאריך · נמצא במסך המשימות'
@@ -537,11 +562,66 @@ async function askWhich(text, title, list) {
 }
 
 // ---------- מעקב: שאלות "עשית?" כשמגיע הזמן ----------
+// ---------- 💊 קבועים ותרופות ----------
+const whenLabel1 = it => whenLabel({ due: it.due, hasTime: true });
+const NAG_MIN = 10, NAG_MAX = 2;
+async function finishedMsg(it) {
+  const st = doseStats(it);
+  await bot('🎉', 'var(--g3)', it.med ? `🎉 סיימת את הטיפול: ${it.text}` : `🏁 הסתיים: ${it.text}`,
+    `${it.med && st ? `לקחת ${st.taken} מתוך ${st.total ?? st.expected} מנות. ` : ''}התזכורת נעצרה לבד, לא צריך לבטל כלום 💚`, [{ l: '🔁 להמשיך עוד', op: 'recur', a: [it.id] }]);
+  await bell('🎉', it.med ? 'סיימת את הטיפול' : 'קבוע הסתיים', it.text, { item: it.id }, 'end:' + it.id);
+}
+// מנה שלא סומנה לא תוקעת את הבאה, וקבוע שעבר את התאריך האחרון נעצר לבד
+async function advanceRepeats() {
+  const now = new Date();
+  for (const it of S.items.filter(x => x.status === 'open' && x.repeat && x.due)) {
+    if (it.repeat.until && sod(now) > sod(new Date(it.repeat.until + 'T00:00'))) {
+      it.status = 'done'; it.doneAt = now.toISOString(); it.ended = true; await save(it); await finishedMsg(it); continue;
+    }
+    if (!it.med) continue;
+    let d = new Date(it.due), moved = false;
+    for (let i = 0; i < 50; i++) { const nx = nextOccurrence(it.repeat, d.getHours(), d.getMinutes(), d); if (!nx || nx > now) break; d = nx; moved = true; }
+    if (moved) { it.due = d.toISOString(); it.askAt = null; it.askedKey = null; it.nag = 0; await save(it); }
+  }
+}
+// "💊 הגיע הזמן" — ואם לא אישרו, שוב אחרי 10 דקות (עד פעמיים)
+async function medPrompts(list) {
+  const now = new Date();
+  for (const it of list) {
+    const t = new Date(it.askAt || it.due); if (!it.due || t > now || it.askedKey === String(+t)) continue;
+    if (now - new Date(it.due) > 3 * 3600e3) continue; // מנה ישנה מדי — לא מציקים
+    it.askedKey = String(+t);
+    if ((it.nag || 0) < NAG_MAX) { it.nag = (it.nag || 0) + 1; it.askAt = new Date(+now + NAG_MIN * 60e3).toISOString(); } else it.askAt = null;
+    await save(it);
+    const st = doseStats(it);
+    await bot('💊', 'linear-gradient(135deg,#14B8A6,#22C55E)', `💊 ${it.text}`, `${it.nag > 1 ? 'תזכורת שוב: ' : ''}הגיע הזמן (${hm(new Date(it.due))}). לקחת?${st?.daysLeft != null ? `\nנשארו ${st.daysLeft} ימים` : ''}`, [
+      { l: '✅ לקחתי', op: 'done', a: [it.id], pri: true }, { l: `⏰ עוד ${NAG_MIN} דקות`, op: 'snoozeMed', a: [it.id] }, { l: '⏭️ דילגתי', op: 'skipDose', a: [it.id] }]);
+    buzz(Z.quietAt(Date.now()));
+  }
+}
+async function skipDose(id) {
+  const it = item(id); if (!it?.repeat) return; const d = new Date(it.due);
+  it.due = nextOccurrence(it.repeat, d.getHours(), d.getMinutes(), new Date(Math.max(Date.now(), +d)))?.toISOString() || null;
+  it.askAt = null; it.askedKey = null; it.nag = 0;
+  if (!it.due && it.repeat.until) { it.status = 'done'; it.ended = true; it.doneAt = new Date().toISOString(); await save(it); return finishedMsg(it); }
+  await save(it); renderAll(); toast(`⏭️ דילגת. הבאה: ${it.due ? whenLabel1(it) : '—'}`);
+}
+// מההתראה בטלפון: ?take=ID&at=… (לחצו "✅ לקחתי") או ?dose=ID (לחצו על ההתראה)
+async function doseLink(kind, id, at) {
+  const it = item(id); if (!it) return;
+  if (kind === 'take') {
+    if (!at || at === it.due || new Date(at) >= new Date(it.due)) await markDone(id, true);
+    else { it.doses = { ...(it.doses || {}), [at]: new Date().toISOString() }; await save(it); }
+    const st = doseStats(item(id) || it); toast(`💊 נרשם שלקחת${st ? ` · ${st.taken}/${st.expected}` : ''}`); renderAll();
+  } else { showView('chat'); it.askedKey = null; it.askAt = null; await medPrompts([it]); }
+}
 let following = false;
-async function followUps() {
+async function followUps(medOnly) {
   if (following) return; following = true;
   try {
     const now = new Date();
+    await advanceRepeats();
+    if (medOnly) { await medPrompts(tasksOpen().filter(x => x.med && x.shabbatOk)); return; }
     // פגישה בעוד חצי שעה
     await closePastEvents();
     for (const it of tasksOpen().filter(x => x.kind === 'meeting' && x.hasTime && x.due)) {
@@ -552,8 +632,9 @@ async function followUps() {
         buzz();
       }
     }
+    await medPrompts(tasksOpen().filter(x => x.med));
     const due = tasksOpen().filter(x => {
-      if (x.event) return false; // אירוע ביומן — לא שואלים "עשית?"
+      if (x.event || x.med) return false; // אירוע ביומן — לא שואלים "עשית?"; תרופות — למעלה
       const t = x.askAt || (x.hasTime && x.due);
       return t && new Date(t) <= now && x.askedKey !== String(t);
     }).sort((a, b) => new Date(a.askAt || a.due) - new Date(b.askAt || b.due)).slice(0, 3);
@@ -797,8 +878,20 @@ async function queueNotify(toUid, cat, title, body, ref) {
 function desiredSchedule() {
   const uid = S.uid, now = Date.now(), until = now + 14 * 864e5, out = [];
   const add = (key, at, cat, title, body) => { if (+at > now && +at < until) out.push({ id: `${uid}:${key}`, to_uid: uid, at: outOfQuiet(at).toISOString(), cat, title, body, url: APP_URL }); };
+  // 💊 תרופות: כל המנות של 4 הימים הקרובים, וכל אחת עוד פעמיים אחרי 10 דקות. "גם בשבת" — בלי לדחות
+  for (const it of tasksOpen().filter(x => x.med && x.repeat && x.due)) {
+    let t = new Date(+new Date(it.due) - 1);
+    for (let i = 0; i < 40; i++) {
+      const d = nextOccurrence(it.repeat, 9, 0, t); if (!d || +d > now + 4 * 864e5) break; t = d;
+      if (it.doses?.[d.toISOString()]) continue;
+      for (let k = 0; k <= NAG_MAX; k++) {
+        const at = new Date(+d + k * NAG_MIN * 60e3); if (+at <= now) continue;
+        out.push({ id: `${uid}:med:${it.id}:${+d}:${k}`, to_uid: uid, at: (it.shabbatOk ? at : outOfQuiet(at)).toISOString(), cat: 'med', title: `💊 ${k ? 'תזכורת שוב: ' : ''}${it.text}`, body: `${hm(d)} · לחצו "✅ לקחתי"`, url: `${APP_URL}?dose=${encodeURIComponent(it.id)}&at=${encodeURIComponent(d.toISOString())}` });
+      }
+    }
+  }
   for (const it of tasksOpen()) {
-    if (!it.due || !it.hasTime) continue;
+    if (!it.due || !it.hasTime || it.med) continue;
     const t = new Date(it.askAt || it.due);
     if (it.kind === 'meeting') add(`pre:${it.id}`, new Date(+t - 30 * 60e3), 'task', `🔔 בעוד חצי שעה: ${it.text}`, `ב-${hm(t)}${it.place ? ' · ' + it.place : ''}`);
     else add(`task:${it.id}`, t, 'task', `⏰ ${it.text}`, 'הגיע הזמן. עשית את זה?');
@@ -832,7 +925,7 @@ async function syncSchedule() {
 }
 
 // כרטיס ההגדרות
-const PUSH_CATS = [['msg', '💬 הודעות ותגובות'], ['task', '⏰ הגיע הזמן של משימה'], ['conflict', '⚠️ התנגשות'], ['share', '📥 שיתפו איתי / נתנו לי משימה'], ['group', '📎 שיוך לקבוצה'],
+const PUSH_CATS = [['msg', '💬 הודעות ותגובות'], ['task', '⏰ הגיע הזמן של משימה'], ['med', '💊 תרופות וקבועים'], ['conflict', '⚠️ התנגשות'], ['share', '📥 שיתפו איתי / נתנו לי משימה'], ['group', '📎 שיוך לקבוצה'],
   ['bump', '🔔 הקפצות'], ['comment', '💬 תגובות על משימות'], ['done', '✅ מישהו סיים משימה שנתתי'], ['join', '👥 מצטרף חדש לקבוצה'], ['summary', '☀️🌙 סיכומים'], ['shabbat', '🕯️ שבת וחג']];
 function drawMonthly() {
   const el = $('#monthlyRow'); if (!el) return;
@@ -1249,8 +1342,9 @@ function renderTasks() {
     ['📝 בלי תאריך', open.filter(x => !x.due)],
     ['✅ בוצעו היום', S.items.filter(x => pass(x) && x.status !== 'deleted' && isTask(x) && ((x.status === 'done' && isToday(x.doneAt)) || (x.repeat && isToday(x.lastDone))))],
   ].filter(g => g[1].length);
-  $('#taskList').innerHTML = habitsCard() + (groups.length ? groups.map(([h, l]) => `<div class="card"><h4>${h}<small>${l.length}</small></h4>${l.map(rowHtml).join('')}</div>`).join('')
+  $('#taskList').innerHTML = habitsCard() + recurCard() + (groups.length ? groups.map(([h, l]) => `<div class="card"><h4>${h}<small>${l.length}</small></h4>${l.map(rowHtml).join('')}</div>`).join('')
     : `<div class="empty-state"><span class="em">🌤️</span>אין משימות כרגע.<br>כתוב לי בשיחה, למשל: "תזכיר לי מחר ב-10 להתקשר לבנק"</div>`);
+  requestAnimationFrame(() => document.querySelectorAll('.rc-bar i[data-pct]').forEach(b => { b.style.width = b.dataset.pct + '%'; }));
   const lateN = tasksOpen().filter(isLate).length;
   $('#lateBadge').hidden = !lateN; $('#lateBadge').textContent = lateN;
 }
@@ -1544,6 +1638,116 @@ function habitStreak(h) {
     if (habitDone(h, d)) n++; else break;
   }
   return n;
+}
+// ---------- 🔁 הקבועים שלי (כמו "🔁 הקבועים שלי" בכסף בכיף) ----------
+const recurs = () => S.items.filter(x => x.repeat && ['open', 'paused'].includes(x.status) && x.kind !== 'habit' && byMe(x))
+  .sort((a, b) => (b.med ? 1 : 0) - (a.med ? 1 : 0) || (a.status === 'paused') - (b.status === 'paused') || new Date(a.due || 0) - new Date(b.due || 0));
+function recurCard() {
+  const rs = recurs();
+  return `<div class="card recur" id="recurCard"><h4>🔁 הקבועים שלי<button class="act" id="rcNew" style="margin-inline-start:auto">➕ קבוע</button></h4>
+    ${rs.length ? rs.map(it => {
+      const st = doseStats(it), pz = it.status === 'paused';
+      const pct = st?.total ? Math.round(100 * st.expected / st.total) : null;
+      return `<div class="rc-row${pz ? ' off' : ''}" data-rc="${it.id}">
+        <div class="rc-top"><span class="rc-ic">${it.med ? '💊' : esc(it.icon || '🔁')}</span><span class="rc-t" data-rop="edit">${esc(it.text)}<small>${esc(whenLabel(it))}${pz ? ' · ⏸️ מושהה' : it.due ? ' · הבא: ' + esc(whenLabel1(it)) : ''}</small></span>
+        <span class="rc-acts"><button class="act" data-rop="${pz ? 'resume' : 'pause'}" aria-label="${pz ? 'המשך' : 'השהיה'}">${pz ? '▶️' : '⏸️'}</button><button class="act" data-rop="stop" aria-label="עצירה">⏹️</button></span></div>
+        ${it.med || it.repeat.until ? `<div class="rc-info">${st?.daysLeft != null ? `<b class="rc-left">${it.med ? '💊 ' : ''}נשארו ${st.daysLeft === 1 ? 'יום אחד' : st.daysLeft + ' ימים'}</b>` : '<b class="rc-left">♾️ ללא סוף</b>'}${it.med && st?.expected ? `<span>לקחת ${st.taken}/${st.expected} מנות</span>` : ''}${it.med && it.shabbatOk ? '<span>🕯️ גם בשבת</span>' : ''}</div>` : ''}
+        ${pct != null ? `<div class="bar rc-bar"><i data-pct="${pct}" style="width:0"></i></div>` : ''}</div>`; }).join('')
+      : '<p class="note">תרופות ודברים שחוזרים: "אנטיביוטיקה 3 פעמים ביום ל־10 ימים", "ויטמין D כל יום למשך חודשיים", "להחליף פילטר כל חצי שנה". כשנגמר הזמן, זה נעצר לבד.</p>'}</div>`;
+}
+document.addEventListener('click', async e => {
+  if (e.target.closest('#rcNew')) return openRecur(null);
+  const op = e.target.closest('[data-rop]')?.dataset.rop, id = e.target.closest('[data-rc]')?.dataset.rc; if (!op || !id) return;
+  const it = S.items.find(x => x.id === id); if (!it) return;
+  if (op === 'edit') return openRecur(it);
+  if (op === 'pause') { it.status = 'paused'; it.askAt = null; await save(it); renderTasks(); return toast('⏸️ מושהה. התזכורות לא יגיעו עד שתמשיכו'); }
+  if (op === 'resume') { const d = new Date(it.due || Date.now()); it.status = 'open'; it.due = nextOccurrence(it.repeat, d.getHours(), d.getMinutes(), new Date())?.toISOString() || null; it.askedKey = null; it.nag = 0; await save(it); renderTasks(); return toast('▶️ ממשיכים'); }
+  if (op === 'stop') {
+    const b = e.target.closest('button'); if (!tapAgain(b, '⏹️ לעצור?')) return;
+    it.status = 'done'; it.ended = true; it.doneAt = new Date().toISOString(); await save(it); renderAll();
+    toast('⏹️ נעצר', false, { l: '↩️ בטל', run: async () => { it.status = 'open'; it.ended = false; await save(it); renderAll(); } });
+  }
+});
+// טופס "🔁 קבוע": איך חוזר, באילו שעות, לכמה זמן, תרופה, גם בשבת
+const RC_TYPES = [['daily', 'כל יום'], ['days', 'כל כמה ימים'], ['weekly', 'כל שבוע'], ['monthly', 'כל חודש'], ['half', 'כל חצי שנה'], ['yearly', 'כל שנה']];
+const RC_DUR = [['', '♾️ ללא סוף'], ['d10', '10 ימים'], ['d7', 'שבוע'], ['m1', 'חודש'], ['m2', 'חודשיים'], ['custom', '✏️ אחר'], ['date', '📅 עד תאריך']];
+function openRecur(it, pre = {}) {
+  const r = it?.repeat || {};
+  let type = r.type === 'months' && r.n === 6 ? 'half' : ['daily', 'days', 'weekly', 'monthly', 'yearly'].includes(r.type) ? r.type : 'daily';
+  let med = it ? !!it.med : MED_RE.test(' ' + (pre.text || '') + ' ');
+  let shab = it ? it.shabbatOk !== false && (it.shabbatOk || it.med) : med;
+  const dows = new Set(r.dows || [new Date().getDay()]);
+  let times = r.times?.length ? [...r.times] : [it?.due && it.hasTime ? hm(new Date(it.due)) : pre.time || '09:00'];
+  let dur = r.until ? 'date' : '';
+  const start = r.start || ymd(new Date());
+  sheet(`<h3>${it ? '✏️ עריכת קבוע' : '🔁 קבוע חדש'}</h3>
+    <label>מה</label><input id="rcText" value="${esc(it?.text || pre.text || '')}" placeholder="למשל: אנטיביוטיקה / ויטמין D / להחליף פילטר">
+    <label class="set-row" style="cursor:pointer;border:none;padding:8px 0 0"><span>💊 זו תרופה</span><input type="checkbox" id="rcMed" ${med ? 'checked' : ''}></label>
+    <p class="note">בתרופה: כפתור "✅ לקחתי" בהתראה, ותזכורת שוב אחרי 10 דקות אם לא אישרת.</p>
+    <label>איך חוזר</label><div class="chips" id="rcType" style="padding:0;flex-wrap:wrap">${RC_TYPES.map(([k, l]) => `<button class="chip ${k === type ? 'on' : ''}" data-k="${k}">${l}</button>`).join('')}</div>
+    <div id="rcDaysN" hidden><label>כל כמה ימים</label><input type="number" id="rcN" min="2" max="60" value="${r.type === 'days' ? r.n : 2}" class="num" style="width:90px"></div>
+    <div id="rcDows" hidden><label>באילו ימים</label><div class="chips" style="padding:0;flex-wrap:wrap">${DAYS.map((d, i) => `<button class="chip ${dows.has(i) ? 'on' : ''}" data-d="${i}">${d}</button>`).join('')}</div></div>
+    <label>באילו שעות</label><div id="rcTimes" class="rc-times"></div>
+    <div class="chips" style="padding:6px 0 0;flex-wrap:wrap"><button class="chip" id="rcAddT">➕ עוד שעה</button><button class="chip" data-tp="2">פעמיים ביום</button><button class="chip" data-tp="3">3 פעמים</button><button class="chip" data-tp="8h">כל 8 שעות</button></div>
+    <label>מתחיל</label><input type="date" id="rcStart" value="${start}">
+    <label>לכמה זמן</label><div class="chips" id="rcDur" style="padding:0;flex-wrap:wrap">${RC_DUR.map(([k, l]) => `<button class="chip ${k === dur ? 'on' : ''}" data-u="${k}">${l}</button>`).join('')}</div>
+    <div id="rcCustom" class="two" hidden style="margin-top:8px"><input type="number" id="rcCn" min="1" max="365" value="14"><select id="rcCu" class="sel"><option value="d">ימים</option><option value="w">שבועות</option><option value="m">חודשים</option></select></div>
+    <input type="date" id="rcUntil" hidden style="margin-top:8px" value="${r.until || ymd(addDays(new Date(), 9))}">
+    <label class="set-row" style="cursor:pointer;border:none;padding:10px 0 0"><span>🕯️ להזכיר גם בשבת ובחג</span><input type="checkbox" id="rcShab" ${shab ? 'checked' : ''}></label>
+    <p class="note" id="rcSum" style="margin-top:6px"></p>
+    <button class="btn pri" id="rcSave" style="margin-top:12px">💾 שמור</button>
+    ${it ? `<div class="two"><button class="btn" id="rcPause">${it.status === 'paused' ? '▶️ להמשיך' : '⏸️ השהיה'}</button><button class="btn danger" id="rcStop">⏹️ לעצור</button></div>` : '<button class="btn" id="rcCancel">ביטול</button>'}`);
+  const drawTimes = () => {
+    $('#rcTimes').innerHTML = times.map((t, i) => `<span class="rc-time"><input type="time" value="${t}" data-ti="${i}">${times.length > 1 ? `<button class="act" data-tx="${i}" aria-label="הסרת שעה">✕</button>` : ''}</span>`).join('');
+  };
+  const build = () => {
+    const rp = type === 'half' ? { type: 'months', n: 6 } : type === 'days' ? { type: 'days', n: Math.max(2, +$('#rcN').value || 2) } : type === 'weekly' ? { type: 'weekly', dows: [...dows].sort() } : type === 'monthly' ? { type: 'monthly', dom: new Date($('#rcStart').value + 'T00:00').getDate() } : { type };
+    const ts = [...new Set(times.filter(Boolean))].sort(); if (ts.length > 1) rp.times = ts;
+    rp.start = $('#rcStart').value || ymd(new Date());
+    const st = new Date(rp.start + 'T00:00'), cu = $('#rcCu').value, cn = Math.max(1, +$('#rcCn').value || 1);
+    const addM = n => { const x = new Date(st); x.setMonth(x.getMonth() + n); return addDays(x, -1); };
+    const end = dur === 'd10' ? addDays(st, 9) : dur === 'd7' ? addDays(st, 6) : dur === 'm1' ? addM(1) : dur === 'm2' ? addM(2) : dur === 'custom' ? (cu === 'm' ? addM(cn) : addDays(st, cn * (cu === 'w' ? 7 : 1) - 1)) : dur === 'date' ? new Date($('#rcUntil').value + 'T00:00') : null;
+    if (end && !isNaN(end)) rp.until = ymd(end);
+    return { rp, ts };
+  };
+  const summary = () => {
+    $('#rcDaysN').hidden = type !== 'days'; $('#rcDows').hidden = type !== 'weekly';
+    $('#rcCustom').hidden = dur !== 'custom'; $('#rcUntil').hidden = dur !== 'date';
+    const { rp, ts } = build(), [h, m] = ts[0].split(':').map(Number);
+    const fake = { repeat: rp, due: nextOccurrence(rp, h, m, new Date(Math.max(Date.now(), +new Date(rp.start + 'T00:00') - 1)))?.toISOString(), hasTime: true, created: new Date().toISOString() };
+    const stt = doseStats(fake, new Date(rp.start + 'T23:59'));
+    $('#rcSum').textContent = `📋 ${whenLabel(fake)}${fake.due ? ` · הראשון: ${whenLabel1(fake)}` : ''}${rp.until && stt?.total ? ` · סה"כ ${stt.total} פעמים, ואז נעצר לבד` : rp.until ? '' : ' · ללא סוף'}`;
+  };
+  drawTimes(); summary();
+  $('#rcMed').onchange = e => { med = e.target.checked; if (med) $('#rcShab').checked = true; };
+  pickChips($('#rcType'), 'data-k', v => { type = v; summary(); });
+  pickChips($('#rcDur'), 'data-u', v => { dur = v; summary(); });
+  $('#rcDows').onclick = e => { const b = e.target.closest('[data-d]'); if (!b) return; const i = +b.dataset.d; if (dows.has(i) && dows.size > 1) dows.delete(i); else dows.add(i); b.classList.toggle('on', dows.has(i)); summary(); };
+  $('#rcTimes').addEventListener('change', e => { const i = e.target.dataset.ti; if (i != null) { times[+i] = e.target.value; summary(); } });
+  $('#rcTimes').addEventListener('click', e => { const x = e.target.closest('[data-tx]'); if (!x) return; times.splice(+x.dataset.tx, 1); drawTimes(); summary(); });
+  $('#rcAddT').onclick = () => { times.push(times.length ? hm(new Date(new Date('2000-01-01T' + times[times.length - 1]).getTime() + 6 * 3600e3)) : '09:00'); drawTimes(); summary(); };
+  $('#sheet').querySelectorAll('[data-tp]').forEach(b => b.onclick = () => { const v = b.dataset.tp; times = v === '2' ? ['08:00', '20:00'] : v === '3' ? ['08:00', '14:00', '20:00'] : ['08:00', '16:00', '00:00']; drawTimes(); summary(); });
+  ['rcN', 'rcStart', 'rcCn', 'rcCu', 'rcUntil'].forEach(k => $('#' + k).addEventListener('change', summary));
+  $('#rcCancel')?.addEventListener('click', closeSheet);
+  $('#rcPause')?.addEventListener('click', () => { closeSheet(); document.querySelector(`[data-rc="${it.id}"] [data-rop="${it.status === 'paused' ? 'resume' : 'pause'}"]`)?.click() || (it.status === 'paused' ? (it.status = 'open') : (it.status = 'paused'), save(it).then(renderAll)); });
+  $('#rcStop')?.addEventListener('click', async e => { if (!tapAgain(e.currentTarget, '⏹️ בטוח? לחץ שוב')) return; it.status = 'done'; it.ended = true; it.doneAt = new Date().toISOString(); await save(it); closeSheet(); renderAll(); toast('⏹️ נעצר'); });
+  $('#rcSave').onclick = async () => {
+    const text = $('#rcText').value.trim(); if (!text) return toast('צריך לכתוב מה', true);
+    const { rp, ts } = build(), [h, m] = ts[0].split(':').map(Number);
+    if (rp.until && rp.until < rp.start) return toast('התאריך האחרון לפני ההתחלה', true);
+    const due = nextOccurrence(rp, h, m, new Date(Math.max(Date.now() - 60e3, +new Date(rp.start + 'T00:00') - 1)));
+    if (!due) return toast('אין אף פעם בטווח הזה', true);
+    const shabbatOk = $('#rcShab').checked;
+    closeSheet();
+    if (it) {
+      Object.assign(it, { text, repeat: rp, due: due.toISOString(), hasTime: true, med: med || null, shabbatOk, icon: med ? '💊' : it.icon === '💊' ? null : it.icon, askAt: null, askedKey: null, nag: 0 });
+      if (it.status !== 'paused') it.status = 'open'; it.ended = false;
+      await save(it); renderAll(); toast('💾 נשמר');
+    } else {
+      showView('chat');
+      await createItem({ kind: 'task', text, due, hasTime: true, repeat: rp, med, shabbatOk, private: false, group: null, cat: med ? 'health' : null }, null);
+    }
+  };
 }
 function habitsCard() {
   const hs = habits();
@@ -2297,8 +2501,10 @@ function openQuick(pre = {}) {
     <div><label>כמה זמן</label><select id="qDur"><option value="">לא ידוע</option><option value="0">רק תזכורת</option>${[15, 30, 45, 60, 90, 120, 180].map(m => `<option value="${m}">${durLbl(m)}</option>`).join('')}</select></div></div></div>
     ${pre.stars != null ? starPicker(pre.stars) : ''}
     <label>קטגוריה</label><div id="qCat">${catChips(defGroup()?.id || null, '')}</div>
-    <button class="btn pri" id="qSave" style="margin-top:16px">➕ הוסף</button>
+    <button class="btn" id="qRecur" style="margin-top:12px">🔁 קבוע / 💊 תרופה (חוזר, ולכמה זמן)</button>
+    <button class="btn pri" id="qSave" style="margin-top:8px">➕ הוסף</button>
     <button class="btn" id="qCancel">ביטול</button>`);
+  $('#qRecur').onclick = () => openRecur(null, { text: $('#qText').value.trim(), time: $('#qTime').value });
   let qcat = '', qsteps = null, qstars = pre.stars || 0;
   if ($('#stPick')) pickChips($('#stPick'), 'data-n', v => { qstars = +v; });
   pickChips($('#qCat'), 'data-cat', v => { qcat = v; });
@@ -2345,13 +2551,14 @@ function openEdit(id, focus, forceKind) {
   const it = item(id); if (!it) return toast('המשימה הזאת כבר לא קיימת', true);
   let kind = forceKind || it.kind;
   const d = it.due ? new Date(it.due) : null;
-  const rep = it.repeat?.erev ? 'erevShabbat' : it.repeat?.type === 'hebDay' ? '' : it.repeat?.type || '';
+  const custom = it.repeat && (it.repeat.times || it.repeat.until || it.med || ['days', 'months', 'yearly', 'hebDay'].includes(it.repeat.type));
+  const rep = custom ? 'keep' : it.repeat?.erev ? 'erevShabbat' : it.repeat?.type || '';
   sheet(`<h3>✏️ עריכה</h3>
     <label>סוג</label><div class="seg" id="eKind">${[['task', '📌 משימה'], ['meeting', '👥 פגישה'], ['thought', '💭 מחשבה']].map(([k, l]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
     <label>מה</label><input id="eText" value="${esc(it.text)}">${it.raw && it.raw !== it.text ? `<p class="note" style="margin-top:4px">✍️ במקור כתבת: "${esc(it.raw)}"</p>` : ''}
     <div id="eWhen"><div class="two"><div><label>תאריך</label><input type="date" id="eDate" value="${d ? ymd(d) : ''}"></div>
     <div><label>שעה (לא חובה)</label><input type="time" id="eTime" value="${d && it.hasTime ? hm(d) : ''}"></div></div>
-    <label>חוזר</label><select id="eRep"><option value="">לא חוזר</option><option value="daily">כל יום</option><option value="weekly">כל שבוע</option><option value="monthly">כל חודש</option><option value="erevShabbat">🕯️ כל ערב שבת</option><option value="roshChodesh">🌙 כל ראש חודש</option><option value="erevChag">🍷 כל ערב חג</option></select></div>
+    <label>חוזר</label><select id="eRep"><option value="">לא חוזר</option><option value="daily">כל יום</option><option value="weekly">כל שבוע</option><option value="monthly">כל חודש</option><option value="erevShabbat">🕯️ כל ערב שבת</option><option value="roshChodesh">🌙 כל ראש חודש</option><option value="erevChag">🍷 כל ערב חג</option>${custom ? `<option value="keep">🔁 ${esc(whenLabel(it))}</option>` : ''}</select>${it.repeat ? '<button class="chip" id="eRecur" style="margin-top:8px">🔁 הגדרות קבוע (שעות, לכמה זמן, תרופה)</button>' : ''}</div>
     <div id="eWhen2"><div class="two"><div><label>כמה זמן</label><select id="eDur"><option value="">לא ידוע</option><option value="0">רק תזכורת</option>${[15, 30, 45, 60, 90, 120, 180, 240].map(m => `<option value="${m}">${durLbl(m)}</option>`).join('')}</select></div>
     <div><label>איפה (לא חובה)</label><input id="ePlace" value="${esc(it.place || '')}" list="placeList"><datalist id="placeList">${knownPlaces().concat(C.CITIES).map(x => `<option value="${esc(x)}">`).join('')}</datalist></div></div></div>
     ${it.forP && isKid(it.forP) ? starPicker(it.stars || 0) : ''}
@@ -2374,6 +2581,7 @@ function openEdit(id, focus, forceKind) {
   $('#eAssign')?.addEventListener('click', () => openAssign(id));
   $('#eCm')?.addEventListener('click', () => openComments(id));
   $('#eSteps').onclick = () => openSteps(id);
+  $('#eRecur')?.addEventListener('click', () => openRecur(it));
   $('#eFocus')?.addEventListener('click', () => startFocus(id));
   if (focus === 'date') setTimeout(() => { try { $('#eDate').showPicker?.(); } catch { $('#eDate').focus(); } }, 350);
   $('#eCancel').onclick = closeSheet;
@@ -2385,7 +2593,8 @@ function openEdit(id, focus, forceKind) {
     if (kind !== 'thought') {
       if (ds) { due = new Date(ds + 'T00:00'); if (ts) { const [h, m] = ts.split(':'); due.setHours(+h, +m); } }
       else if (ts) { due = sod(new Date()); const [h, m] = ts.split(':'); due.setHours(+h, +m); if (due <= new Date() && !rt) due = addDays(due, 1); }
-      if (rt) {
+      if (rt === 'keep') { repeat = it.repeat; due = it.due ? new Date(it.due) : null; hasTime = it.hasTime; }
+      else if (rt) {
         const base = due || new Date();
         repeat = rt === 'erevShabbat' ? { type: 'weekly', dows: [5], erev: true } : rt === 'roshChodesh' || rt === 'erevChag' ? { type: rt } : rt === 'daily' ? { type: 'daily' } : rt === 'weekly' ? { type: 'weekly', dows: it.repeat?.type === 'weekly' && !ds ? it.repeat.dows : [base.getDay()] } : { type: 'monthly', dom: base.getDate() };
         due = nextOccurrence(repeat, ts ? +ts.split(':')[0] : 9, ts ? +ts.split(':')[1] : 0, new Date(Math.min(sod(base), Date.now()) - 1));
@@ -2863,7 +3072,7 @@ async function tick() {
   await Z.loadCalendar(S.settings.city, S.settings.candleMin);
   renderZman();
   await shabbatAlerts();
-  if (Z.quietAt(Date.now())) return; // 🕯️ מצב שבת/חג: בלי שאלות, סיכומים או התראות
+  if (Z.quietAt(Date.now())) { await followUps(true); return; } // 🕯️ מצב שבת/חג: בלי שאלות, סיכומים או התראות (חוץ מתרופות שסומנו "גם בשבת")
   const m = nowMin();
   if (m >= minutes(S.settings.morning) && m < minutes(S.settings.evening)) await morning();
   if (m >= minutes(S.settings.evening)) await evening();
@@ -3304,6 +3513,9 @@ async function boot() {
   }
   if (RECOVERY && sync.user()) openNewPassword();
   else { setTimeout(deepLinkTask, 800); gcalReturn(); }
+  { const q = new URLSearchParams(location.search), id = q.get('take') || q.get('dose');
+    if (id) { history.replaceState(null, '', location.pathname); setTimeout(() => doseLink(q.get('take') ? 'take' : 'dose', id, q.get('at')), 900); } }
+  navigator.serviceWorker?.addEventListener('message', e => { const d = e.data || {}; if (d.type === 'dose') doseLink(d.kind, d.id, d.at); });
   try { navigator.storage?.persist?.(); } catch { /* */ } // שהדפדפן לא ימחק את הנתונים כשחסר מקום
 })();
 
