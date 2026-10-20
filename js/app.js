@@ -206,7 +206,7 @@ function askRemove(id, after) {
   sheet(`<h3>🗑️ למחוק?</h3><p class="note" style="margin-bottom:14px"><b>${esc(it.text)}</b>${it.due ? ' · ' + esc(whenLabel(it)) : ''}${it.repeat ? '<br>🔁 זה קבוע: כל הפעמים הבאות יימחקו' : ''}<br>אפשר לבטל מיד אחרי (↩️ בטל).</p>
     <button class="btn danger" id="rmYes">🗑️ כן, למחוק</button><button class="btn" id="rmNo">ביטול</button>`);
   $('#rmNo').onclick = closeSheet;
-  $('#rmYes').onclick = async () => { closeSheet(); await OPS.removeNow(id); after?.(); };
+  $('#rmYes').onclick = async () => { await OPS.removeNow(id); closeSheet(); after?.(); };
 }
 // "תמחק את הפגישה עם יוסי" / "בטל את התור לרופא" — מחיקה מהצ'אט (רק בציווי: "לבטל את המנוי" זו משימה)
 const DEL_RE = /^(?:תמחק|תמחקי|מחק|מחקי|תבטל|תבטלי|בטל|בטלי|תוריד|תורידי|תסיר|תסירי)\s+(?:לי\s+)?(?:את\s+)?(.+?)\s*[.!?]*$/;
@@ -543,7 +543,7 @@ async function createItem(p, raw) {
 }
 
 async function createReply(it, p, fp) {
-  const edit = { l: '✏️ תקן', op: 'edit', a: [it.id] }, undo = { l: '↩️ בטל', op: 'undo', a: [it.id] }, assign = { l: '📎 שיוך', op: 'assign', a: [it.id] };
+  const edit = { l: '✏️ תקן', op: 'edit', a: [it.id] }, undo = { l: '🗑️ מחיקה', op: 'remove', a: [it.id] }, assign = { l: '📎 שיוך', op: 'assign', a: [it.id] };
   const extra = [S.uid ? gLabel(groupOf(it.group_id)) : '', it.dur ? `⏱️ ${durLbl(it.dur)}` : '', it.place ? `📍 ${it.place}` : '', ...(it.res || []).map(r => resOf(r)?.e + ' ' + resOf(r)?.n)].filter(Boolean).join(' · ');
   if (it.forP === 'any') return bot('👨‍👩‍👧', 'var(--g6)', `מישהו מאיתנו: ${it.text}`, `${it.due ? whenLabel(it) : 'בלי תאריך'}${extra ? ' · ' + extra : ''}\nאבדוק שלפחות אחד מכם פנוי, ואתריע אם לא`, [assign, edit, undo]);
   if (fp) {
@@ -1416,7 +1416,7 @@ function rowHtml(it) {
   const tint = S.uid ? colorOf(it.forP && it.forP !== 'any' ? it.forP : ownerP(it) || S.myP) : null;
   return `<div class="row${d}" data-id="${it.id}"${tint ? ` style="--pc:${tint}"` : ''}><button class="cb" data-op="check">${d ? '✓' : ''}</button>${warn}
     <div class="nm" data-op="edit">${esc(it.text)}${meta ? `<small class="${late ? 'late' : ''}">${esc(meta)}</small>` : ''}</div>
-    ${it.comments?.length ? `<button class="star on cm-n" data-op="comments" aria-label="${it.comments.length} תגובות">💬<small>${it.comments.length}</small></button>` : ''}${canBump(it) ? '<button class="star on" data-op="bump" aria-label="להקפיץ" style="font-size:16px">🔔</button>' : ''}${S.uid && it.status === 'open' ? '<button class="star on" data-op="assign" aria-label="שיוך" style="font-size:16px">📎</button>' : ''}${it.status === 'open' && it.kind === 'task' && isMine(it) ? `<button class="star${star ? ' on' : ''}" data-op="star" aria-label="לחשובים של היום">⭐</button>` : ''}</div>`;
+    ${it.comments?.length ? `<button class="star on cm-n" data-op="comments" aria-label="${it.comments.length} תגובות">💬<small>${it.comments.length}</small></button>` : ''}${canBump(it) ? '<button class="star on" data-op="bump" aria-label="להקפיץ" style="font-size:16px">🔔</button>' : ''}${S.uid && it.status === 'open' ? '<button class="star on" data-op="assign" aria-label="שיוך" style="font-size:16px">📎</button>' : ''}${it.status === 'open' && it.kind === 'task' && isMine(it) ? `<button class="star${star ? ' on' : ''}" data-op="star" aria-label="לחשובים של היום">⭐</button>` : ''}${byMe(it) ? '<button class="star del-x" data-op="del" aria-label="מחיקה">🗑️</button>' : ''}</div>`;
 }
 function renderTasks() {
   const now = new Date(), t0 = sod(now), t1 = addDays(t0, 1), t2 = addDays(t0, 2);
@@ -1474,6 +1474,7 @@ $('#taskList').addEventListener('click', e => {
   if (op === 'check') return isDoneToday(it) && !(it.repeat && it.status === 'open' && !isToday(it.lastDone)) ? OPS.undoDone(id) : markDone(id, true).then(() => toast('✅ ' + it.text));
   if (op === 'edit') return openEdit(id);
   if (op === 'star') return OPS.star(id);
+  if (op === 'del') return askRemove(id);
   if (op === 'conf') return openConflict(id);
   if (op === 'assign') return openAssign(id);
   if (op === 'bump') return bumpTask(id);
@@ -2556,29 +2557,32 @@ $('#thoughtList').addEventListener('click', e => {
 });
 
 // ---------- חלון עריכה ----------
-// ↩️ כפתור "חזור" (אנדרואיד): סוגר חלון → חוזר למסך הקודם → רק מהשיחה יוצאים מהאפליקציה
-const NAV = { depth: 0, target: null };
-try { history.replaceState({ v: 'chat', z: 0 }, ''); } catch { /* */ }
+// ↩️ כפתור "חזור" (אנדרואיד): סוגר חלון → חוזר למסך הקודם → רק מהשיחה יוצאים מהאפליקציה.
+// בדפדפן יש רק רשומה אחת "מלכודת" מעל הבסיס, כל עוד לא נמצאים בשיחה או שיש חלון פתוח. את המסכים הקודמים זוכרים כאן.
+const NAV = { stack: [], trapped: false, ignore: 0 };
 const curView = () => document.querySelector('.view.on')?.id?.slice(2) || 'chat';
-const navPush = st => { try { history.pushState({ ...st, z: ++NAV.depth }, ''); } catch { /* */ } };
-const navBack = n => { if (n <= 0) return; NAV.depth -= n; NAV.target = NAV.depth; history.go(-n); };
-function sheet(html) { const was = $('#sheetBg').classList.contains('on'); $('#sheet').innerHTML = html; $('#sheetBg').classList.add('on'); if (!was) navPush({ v: curView(), sheet: 1 }); }
-function closeSheet() {
-  const on = $('#sheetBg').classList.contains('on');
-  $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = '';
-  if (on && history.state?.sheet) navBack(1);
+const sheetOpen = () => $('#sheetBg').classList.contains('on');
+function syncTrap() {
+  const want = curView() !== 'chat' || sheetOpen() || ($('#tour') && !$('#tour').hidden) || !$('#focus').hidden;
+  try {
+    if (want && !NAV.trapped) { history.pushState({ trap: 1 }, ''); NAV.trapped = true; }
+    else if (!want && NAV.trapped && history.state?.trap) { NAV.ignore++; NAV.trapped = false; history.back(); }
+  } catch { /* */ }
 }
-addEventListener('popstate', e => {
-  const z = e.state?.z || 0;
-  if (NAV.target != null) { // אנחנו ביקשנו לחזור (סגירת חלון / מעבר לשיחה) — לא לחיצה של המשתמש
-    if (z > NAV.target) return;
-    const mine = z === NAV.target; NAV.target = null; if (mine) return;
-  }
-  NAV.depth = z;
-  if ($('#sheetBg').classList.contains('on')) { $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = ''; return; }
-  if (!$('#tour')?.hidden) { $('#tourX')?.click(); return; }
-  showView(e.state?.v || 'chat', true);
+addEventListener('popstate', () => {
+  if (NAV.ignore) { NAV.ignore--; return syncTrap(); }
+  NAV.trapped = false;
+  if (sheetOpen()) { $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = ''; }
+  else if ($('#tour') && !$('#tour').hidden) $('#tourX')?.click();
+  else if (!$('#focus').hidden) $('#fcHide')?.click();
+  else if (curView() !== 'chat') showView(NAV.stack.pop() || 'chat', true);
+  syncTrap();
 });
+// הלחיצה הראשונה באפליקציה "מפעילה" את כפתור חזור (דפדפנים מדלגים על רשומות שנוספו בלי לחיצה)
+addEventListener('pointerdown', () => syncTrap(), { capture: true });
+function sheet(html) { $('#sheet').innerHTML = html; $('#sheetBg').classList.add('on'); syncTrap(); }
+function closeSheet() { $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = ''; setTimeout(syncTrap, 0); }
+
 $('#sheetBg').addEventListener('click', e => { if (e.target.id === 'sheetBg') closeSheet(); });
 
 // משיכה כלפי מטה: בחלון — סוגרת אותו; במסך (משימות, מחשבות, הגדרות) — חוזרת לשיחה
@@ -2832,7 +2836,8 @@ function openPicker(mustSwapFor) {
 
 // ---------- ניווט ותצוגה ----------
 function showView(v, fromPop) {
-  if (!fromPop && v !== curView()) { if (v === 'chat') navBack(NAV.depth); else if (['thoughts', 'shop', 'kids', 'tasks'].includes(v) && ['thoughts', 'shop', 'kids', 'tasks'].includes(curView())) { try { history.replaceState({ v, z: NAV.depth }, ''); } catch { /* */ } } else navPush({ v }); }
+  const from = curView(), tabs = ['thoughts', 'shop', 'kids', 'tasks'];
+  if (!fromPop && v !== from) { if (v === 'chat') NAV.stack = []; else if (!(tabs.includes(v) && tabs.includes(from))) NAV.stack.push(from); }
   if (v === 'settings') { drawDemoCard(); renderProfile(); drawPush(); drawLockCard(); drawMonthly(); drawCalCard(); drawCatCard(); drawViewCard(); drawGcal(); }
   document.querySelectorAll('nav button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === (['thoughts', 'shop', 'kids'].includes(v) ? 'tasks' : v)));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
@@ -2842,6 +2847,7 @@ function showView(v, fromPop) {
   $('#composer').style.display = v === 'chat' ? 'flex' : 'none';
   if (v === 'chat') { renderChat(); $('#main').scrollTop = $('#main').scrollHeight; } else $('#main').scrollTop = 0;
   if (v === 'cal') { CAL.jump = true; renderCal(true); }
+  setTimeout(syncTrap, 0);
 }
 document.querySelectorAll('.tabs2').forEach(t => t.onclick = e => { const b = e.target.closest('[data-v]'); if (b) showView(b.dataset.v); });
 document.querySelectorAll('nav button[data-v]').forEach(b => b.onclick = () => showView(b.dataset.v));

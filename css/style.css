@@ -514,3 +514,4 @@ html.no-anim *,html.no-anim *::before,html.no-anim *::after{animation:none!impor
 .no-anim .t3fold{animation:none}
 .t3fold{height:40px;padding:0 16px;border-radius:20px;font-size:15px;top:10px}.t3fold b{font-size:18px}
 .hero.fold{padding:16px 16px;min-height:58px}.hero.fold .t3h{padding-left:110px}
+.row .del-x{font-size:15px;opacity:.75}
