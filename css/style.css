@@ -579,3 +579,4 @@ html.no-anim *,html.no-anim *::before,html.no-anim *::after{animation:none!impor
 .pl-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .pl-head h3{margin:0;flex:1}
 .pl-head .pl-ic{width:44px;height:44px;font-size:22px}
+.plus-sec{font-size:13px;font-weight:700;color:var(--muted);margin:2px 0 8px}.plus-grid.small .plus-tile{font-size:12px;padding:10px 3px;line-height:1.2;text-align:center}.plus-grid.small .pl-ic{width:40px;height:40px;font-size:20px;border-radius:13px}

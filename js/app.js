@@ -2829,11 +2829,34 @@ const PLUS = [
   ['kid', '⭐', 'מטלה לילד', 'linear-gradient(135deg,#FACC15,#FB923C)'],
   ['tpl', '📋', 'מתבנית', 'linear-gradient(135deg,#64748B,#475569)'],
 ];
+const PLUS_GO = [
+  ['cal', '📅', 'יומן', 'linear-gradient(135deg,#3B82F6,#6366F1)'],
+  ['tasks', '📋', 'המשימות', 'linear-gradient(135deg,#7C3AED,#A855F7)'],
+  ['shop', '🛒', 'רשימות קניות', 'linear-gradient(135deg,#22C55E,#14B8A6)'],
+  ['recur', '🔁', 'הקבועים שלי', 'linear-gradient(135deg,#14B8A6,#0EA5E9)'],
+  ['habits', '🔥', 'ההרגלים', 'linear-gradient(135deg,#F97316,#EF4444)'],
+  ['kids', '⭐', 'הילדים', 'linear-gradient(135deg,#FACC15,#FB923C)'],
+  ['thoughts', '💭', 'המחשבות', 'linear-gradient(135deg,#A855F7,#EC4899)'],
+  ['kesef', '💰', 'כסף בכיף (תקציב וחסכונות)', 'linear-gradient(135deg,#16A34A,#65A30D)'],
+  ['settings', '⚙️', 'הגדרות', 'linear-gradient(135deg,#64748B,#334155)'],
+  ['help', '❓', 'עזרה', 'linear-gradient(135deg,#0EA5E9,#2563EB)'],
+];
 function openPlus() {
   const kids = kidsList();
   sheet(`<h3>➕ מה מוסיפים?</h3>
     <div class="plus-grid">${PLUS.filter(([k]) => k !== 'kid' || kids.length).map(([k, ic, l, bg], i) => `<button class="plus-tile" data-pl="${k}" style="--d:${i * 40}ms"><span class="pl-ic" style="background:${bg}">${ic}</span>${l}</button>`).join('')}</div>
+    <div class="plus-sec">🧭 לעבור ל…</div>
+    <div class="plus-grid small">${PLUS_GO.filter(([k]) => k !== 'kids' || kids.length).map(([k, ic, l, bg], i) => `<button class="plus-tile" data-go="${k}" style="--d:${(i + 11) * 30}ms"><span class="pl-ic" style="background:${bg}">${ic}</span>${l}</button>`).join('')}</div>
     <p class="note plus-tip">💡 אפשר גם פשוט לכתוב או להגיד בשיחה, למשל "תזכיר לי מחר ב-10 להתקשר לבנק"</p>`);
+  $('#sheet').querySelector('.plus-grid.small').onclick = e => {
+    const k = e.target.closest('[data-go]')?.dataset.go; if (!k) return;
+    if (k === 'kesef') { closeSheet(); return window.open(KESEF_URL, '_blank', 'noopener'); }
+    if (k === 'help') return openHelp();
+    closeSheet();
+    if (k === 'recur') return OPS.recurList();
+    if (k === 'habits') { showView('tasks'); return setTimeout(() => $('.habits')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250); }
+    showView(k);
+  };
   $('#sheet').querySelector('.plus-grid').onclick = e => {
     const k = e.target.closest('[data-pl]')?.dataset.pl; if (!k) return;
     if (['task', 'remind', 'meeting', 'thought'].includes(k)) return openQuick({ mode: k, kind: k === 'remind' ? 'task' : k });
@@ -3841,7 +3864,9 @@ async function boot() {
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js').then(r => r.update?.()).catch(() => {});
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) toast('✨ יש גרסה חדשה', false, { l: '🔄 לעדכן', run: () => location.reload() }); });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!hadController) return; if (document.hidden) S.reloadOnShow = true; else toast('✨ יש גרסה חדשה', false, { l: '🔄 לעדכן', run: () => location.reload() }); });
+  // בכל חזרה לאפליקציה: בודקים אם יש גרסה חדשה. אם התעדכנה כשהייתה ברקע — נטענת מחדש לבד
+  document.addEventListener('visibilitychange', () => { if (document.hidden) return; if (S.reloadOnShow && !sheetOpen()) return location.reload(); navigator.serviceWorker.getRegistration().then(r => r?.update()).catch(() => {}); });
 }
 
 // לבדיקות מהדפדפן
