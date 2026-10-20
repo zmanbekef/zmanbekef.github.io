@@ -580,3 +580,16 @@ html.no-anim *,html.no-anim *::before,html.no-anim *::after{animation:none!impor
 .pl-head h3{margin:0;flex:1}
 .pl-head .pl-ic{width:44px;height:44px;font-size:22px}
 .plus-sec{font-size:13px;font-weight:700;color:var(--muted);margin:2px 0 8px}.plus-grid.small .plus-tile{font-size:12px;padding:10px 3px;line-height:1.2;text-align:center}.plus-grid.small .pl-ic{width:40px;height:40px;font-size:20px;border-radius:13px}
+/* 🖼️ תמונת פרופיל */
+.face-img{font-style:normal;display:inline-grid;place-items:center;overflow:hidden;border-radius:50%;vertical-align:middle}
+.face-img img{width:100%;height:100%;object-fit:cover;display:block}
+.me-face{position:relative;overflow:visible;padding:0}
+.me-face .face-img{width:100%;height:100%;font-size:32px}
+.me-cam{position:absolute;bottom:-4px;left:-4px;font-style:normal;font-size:13px;background:var(--card2);border:1px solid var(--line);border-radius:50%;width:24px;height:24px;display:grid;place-items:center}
+.face-sm .face-img{width:24px;height:24px;font-size:16px}
+.ph-box{display:flex;gap:14px;align-items:center}
+.ph-big{width:96px;height:96px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:48px;background:var(--card2);border:3px solid transparent;background:linear-gradient(var(--card2),var(--card2)) padding-box,conic-gradient(#06B6D4,#7C3AED,#EC4899,#F97316,#06B6D4) border-box;overflow:hidden}
+.ph-big .face-img{width:100%;height:100%;font-size:48px}
+.ph-acts{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+.ph-btn{margin:0!important;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.sheet label.ph-btn{display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;margin:0;min-height:46px;font-weight:700}

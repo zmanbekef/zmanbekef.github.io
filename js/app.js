@@ -38,11 +38,11 @@ const whoIn = (pid, gid) => { if (pid === 'any') return '👨‍👩‍👧 מי
 function buildPeople() {
   const list = [];
   const pr = sync.myProfile();
-  if (S.uid) list.push({ id: 'u:' + S.uid, uid: S.uid, name: pr?.full_name || 'אני', e: pr?.emoji || '🙂', nicks: [] });
+  if (S.uid) list.push({ id: 'u:' + S.uid, uid: S.uid, name: pr?.full_name || 'אני', e: pr?.emoji || '🙂', photo: pr?.photo || null, nicks: [] });
   for (const g of sync.myGroups()) for (const m of g.members) {
     const id = m.user_id ? 'u:' + m.user_id : 'm:' + m.id;
     let p = list.find(x => x.id === id);
-    if (!p) { p = { id, uid: m.user_id || null, name: m.user_id ? (m.profile?.full_name || m.nickname) : m.nickname, e: m.profile?.emoji || m.emoji || '🙂', nicks: [] }; list.push(p); }
+    if (!p) { p = { id, uid: m.user_id || null, name: m.user_id ? (m.profile?.full_name || m.nickname) : m.nickname, e: m.profile?.emoji || m.emoji || '🙂', photo: m.profile?.photo || null, nicks: [] }; list.push(p); }
     if (m.color && !p.color) p.color = m.color;
     p.nicks.push({ g: g.id, nick: m.nickname, role: m.role, mid: m.id, kind: g.kind });
   }
@@ -57,6 +57,25 @@ const byMe = it => !it.by || it.by === S.uid;
 const isMine = it => !S.uid || (it.forP === 'any' ? (!it.group_id || groupOf(it.group_id)?.myRole !== 'child') : it.forP ? it.forP === S.myP || (!person(it.forP)?.uid && byMe(it)) : byMe(it));
 const tasksOpen = () => allTasksOpen().filter(isMine);
 const who = pid => whoIn(pid, null);
+
+// 🖼️ פרצוף: תמונה אם יש, אחרת האימוג'י. התמונה נטענת אחרי הציור (hydrateFaces)
+const faceHtml = p => p?.photo && p.uid && !demo.DEMO ? `<i class="face-img" data-av="${esc(p.uid)}" data-v="${esc(p.photo)}">${esc(p.e || '🙂')}</i>` : esc(p?.e || '🙂');
+async function hydrateFaces(root = document) {
+  for (const el of root.querySelectorAll('[data-av]:not([data-done])')) {
+    el.dataset.done = '1';
+    const url = await sync.photoUrl(el.dataset.av, el.dataset.v);
+    if (url) { const img = new Image(); img.alt = ''; img.onload = () => { el.textContent = ''; el.append(img); el.classList.add('has'); }; img.src = url; }
+  }
+}
+// הקטנה לפני העלאה: ריבוע 320×320, JPEG — בערך 20–40KB
+async function shrinkPhoto(file) {
+  const bmp = await createImageBitmap(file).catch(() => null);
+  const src = bmp || await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
+  const w = src.width, h = src.height, side = Math.min(w, h), N = 320;
+  const cv = document.createElement('canvas'); cv.width = cv.height = N;
+  cv.getContext('2d').drawImage(src, (w - side) / 2, (h - side) / 2, side, side, 0, 0, N, N);
+  return new Promise(r => cv.toBlob(r, 'image/jpeg', 0.82));
+}
 
 // ---------- שמירה ----------
 async function save(it) {
@@ -682,10 +701,10 @@ async function followUps(medOnly) {
   try {
     const now = new Date();
     await advanceRepeats();
-    if (medOnly) { await medPrompts(tasksOpen().filter(x => x.med && x.shabbatOk)); return; }
-    // פגישה בעוד חצי שעה
-    await closePastEvents();
-    for (const it of tasksOpen().filter(x => x.kind === 'meeting' && x.hasTime && x.due)) {
+    // 🕯️ בשבת/חג (medOnly): רק מה שסומן "גם בשבת ובחג"
+    const ok = x => !medOnly || x.shabbatOk;
+    if (!medOnly) await closePastEvents();
+    for (const it of tasksOpen().filter(x => x.kind === 'meeting' && x.hasTime && x.due && ok(x))) {
       const d = new Date(it.due), key = 'pre:' + it.due;
       if (d > now && d - now <= 30 * 60e3 && it.askedKey !== key) {
         it.askedKey = key; await save(it);
@@ -693,9 +712,9 @@ async function followUps(medOnly) {
         buzz();
       }
     }
-    await medPrompts(tasksOpen().filter(x => x.med));
+    await medPrompts(tasksOpen().filter(x => x.med && ok(x)));
     const due = tasksOpen().filter(x => {
-      if (x.event || x.med) return false; // אירוע ביומן — לא שואלים "עשית?"; תרופות — למעלה
+      if (x.event || x.med || !ok(x)) return false; // אירוע ביומן — לא שואלים "עשית?"; תרופות — למעלה
       const t = x.askAt || (x.hasTime && x.due);
       return t && new Date(t) <= now && x.askedKey !== String(t);
     }).sort((a, b) => new Date(a.askAt || a.due) - new Date(b.askAt || b.due)).slice(0, 3);
@@ -984,7 +1003,7 @@ async function queueNotify(toUid, cat, title, body, ref) {
 // מה צריך לקפוץ לי בטלפון בשבועיים הקרובים: "עשית?", פגישות, שבת, סיכומים
 function desiredSchedule() {
   const uid = S.uid, now = Date.now(), until = now + 14 * 864e5, out = [];
-  const add = (key, at, cat, title, body) => { if (+at > now && +at < until) out.push({ id: `${uid}:${key}`, to_uid: uid, at: outOfQuiet(at).toISOString(), cat, title, body, url: APP_URL }); };
+  const add = (key, at, cat, title, body, shab) => { if (+at > now && +at < until) out.push({ id: `${uid}:${key}`, to_uid: uid, at: (shab ? new Date(at) : outOfQuiet(at)).toISOString(), cat, title, body, url: APP_URL }); };
   // 💊 תרופות: כל המנות של 4 הימים הקרובים, וכל אחת עוד פעמיים אחרי 10 דקות. "גם בשבת" — בלי לדחות
   for (const it of tasksOpen().filter(x => x.med && x.repeat && x.due)) {
     let t = new Date(+new Date(it.due) - 1);
@@ -1000,8 +1019,8 @@ function desiredSchedule() {
   for (const it of tasksOpen()) {
     if (!it.due || !it.hasTime || it.med) continue;
     const t = new Date(it.askAt || it.due);
-    if (it.kind === 'meeting') add(`pre:${it.id}`, new Date(+t - 30 * 60e3), 'task', `🔔 בעוד חצי שעה: ${it.text}`, `ב-${hm(t)}${it.place ? ' · ' + it.place : ''}`);
-    else add(`task:${it.id}`, t, 'task', `⏰ ${it.text}`, 'הגיע הזמן. עשית את זה?');
+    if (it.kind === 'meeting') add(`pre:${it.id}`, new Date(+t - 30 * 60e3), 'task', `🔔 בעוד חצי שעה: ${it.text}`, `ב-${hm(t)}${it.place ? ' · ' + it.place : ''}`, it.shabbatOk);
+    else add(`task:${it.id}`, t, 'task', `⏰ ${it.text}`, 'הגיע הזמן. עשית את זה?', it.shabbatOk);
   }
   for (const w of Z.windows().filter(w => +new Date(w.start) > now).slice(0, 3))
     for (const off of S.settings.shabbatAlerts || [])
@@ -2765,6 +2784,7 @@ function openQuick(pre = {}) {
     <div><label>כמה זמן</label><select id="qDur"><option value="">לא ידוע</option><option value="0">רק תזכורת</option>${[15, 30, 45, 60, 90, 120, 180].map(m => `<option value="${m}">${durLbl(m)}</option>`).join('')}</select></div></div></div>
     ${pre.stars != null ? starPicker(pre.stars) : ''}
     <label>קטגוריה</label><div id="qCat">${catChips(defGroup()?.id || null, '')}</div>
+    <label class="set-row" id="qShabRow" style="cursor:pointer;border:none;padding:8px 0 0"><span>🕯️ להזכיר גם בשבת ובחג</span><input type="checkbox" id="qShab"></label>
     <button class="btn" id="qRecur" style="margin-top:12px" ${focus === 'thought' ? 'hidden' : ''}>🔁 חוזר? (כל יום / שבוע…, ולכמה זמן)</button>
     <button class="btn pri" id="qSave" style="margin-top:8px">➕ הוסף</button>
     <button class="btn" id="qCancel">ביטול</button>`);
@@ -2799,7 +2819,7 @@ function openQuick(pre = {}) {
   if (focus) $('#qText').placeholder = PH[focus];
   if (focus === 'remind') $('#qTime').previousElementSibling.textContent = '⏰ באיזו שעה להזכיר';
   if (focus === 'remind') { $('#qTime').value ||= hm(new Date(Math.ceil((Date.now() + 30 * 60e3) / 9e5) * 9e5)); $('#qDur').value = '0'; }
-  if (focus === 'thought') $('#qWhen').style.display = 'none';
+  if (focus === 'thought') { $('#qWhen').style.display = 'none'; $('#qShabRow').hidden = true; }
   setTimeout(() => $('#qText')?.focus(), 300);
   $('#qSave').onclick = async () => {
     const text = $('#qText').value.trim(); if (!text) return toast('צריך לכתוב מה', true);
@@ -2811,7 +2831,7 @@ function openQuick(pre = {}) {
     const dv = $('#qDur').value;
     const back = pre.day ? 'cal' : pre.stars != null ? 'kids' : 'chat';
     closeSheet(); if (back === 'chat') showView('chat');
-    await createItem({ kind, text, due, hasTime: !!(due && ts), repeat: null, dur: dv === '' ? null : +dv, forP: pre.forP && pre.forP !== S.myP ? pre.forP : null, private: false, group: pre.forP && pre.forP !== S.myP ? sharedGroup(pre.forP)?.id || null : null, cat: qcat || null, steps: qsteps ? mkSteps(qsteps) : null, stars: qstars || null }, null);
+    await createItem({ kind, text, due, hasTime: !!(due && ts), repeat: null, dur: dv === '' ? null : +dv, forP: pre.forP && pre.forP !== S.myP ? pre.forP : null, private: false, group: pre.forP && pre.forP !== S.myP ? sharedGroup(pre.forP)?.id || null : null, cat: qcat || null, steps: qsteps ? mkSteps(qsteps) : null, stars: qstars || null, shabbatOk: $('#qShab')?.checked || null }, null);
     toast('✅ נוסף');
   };
 }
@@ -2890,6 +2910,7 @@ function openEdit(id, focus, forceKind) {
     <div id="eWhen2"><div class="two"><div><label>כמה זמן</label><select id="eDur"><option value="">לא ידוע</option><option value="0">רק תזכורת</option>${[15, 30, 45, 60, 90, 120, 180, 240].map(m => `<option value="${m}">${durLbl(m)}</option>`).join('')}</select></div>
     <div><label>איפה (לא חובה)</label><input id="ePlace" value="${esc(it.place || '')}" list="placeList"><datalist id="placeList">${knownPlaces().concat(C.CITIES).map(x => `<option value="${esc(x)}">`).join('')}</datalist></div></div></div>
     ${it.forP && isKid(it.forP) ? starPicker(it.stars || 0) : ''}
+    ${it.kind !== 'thought' ? `<label class="set-row" style="cursor:pointer;border:none;padding:10px 0 0"><span>🕯️ להזכיר גם בשבת ובחג</span><input type="checkbox" id="eShab" ${it.shabbatOk ? 'checked' : ''}></label><p class="note">${it.shabbatOk ? '' : 'כבוי: מה שנופל בשבת או בחג עובר למוצאי שבת/חג.'}</p>` : ''}
     ${it.kind !== 'thought' ? `<label>🔢 ספירה: מתוך כמה (למשל 5 פרקים). ריק = בלי</label><div style="display:flex;gap:8px;align-items:center"><input type="number" id="eProg" min="2" max="99" class="num" style="width:90px" value="${it.prog?.of || ''}">${it.prog?.of ? `<span class="note">עכשיו: ${it.prog.n || 0}/${it.prog.of}</span>` : ''}</div>` : ''}
     <label>קטגוריה</label><div id="eCat">${catChips(it.group_id, it.cat || '')}</div>
     ${S.uid ? `<label>שייכת ל</label><div class="set-row" style="border:none;padding:4px 0"><b>${esc(assignLabel(it))}</b><button class="act pri" id="eAssign">📎 שיוך</button></div>` : ''}
@@ -2931,6 +2952,7 @@ function openEdit(id, focus, forceKind) {
       }
     } else hasTime = false;
     Object.assign(it, { kind, text, due: due ? due.toISOString() : null, hasTime: kind === 'thought' ? false : hasTime, repeat, askAt: null, askedKey: null });
+    if ($('#eShab')) it.shabbatOk = $('#eShab').checked || null;
     const pv = +($('#eProg')?.value || 0); it.prog = pv > 1 ? { n: Math.min(pv, it.prog?.n || 0), of: pv } : null;
     const dv = $('#eDur').value; it.dur = dv === '' ? null : +dv; it.place = $('#ePlace').value.trim() || null; it.cat = ecat || null; if ($('#stPick')) it.stars = estars || null;
     it.res = C.findRes(text, S.resources); if (!it.res.length) it.res = null;
@@ -3295,7 +3317,7 @@ function showLock() {
   const st = lock.settings(); if (!st) return;
   pinBuf = ''; drawDots(); $('#lockErr').textContent = '';
   $('#lockBio').hidden = !st.cred;
-  $('#lockBio').textContent = isIOS() ? '👆 לחיצה כאן — ונפתח עם Face ID' : '👆 פתיחה בטביעת אצבע';
+  $('#lockBio').textContent = isIOS() ? '😊 פתיחה עם Face ID (בפנים)' : '😊 פתיחה בפנים או בטביעת אצבע';
   $('#lock').classList.add('on');
   if (st.cred && !isIOS()) tryBio(true);
 }
@@ -3351,7 +3373,7 @@ function drawLockCard() {
       el.innerHTML = `<h4>🔒 בחירת קוד (4 ספרות)</h4>
         <div class="two"><input id="lk1" class="fam-in" type="password" inputmode="numeric" maxlength="4" placeholder="קוד" style="text-align:center;letter-spacing:8px">
         <input id="lk2" class="fam-in" type="password" inputmode="numeric" maxlength="4" placeholder="שוב" style="text-align:center;letter-spacing:8px"></div>
-        ${bio ? '<label class="set-row" style="cursor:pointer"><span>גם טביעת אצבע / Face ID</span><input type="checkbox" id="lkBio" checked></label>' : ''}
+        ${bio ? '<label class="set-row" style="cursor:pointer"><span>😊 גם פתיחה בפנים / טביעת אצבע<br><small class="note">מה שהטלפון שלך יודע: Face ID, זיהוי פנים או טביעת אצבע</small></span><input type="checkbox" id="lkBio" checked></label>' : ''}
         <div id="lkErr" style="color:#FB7185;font-size:13px;min-height:18px"></div><button class="btn pri" id="lkSave">הפעלה</button>`;
       el.querySelectorAll('input').forEach(i => i.oninput = () => $('#lkErr').textContent = '');
       $('#lkSave').onclick = async () => {
@@ -3359,12 +3381,12 @@ function drawLockCard() {
         if (!/^\d{4}$/.test(a)) return $('#lkErr').textContent = 'הקוד צריך להיות 4 ספרות';
         if (a !== b) return $('#lkErr').textContent = 'הקודים לא זהים';
         try { await lock.enable(a, !!$('#lkBio')?.checked, 5); drawLockCard(); toast('🔒 הנעילה הופעלה — תינעל אחרי 5 דקות שהאפליקציה סגורה'); }
-        catch (e) { if (e.name === 'NotAllowedError') { await lock.enable(a, false, 5); drawLockCard(); toast('🔒 הנעילה הופעלה עם קוד בלבד'); } else $('#lkErr').textContent = 'לא הצלחתי להפעיל טביעת אצבע. נסה בלי'; }
+        catch (e) { if (e.name === 'NotAllowedError') { await lock.enable(a, false, 5); drawLockCard(); toast('🔒 הנעילה הופעלה עם קוד בלבד'); } else $('#lkErr').textContent = 'לא הצלחתי להפעיל פתיחה בפנים / טביעת אצבע. נסה בלי'; }
       };
     };
     return;
   }
-  el.innerHTML = `<h4>🔒 הנעילה פעילה <small>${st.cred ? '👆 + קוד' : 'קוד בלבד'}</small></h4><p class="note" style="margin-bottom:6px">לנעול כשחוזרים לאפליקציה אחרי:</p>
+  el.innerHTML = `<h4>🔒 הנעילה פעילה <small>${st.cred ? '😊 פנים / אצבע + קוד' : 'קוד בלבד'}</small></h4><p class="note" style="margin-bottom:6px">לנעול כשחוזרים לאפליקציה אחרי:</p>
     <div class="chips" style="padding:0 0 10px;flex-wrap:wrap">${[[0, 'מיד'], [1, 'דקה'], [5, '5 דקות'], [15, 'רבע שעה']].map(([m, l]) => `<button class="chip ${(st.minutes ?? 5) === m ? 'on' : ''}" data-min="${m}">${l}</button>`).join('')}</div>
     <div style="display:flex;gap:8px"><input id="lkOff" class="fam-in" type="password" inputmode="numeric" maxlength="4" placeholder="הקוד — כדי לכבות" style="text-align:center"><button class="act" id="lkOffBtn">כיבוי</button></div>
     <div id="lkErr" style="color:#FB7185;font-size:13px;min-height:18px"></div>`;
@@ -3646,7 +3668,7 @@ function renderFamily() {
   const canImport = hh && !gs.some(g => g.source_household === hh.id);
   const card = g => {
     const me = g.members.find(m => m.user_id === S.uid), admin = me?.role === 'admin';
-    const mem = g.members.map(m => `<div class="fam-row"><button class="color-dot sm" data-pc="${m.user_id ? 'u:' + m.user_id : 'm:' + m.id}" style="background:${colorOf(m.user_id ? 'u:' + m.user_id : 'm:' + m.id)}" aria-label="צבע"></button><span style="flex:1;min-width:110px">${m.user_id ? '📱' : '✏️'} ${esc(m.profile?.emoji || m.emoji || '🙂')} <b>${esc(m.nickname)}</b>${m.user_id === S.uid ? ' (אני)' : ''}${m.user_id && m.profile?.full_name && m.profile.full_name !== m.nickname ? ` <span class="note">· ${esc(m.profile.full_name)}</span>` : ''}</span>
+    const mem = g.members.map(m => `<div class="fam-row"><button class="color-dot sm" data-pc="${m.user_id ? 'u:' + m.user_id : 'm:' + m.id}" style="background:${colorOf(m.user_id ? 'u:' + m.user_id : 'm:' + m.id)}" aria-label="צבע"></button><span style="flex:1;min-width:110px">${m.user_id ? '📱' : '✏️'} <span class="face-sm">${faceHtml(person(m.user_id ? 'u:' + m.user_id : 'm:' + m.id) || { e: m.profile?.emoji || m.emoji })}</span> <b>${esc(m.nickname)}</b>${m.user_id === S.uid ? ' (אני)' : ''}${m.user_id && m.profile?.full_name && m.profile.full_name !== m.nickname ? ` <span class="note">· ${esc(m.profile.full_name)}</span>` : ''}</span>
       ${g.kind !== 'pair' && admin && m.user_id !== S.uid ? `<button class="chip" data-role="${m.id}" data-to="${m.role === 'admin' ? 'member' : g.kind === 'family' && m.role === 'member' ? 'child' : 'admin'}">${{ admin: '⭐ מנהל', member: '🙂 חבר', child: '🧒 ילד' }[m.role]}</button><button class="chip" data-rm="${m.id}">✕</button>` : `<span class="note">${g.kind === 'pair' ? '' : { admin: '⭐ מנהל', member: '🙂 חבר', child: '🧒 ילד' }[m.role]}</span>`}</div>`).join('');
     return `<div class="grp" data-g="${g.id}">
       <div class="grp-h"><b>${esc(gLabel(g))}</b><span class="note">הכינוי שלי: <b>${esc(me?.nickname || '')}</b></span></div>
@@ -3676,7 +3698,7 @@ function renderFamily() {
   $('#gJoinBtn').onclick = () => openJoin();
   $('#gPairBtn').onclick = () => openNewPair();
   $('#gImportBtn')?.addEventListener('click', () => run(async () => { await sync.importHousehold(hh.id); confetti(); toast('👨‍👩‍👧 הקבוצה נוצרה מהמשפחה!'); }));
-  fillQR(el);
+  fillQR(el); hydrateFaces(el);
   el.querySelectorAll('[data-zoom]').forEach(b => b.onclick = () => zoomQR(b.dataset.zoom, b.dataset.zl));
   el.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = '✅ הועתק'; } catch { b.textContent = b.dataset.copy; } });
   el.querySelectorAll('[data-role]').forEach(b => b.onclick = () => run(() => sync.setRole(b.dataset.role, b.dataset.to)));
@@ -3781,13 +3803,13 @@ function renderProfile() {
   const weekAgo = Date.now() - 7 * 864e5;
   const doneWeek = S.log.filter(l => l.action === 'done' && new Date(l.ts) > weekAgo).length;
   const stat = (n, l, pre = '') => `<div class="me-stat"><b data-count="${n}" data-pre="${pre}">${pre}${n}</b><span>${l}</span></div>`;
-  el.innerHTML = `<h4 style="margin-bottom:10px">👤 האזור האישי</h4><div class="me-top"><button class="me-face" id="pFace" aria-label="שינוי אייקון">${p?.e || '🙋'}</button>
+  el.innerHTML = `<h4 style="margin-bottom:10px">👤 האזור האישי</h4><div class="me-top"><button class="me-face" id="pFace" aria-label="שינוי תמונה או אייקון">${p ? faceHtml(p) : '🙋'}<em class="me-cam">📷</em></button>
       <div class="me-txt"><b>${esc(p?.name || '')}</b><span dir="ltr">${esc(u.email || '')}</span>
       <span>${gs.length ? gs.map(g => `${gLabel(g)} · "${esc(g.members.find(m => m.user_id === S.uid)?.nickname || '')}"`).join('<br>') : 'עוד לא בשום קבוצה'}</span></div></div>
     <div class="me-stats">${stat(streak(), 'ימים ברצף', '🔥 ')}${stat(doneWeek, 'בוצעו השבוע')}${stat(tasksOpen().length, 'פתוחות שלי')}${stat(openItems().filter(x => x.kind === 'thought' && byMe(x)).length, 'מחשבות')}</div>
     <div class="two" style="margin-top:10px"><button class="btn" id="pEdit" style="margin:0">✏️ שם ואייקון</button><button class="btn danger" id="pOut" style="margin:0">יציאה</button></div>`;
   el.querySelectorAll('[data-count]').forEach(b => countUp(b, b.dataset.count, b.dataset.pre));
-  $('#pEdit').onclick = openEditMe; $('#pFace').onclick = openEditMe;
+  $('#pEdit').onclick = openEditMe; $('#pFace').onclick = openEditMe; hydrateFaces(el);
   $('#pOut').onclick = signOut;
 }
 function renderMe() {
@@ -3810,9 +3832,25 @@ async function welcomeMe() {
 function openEditMe() {
   const p = person(S.myP); if (!p) return;
   let face = Math.max(0, FACES.indexOf(p.e));
-  sheet(`<h3>🙋 השם שלי</h3><p class="note" style="margin-bottom:10px">השם המלא והאייקון — בכל הקבוצות. את הכינוי בכל קבוצה משנים בכרטיס הקבוצה.</p>
+  sheet(`<h3>🙋 התמונה והשם שלי</h3>
+    <div class="ph-box"><div class="ph-big">${faceHtml(p)}</div>
+      <div class="ph-acts"><label class="btn pri ph-btn">📸 לצלם<input type="file" accept="image/*" capture="user" id="phCam" hidden></label>
+      <label class="btn ph-btn">🖼️ מהגלריה / קובץ<input type="file" accept="image/*" id="phGal" hidden></label>
+      ${p.photo ? '<button class="btn danger ph-btn" id="phDel">🗑️ להסיר תמונה</button>' : ''}</div></div>
+    <p class="note" style="margin:6px 0 10px">רק מי שבקבוצה איתך רואה את התמונה. בלי תמונה — מופיע האייקון.</p>
+    <label>אייקון ושם מלא (בכל הקבוצות)</label>
     <div style="display:flex;gap:8px"><button class="round" id="meFace" style="background:var(--card2);border:1px solid var(--line);width:48px;height:48px">${FACES[face]}</button>
     <input id="meName" class="fam-in" value="${esc(p.name)}"></div><button class="btn pri" id="meSave" style="margin-top:14px">💾 שמור</button>`);
+  hydrateFaces($('#sheet'));
+  const upload = async e => {
+    const f = e.target.files?.[0]; if (!f) return;
+    if (demo.DEMO) return toast('🎭 בהדגמה לא מעלים תמונות', true);
+    if (!S.uid) return toast('צריך להיכנס לחשבון', true);
+    try { toast('⏳ מעלה…'); const blob = await shrinkPhoto(f); await sync.uploadPhoto(blob); await sync.loadGroups(); buildPeople(); renderProfile(); renderFamily(); confetti(40); toast('🖼️ התמונה נשמרה'); openEditMe(); }
+    catch (x) { toast('לא הצלחתי להעלות: ' + x.message, true); }
+  };
+  $('#phCam').onchange = upload; $('#phGal').onchange = upload;
+  $('#phDel')?.addEventListener('click', async e => { if (!tapAgain(e.currentTarget, '🗑️ בטוח? לחץ שוב')) return; try { await sync.removePhoto(); await sync.loadGroups(); buildPeople(); renderProfile(); renderFamily(); toast('🗑️ התמונה הוסרה'); openEditMe(); } catch (x) { toast(x.message, true); } });
   $('#meFace').onclick = e => { face = (face + 1) % FACES.length; e.target.textContent = FACES[face]; };
   $('#meSave').onclick = async () => {
     const name = $('#meName').value.trim(); if (!name) return toast('צריך שם', true);
@@ -3870,4 +3908,4 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 // לבדיקות מהדפדפן
-window.__zman = { demo, removedFromGroups, startFocus, endFocus, renderAll, CAL, renderCal, showView, bell, openBell, bumpTask, openCatEdit, drawCatCard, renderTasks, openQuick, showIncoming, showReply, openEdit, buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };
+window.__zman = { demo, shrinkPhoto, faceHtml, removedFromGroups, startFocus, endFocus, renderAll, CAL, renderCal, showView, bell, openBell, bumpTask, openCatEdit, drawCatCard, renderTasks, openQuick, showIncoming, showReply, openEdit, buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };

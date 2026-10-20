@@ -462,6 +462,39 @@ export async function deleteNotify(ids) {
 }
 
 // לבדיקות בלבד (בדפדפן של המפתח): מצב מדומה בלי חשבון אמיתי
+// ---------- 🖼️ תמונת פרופיל (תיקייה פרטית avatars/<uid>/avatar.jpg — רק מי שבקבוצה איתי רואה) ----------
+const photoMem = {};
+export async function uploadPhoto(blob) {
+  const c = await client(), path = `${me.id}/avatar.jpg`;
+  const { error } = await c.storage.from('avatars').upload(path, blob, { upsert: true, contentType: 'image/jpeg', cacheControl: '3600' });
+  if (error) throw new Error(nice(error));
+  const v = String(Date.now());
+  const { error: e2 } = await c.from('zman_profiles').update({ photo: v }).eq('user_id', me.id);
+  if (e2) throw new Error(nice(e2));
+  profile = { ...(profile || {}), photo: v }; await db.setKV('profile', profile);
+  return v;
+}
+export async function removePhoto() {
+  const c = await client();
+  await c.storage.from('avatars').remove([`${me.id}/avatar.jpg`]);
+  const { error } = await c.from('zman_profiles').update({ photo: null }).eq('user_id', me.id);
+  if (error) throw new Error(nice(error));
+  profile = { ...(profile || {}), photo: null }; await db.setKV('profile', profile);
+}
+/** קישור זמני (שבוע) לתמונה — נשמר בטלפון כדי לא לבקש כל פעם */
+export async function photoUrl(uid, v) {
+  if (!uid || !v || DEMO) return null;
+  const key = `ph:${uid}:${v}`;
+  if (photoMem[key]) return photoMem[key];
+  const c0 = await db.getKV(key, null); if (c0 && c0.exp > Date.now()) return (photoMem[key] = c0.url);
+  if (!navigator.onLine) return null;
+  try {
+    const { data, error } = await (await client()).storage.from('avatars').createSignedUrl(`${uid}/avatar.jpg`, 7 * 86400);
+    if (error || !data?.signedUrl) return null;
+    await db.setKV(key, { url: data.signedUrl, exp: Date.now() + 6 * 86400e3 });
+    return (photoMem[key] = data.signedUrl);
+  } catch { return null; }
+}
 let adminOf = null;
 /** האם אני מנהל האפליקציה (בשביל כפתור "מצב הדגמה") — בדיקה בשרת */
 export async function isAppAdmin() {
