@@ -523,3 +523,4 @@ html.no-anim *,html.no-anim *::before,html.no-anim *::after{animation:none!impor
 .cal-cell.chag em,.cal-col.chag .cal-holname{color:#FBCFE8;font-weight:700}
 .cal-shade{background:rgba(250,204,21,.16);border-inline-start:4px solid #FACC15}
 .cw-lbl{font-size:12px;color:var(--muted);align-self:center;flex:none}
+.cal-cell em.mod,.cal-holname.mod{color:var(--muted);font-weight:400}

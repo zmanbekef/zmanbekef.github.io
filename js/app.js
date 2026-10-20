@@ -2396,7 +2396,7 @@ async function renderCal(force) {
 
 function drawDay(d, ev, jump) {
   const h = holOf(d), isT = ymd(d) === today();
-  const g1 = `${d.getDate()}.${d.getMonth() + 1}`, hol1 = h?.hol.length ? ' · ' + esc(h.hol.join(', ')) : '';
+  const g1 = `${d.getDate()}.${d.getMonth() + 1}`, hol1 = [...(h?.hol || []), ...(h?.mod || [])].length ? ' · ' + esc([...(h?.hol || []), ...(h?.mod || [])].join(', ')) : '';
   $('#calTitle').innerHTML = hebMain() ? `<b>${isT ? 'היום · ' : ''}יום ${DAYS[d.getDay()]}, ${esc(hebDate(d))}</b><small>${g1}${hol1}</small>` : `<b>${isT ? 'היום · ' : ''}יום ${DAYS[d.getDay()]}, ${g1}</b><small>${esc(hebDate(d))}${hol1}</small>`;
   const timed = ev.filter(e => e.hasTime), allDay = ev.filter(e => !e.hasTime);
   // משימות שחופפות בזמן — זו ליד זו
@@ -2441,7 +2441,7 @@ function drawWeek(from, ev) {
     const d = addDays(from, i), list = ev.filter(e => ymd(e.start) === ymd(d)), h = holOf(d);
     return `<button class="cal-col${ymd(d) === today() ? ' today' : ''}${dayKind(d, h)}" data-day="${ymd(d)}" aria-label="יום ${DAYS[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}, ${list.length} דברים">
       <span class="cal-dh"><b>${DSH[d.getDay()]}׳</b>${hebMain() ? `<i>${hebDay(d)}</i><small>${d.getDate()}</small>` : `<i>${d.getDate()}</i><small>${hebDay(d)}</small>`}</span>
-      ${h?.hol.length ? `<span class="cal-holname">${esc(h.hol[0])}</span>` : ''}
+      ${h?.hol.length ? `<span class="cal-holname">${esc(h.hol[0])}</span>` : ''}${h?.mod?.length ? `<span class="cal-holname mod">${esc(h.mod[0])}</span>` : ''}
       ${list.map(e => `<span class="cal-wi${e.done ? ' done' : ''}" style="--c:${e.color}">${e.hasTime ? `<b>${hm(e.start)}</b>` : ''}${esc(e.busy ? 'תפוס/ה' : e.text)}</span>`).join('')}
     </button>`; }).join('')}</div>`;
 }
@@ -2456,7 +2456,7 @@ function drawMonth(d, ev) {
     const c = addDays(start, i), list = ev.filter(e => ymd(e.start) === ymd(c)), h = holOf(c), out = c.getMonth() !== d.getMonth();
     const dots = [...new Set(list.map(e => e.color))].slice(0, 4);
     return `<button class="cal-cell${out ? ' out' : ''}${ymd(c) === today() ? ' today' : ''}${dayKind(c, h)}" data-day="${ymd(c)}" aria-label="${c.getDate()}.${c.getMonth() + 1}, ${esc(hebDate(c))}${h?.hol.length ? ', ' + esc(h.hol.join(', ')) : ''}, ${list.length ? list.length + ' דברים' : 'פנוי'}">
-      ${hebMain() ? `<b>${hebDay(c)}</b><small>${c.getDate()}</small>` : `<b>${c.getDate()}</b><small>${hebDay(c)}</small>`}${h?.hol.length ? `<em>${esc(h.hol[0])}</em>` : ''}<span class="cal-dots">${dots.map(x => `<i style="background:${x}"></i>`).join('')}${list.length > 4 ? '+' : ''}</span></button>`;
+      ${hebMain() ? `<b>${hebDay(c)}</b><small>${c.getDate()}</small>` : `<b>${c.getDate()}</b><small>${hebDay(c)}</small>`}${h?.hol.length ? `<em>${esc(h.hol[0])}</em>` : h?.mod?.length ? `<em class="mod">${esc(h.mod[0])}</em>` : ''}<span class="cal-dots">${dots.map(x => `<i style="background:${x}"></i>`).join('')}${list.length > 4 ? '+' : ''}</span></button>`;
   }).join('')}</div>
   <p class="note" style="padding:8px 16px">לחיצה על יום פותחת אותו לפי שעות.</p>`;
 }
