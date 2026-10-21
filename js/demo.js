@@ -221,7 +221,7 @@ export function init(api) {
 
 // ---------- הסיור ----------
 export function startTour(i = 0) { step = -1; STEPS = TOUR; $('#tour').hidden = false; go(i); }
-function stopTour() { step = -1; STEPS = TOUR; $('#tour').hidden = true; liftFab(); }
+function stopTour() { step = -1; STEPS = TOUR; $('#tour').hidden = true; document.documentElement.classList.remove('rv-on'); liftFab(); }
 // כפתור ההערות לא מסתיר את כרטיס הסיור: כשהכרטיס למטה — הכפתור עולה מעליו
 function liftFab() {
   const fab = $('#demoNotes'), card = $('#tourCard'); if (!fab) return;
@@ -332,10 +332,14 @@ function openNotes() {
 }
 
 // ---------- 🔁 סיור תיקונים: עובר רק על המסכים שבהם נכתבו הערות, ומראה מה השתנה ----------
-// zman-review = { [id]: 'ok' | 'seen' | 'note' }: מה כבר נסקר בטלפון הזה. zman-review-sent = ids שהאישור שלהם כבר נשלח
-const RV_KEY = 'zman-review', RV_SENT = 'zman-review-sent';
-const rvGet = k => { try { return JSON.parse(localStorage.getItem(k) || (k === RV_SENT ? '[]' : '{}')); } catch { return k === RV_SENT ? [] : {}; } };
-const rvSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* */ } };
+// נשמר בטלפון עד שהשליחה מצליחה (וגם אם יוצאים באמצע, ממשיכים מאותו מקום):
+// zman-review = { [id]: 'ok' | 'bad' | 'seen' } · zman-review-notes = { [id]: 'הערה' } · zman-review-pos = id של העצירה האחרונה
+// zman-review-sent = { [id]: 'ok' | 'bad' | 'note' }: מה כבר נשלח
+const RV_KEY = 'zman-review', RV_NOTES = 'zman-review-notes', RV_POS = 'zman-review-pos', RV_SENT = 'zman-review-sent';
+const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* */ } };
+const rvGet = k => { try { const v = JSON.parse(lsGet(k) || '{}'); return v && !Array.isArray(v) ? v : {}; } catch { return {}; } };
+const rvSet = (k, v) => lsSet(k, JSON.stringify(v));
 const RV_ST = { fixed: ['✅', 'תוקן'], answered: ['💬', 'נענה'], todo: ['⏳', 'עוד לא'] };
 const REVIEW_AT = {
   back: { v: 'chat', sel: '#plusBtn' },
@@ -354,38 +358,57 @@ const REVIEW_AT = {
   lock: { v: 'settings', sel: '#lockCard' },
   backup: { v: 'settings', sel: '#backupBtn' },
 };
-const rvPending = () => { const done = rvGet(RV_KEY); return REVIEW.filter(r => r.st !== 'todo' && !done[r.id]); };
+// עוד לא נסקרו: מה שתוקן / נענה, ושאין עליו סימון שכבר נשלח או מחכה לשליחה
+const rvPending = () => { const done = rvGet(RV_KEY), sent = rvGet(RV_SENT); return REVIEW.filter(r => r.st !== 'todo' && !done[r.id] && !sent[r.id]); };
+// מה שנכתב / סומן ועוד לא נשלח
+function rvUnsent() {
+  const done = rvGet(RV_KEY), notes = rvGet(RV_NOTES), sent = rvGet(RV_SENT);
+  return REVIEW.filter(r => (done[r.id] && done[r.id] !== 'seen' && sent[r.id] !== done[r.id]) || (notes[r.id] || '').trim()).map(r => ({ r, st: done[r.id] || '', note: (notes[r.id] || '').trim() }));
+}
 function reviewBadge() {
   const b = $('#dbReview'); if (!b) return;
-  const n = rvPending().length; b.hidden = !n; b.textContent = `🔁 תיקונים ${n}`;
+  const n = rvPending().length, u = rvUnsent().length;
+  b.hidden = !n && !u; b.textContent = n ? `🔁 תיקונים ${n}` : `📤 ${u} לשליחה`;
 }
 function reviewStart() {
   if (!REVIEW.length) return;
-  const done = rvGet(RV_KEY), order = [...REVIEW.filter(r => r.st !== 'todo'), ...REVIEW.filter(r => r.st === 'todo')];
+  const order = [...REVIEW.filter(r => r.st !== 'todo'), ...REVIEW.filter(r => r.st === 'todo')];
   STEPS = order.map(r => ({ ...(REVIEW_AT[r.at] || REVIEW_AT.chat), t: r.where, review: r }));
-  const first = Math.max(0, STEPS.findIndex(x => x.review.st !== 'todo' && !done[x.review.id]));
-  step = -1; $('#tour').hidden = false; go(first);
+  const pend = rvPending().map(r => r.id), pos = lsGet(RV_POS);
+  let first = STEPS.findIndex(x => x.review.id === pos);
+  if (first < 0) first = STEPS.findIndex(x => pend.includes(x.review.id));
+  if (first < 0) { if (rvUnsent().length) { STEPS = TOUR; return reviewSummary(); } first = 0; }
+  step = -1; $('#tour').hidden = false; document.documentElement.classList.add('rv-on'); go(first);
 }
 function reviewMark(id, v) { const d = rvGet(RV_KEY); d[id] = v; rvSet(RV_KEY, d); reviewBadge(); }
-function reviewNext(i) { if (i >= STEPS.length - 1) { stopTour(); return reviewSummary(); } go(i + 1); }
 function reviewCard(card, s, i) {
-  const r = s.review, [se, sl] = RV_ST[r.st] || RV_ST.fixed, mine = rvGet(RV_KEY)[r.id], n = STEPS.length;
+  const r = s.review, [se, sl] = RV_ST[r.st] || RV_ST.fixed, n = STEPS.length, mine = rvGet(RV_KEY)[r.id], todo = r.st === 'todo';
+  const notes = rvGet(RV_NOTES), cnt = Object.values(notes).filter(x => (x || '').trim()).length;
   const dd = new Date(r.date + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
+  lsSet(RV_POS, r.id);
   card.classList.add('rv');
-  card.innerHTML = `<div class="tour-h"><small>🔁 סיור תיקונים · ${i + 1} מתוך ${n} · הערה מ־${dd}${mine ? ` · ${mine === 'ok' ? '✅ אישרת' : mine === 'note' ? '💬 הוספת הערה' : '👍 ראית'}` : ''}</small><button class="tour-x" id="tourX" aria-label="סגירת הסיור">✕</button></div>
-    <div class="tour-bar"><i style="width:${(i + 1) / n * 100}%"></i></div>
+  card.innerHTML = `<div class="tour-bar"><i style="width:${(i + 1) / n * 100}%"></i></div>
+    <div class="rv-top"><small>🔁 ${i + 1} מתוך ${n} · הערה מ־${dd}</small><span class="rv-cnt ${cnt ? 'on' : ''}">💬 ${cnt} הערות</span></div>
     <div class="rv-h"><span class="rv-st ${r.st}">${se} ${sl}</span><b>${esc(r.where)}</b></div>
     <div class="rv-note" title="לחיצה: לקרוא הכל"><small>📝 ההערה שלך</small>${esc(r.note)}</div>
-    <div class="rv-did ${r.st}"><small>${r.st === 'todo' ? '⏳ מה מתוכנן' : r.st === 'answered' ? '💬 התשובה' : '✨ מה שינינו'}</small>${esc(r.did)}</div>
-    ${r.before ? '<button class="chip" id="rBefore">👀 איך זה היה לפני</button>' : ''}
-    <div class="tour-btns rv-btns"><button class="btn" id="tourPrev" ${i ? '' : 'disabled'} aria-label="הקודם">→</button><button class="btn ok" id="rOk">${r.st === 'todo' ? '👍 ראיתי' : '✅ מאשר'}</button><button class="btn" id="rMore">💬 עוד הערה</button><button class="btn pri" id="tourNext">${i === n - 1 ? 'סיום' : 'הבא ←'}</button></div>`;
+    <div class="rv-did ${r.st}"><small>${todo ? '⏳ מה מתוכנן' : r.st === 'answered' ? '💬 התשובה' : '✨ מה שינינו'}</small>${esc(r.did)}</div>
+    ${r.before ? '<button class="chip" id="rBefore" style="margin-bottom:8px">👀 איך זה היה לפני</button>' : ''}
+    <label class="rv-say"><span>💬 הערה על התיקון הזה</span><textarea id="rNote" rows="2" placeholder="${todo ? 'משהו להוסיף לפני שנבנה?' : 'מה עוד לא טוב? מה לשנות? (לא חובה)'}">${esc(notes[r.id] || '')}</textarea></label>
+    ${todo ? '' : `<div class="rv-big"><button class="ok ${mine === 'ok' ? 'on' : ''}" id="rOk">✅ מאשר</button><button class="bad ${mine === 'bad' ? 'on' : ''}" id="rBad">🔧 עוד לא טוב</button></div>`}
+    <div class="tour-btns rv-nav"><button class="btn" id="tourPrev" ${i ? '' : 'disabled'} aria-label="הקודם">→</button><button class="btn pri" id="tourNext">${i === n - 1 ? '📤 לסיכום ושליחה' : 'הבא ←'}</button><button class="btn" id="tourX" aria-label="יציאה. ממשיכים אחר כך מכאן">✕</button></div>`;
   card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop');
+  const ta = card.querySelector('#rNote');
+  const saveNote = () => { const all = rvGet(RV_NOTES); const v = ta.value; if (v.trim()) all[r.id] = v.slice(0, 1000); else delete all[r.id]; rvSet(RV_NOTES, all);
+    const c = Object.values(all).filter(x => (x || '').trim()).length, el = card.querySelector('.rv-cnt'); el.textContent = `💬 ${c} הערות`; el.classList.toggle('on', !!c); reviewBadge(); };
+  ta.addEventListener('input', saveNote);
   card.querySelector('.rv-note').onclick = e => { e.currentTarget.classList.toggle('open'); place(); };
-  $('#tourX').onclick = stopTour;
-  $('#tourPrev').onclick = () => go(i - 1);
-  $('#tourNext').onclick = () => reviewNext(i);
-  $('#rOk').onclick = () => { reviewMark(r.id, r.st === 'todo' ? 'seen' : 'ok'); if (r.st !== 'todo') A.confetti?.(); reviewNext(i); };
-  $('#rMore').onclick = () => { reviewMark(r.id, 'note'); openNotes(); };
+  const fwd = () => { if (i >= n - 1) { stopTour(); reviewBadge(); return reviewSummary(); } go(i + 1); };
+  $('#tourPrev').onclick = () => { saveNote(); go(i - 1); };
+  $('#tourNext').onclick = () => { saveNote(); if (todo && !mine) reviewMark(r.id, 'seen'); fwd(); };
+  $('#tourX').onclick = () => { saveNote(); stopTour(); reviewBadge(); if (rvUnsent().length) A.toast('💾 ההערות נשמרו. ממשיכים מכאן ב"🔁 תיקונים"'); };
+  $('#rOk')?.addEventListener('click', () => { saveNote(); reviewMark(r.id, 'ok'); A.confetti?.(); setTimeout(fwd, 350); });
+  $('#rBad')?.addEventListener('click', e => { reviewMark(r.id, 'bad'); $('#rOk').classList.remove('on'); e.currentTarget.classList.add('on');
+    ta.closest('.rv-say').classList.add('need'); ta.placeholder = 'מה עוד לא טוב? כתוב כאן 👇'; ta.focus(); });
   card.querySelector('#rBefore')?.addEventListener('click', () => {
     const ov = document.createElement('div'); ov.className = 'qr-zoom';
     ov.innerHTML = `<div class="qr-card" style="padding:10px"><div class="note" style="margin-bottom:6px">👀 לפני התיקון</div><img src="${esc(r.before)}" alt="לפני" style="width:100%;max-height:70vh;object-fit:contain;border-radius:14px"><button class="btn pri" style="margin-top:10px">סגירה</button></div>`;
@@ -393,22 +416,28 @@ function reviewCard(card, s, i) {
   });
 }
 function reviewSummary() {
-  const done = rvGet(RV_KEY), sent = rvGet(RV_SENT);
-  const ok = REVIEW.filter(r => done[r.id] === 'ok'), more = REVIEW.filter(r => done[r.id] === 'note'), todo = REVIEW.filter(r => r.st === 'todo');
-  const left = rvPending(), fresh = [...ok, ...more].filter(r => !sent.includes(r.id)), nNotes = notes().length;
-  A.sheet(`<div class="nw-head"><span class="nw-spark">🔁</span><h3>סיור התיקונים הסתיים</h3></div>
-    <div class="rv-sum"><div><b>${ok.length}</b><span>✅ אישרת</span></div><div><b>${more.length}</b><span>💬 עם הערה</span></div><div><b>${left.length}</b><span>⏭️ דילגת</span></div><div><b>${todo.length}</b><span>⏳ בעבודה</span></div></div>
-    ${nNotes ? `<button class="btn pri" id="rvNotes">📤 יש ${nN(nNotes)} חדשות: לשליחה</button>` : ''}
-    ${fresh.length ? `<button class="btn pri" id="rvSend">✅ שליחת האישורים (${fresh.length})</button>` : '<p class="note" style="text-align:center;margin:8px 0">כל האישורים כבר נשלחו 👍</p>'}
-    <button class="btn" id="rvAgain">🔁 לעבור שוב</button><div id="rvErr" style="color:#FB7185;font-size:13px;min-height:16px"></div>`);
-  $('#rvNotes')?.addEventListener('click', () => openNotes());
-  $('#rvAgain').onclick = () => { A.closeSheet(); setTimeout(reviewStart, 250); };
+  const list = rvUnsent(), ok = list.filter(x => x.st === 'ok'), bad = list.filter(x => x.st === 'bad'), withNote = list.filter(x => x.note);
+  const left = rvPending().filter(r => !list.some(x => x.r.id === r.id));
+  const ordered = [...bad, ...list.filter(x => x.st !== 'bad')];
+  const item = x => `<div class="rv-li ${x.st}"><b>${x.st === 'ok' ? '✅' : x.st === 'bad' ? '🔧' : '💬'} ${esc(x.r.where)}</b>${x.note ? `<p>💬 ${esc(x.note)}</p>` : ''}</div>`;
+  A.sheet(`<div class="nw-head"><span class="nw-spark">🔁</span><h3>סיכום סיור התיקונים</h3></div>
+    <div class="rv-sum"><div><b>${ok.length}</b><span>✅ אושרו</span></div><div><b>${bad.length}</b><span>🔧 עוד לא טוב</span></div><div><b>${withNote.length}</b><span>💬 הערות</span></div><div><b>${left.length}</b><span>⏭️ לא נבדקו</span></div></div>
+    ${list.length ? `<div class="rv-list">${ordered.map(item).join('')}</div>
+      <button class="btn pri rv-send" id="rvSend">📤 שליחה (${list.length})</button>` : '<p class="note" style="text-align:center;margin:8px 0">אין מה לשלוח. הכל כבר נשלח 👍</p>'}
+    <button class="btn" id="rvAgain">🔁 ${left.length ? `להמשיך (${left.length} לא נבדקו)` : 'לעבור שוב'}</button><div id="rvErr" style="color:#FB7185;font-size:13px;min-height:16px"></div>`);
+  $('#rvAgain').onclick = () => { lsSet(RV_POS, ''); A.closeSheet(); setTimeout(reviewStart, 250); };
   $('#rvSend')?.addEventListener('click', async e => {
     const b = e.currentTarget; b.disabled = true; b.textContent = 'שולח…';
-    const line = r => `${done[r.id] === 'ok' ? '✅ אושר' : '💬 אושר עם הערה נוספת'} · ${r.id} · ${r.where}\n   ההערה: ${r.note.slice(0, 120)}${r.note.length > 120 ? '…' : ''}`;
-    const okSent = await A.sendNotes(fresh.map(line).join('\n\n'), fresh.length, 'approval');
-    if (okSent) { rvSet(RV_SENT, [...new Set([...sent, ...fresh.map(r => r.id)])]); A.confetti?.(); A.toast('✅ האישורים נשלחו. תודה!'); reviewSummary(); return; }
-    b.disabled = false; b.textContent = `✅ שליחת האישורים (${fresh.length})`;
-    $('#rvErr').textContent = 'לא הצלחתי לשלוח (אין אינטרנט?). אפשר לנסות שוב.';
+    const line = (x, k) => `${k + 1}. ${x.st === 'ok' ? '✅ מאשר' : x.st === 'bad' ? '🔧 עוד לא טוב' : '💬 הערה'} · ${x.r.where} (${x.r.id})\n   📝 ההערה המקורית: ${x.r.note.slice(0, 140)}${x.r.note.length > 140 ? '…' : ''}${x.note ? `\n   💬 עכשיו: ${x.note}` : ''}`;
+    const msg = `✅ ${ok.length} אושרו · 🔧 ${bad.length} עוד לא טוב · 💬 ${withNote.length} הערות\n\n` + ordered.map(line).join('\n\n');
+    const okSent = await A.sendNotes(msg, list.length, { label: 'סיור תיקונים', kind: bad.length || withNote.length ? 'idea' : 'approval', subject: `🔁 סיור תיקונים — זמן בכיף (✅ ${ok.length} · 🔧 ${bad.length})` });
+    if (okSent) {
+      const sent = rvGet(RV_SENT), notes = rvGet(RV_NOTES);
+      for (const x of list) { sent[x.r.id] = x.st || 'note'; delete notes[x.r.id]; }
+      rvSet(RV_SENT, sent); rvSet(RV_NOTES, notes); if (!left.length) lsSet(RV_POS, '');
+      reviewBadge(); A.confetti?.(); A.toast('📤 נשלח. תודה! נעבור על זה'); A.closeSheet(); return;
+    }
+    b.disabled = false; b.textContent = `📤 שליחה (${list.length})`;
+    $('#rvErr').textContent = 'לא הצלחתי לשלוח (אין אינטרנט?). ההערות שמורות בטלפון, ואפשר לנסות שוב.';
   });
 }

@@ -637,7 +637,8 @@ nav .badge.new{background:#22C55E;left:auto;right:6px;animation:popin .3s both}
 @media (prefers-reduced-motion:reduce){.nw-spark,.nw-row,.nw-e{animation:none}}
 /* 🔁 סיור תיקונים (עיצוב משותף לכל האפליקציות) */
 .demo-bar .rv-btn{background:linear-gradient(135deg,#22C55E,#14B8A6)!important;color:#fff!important;border-color:transparent!important;animation:pulse 2s infinite}
-.tour-card.rv{max-height:min(62vh,520px);overflow-y:auto}
+.tour-card.rv{max-height:min(calc(100% - 150px),620px);overflow-y:auto}
+.rv-on .demo-fab{display:none}
 .rv-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 8px}
 .rv-h b{font-size:15.5px}
 .rv-st{font-size:12.5px;font-weight:800;border-radius:999px;padding:3px 9px;white-space:nowrap}
@@ -655,3 +656,23 @@ nav .badge.new{background:#22C55E;left:auto;right:6px;animation:popin .3s both}
 .rv-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:6px 0 14px}
 .rv-sum div{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:10px 4px;text-align:center;animation:nwPop .5s both}
 .rv-sum b{display:block;font-size:24px}.rv-sum span{font-size:11.5px;color:var(--muted)}
+/* 🔁 סיור תיקונים, עדכון 2: הערה גלויה + מאשר / עוד לא טוב */
+.rv-top{display:flex;justify-content:space-between;align-items:center;gap:8px;color:#FCD34D}
+.rv-top small{min-width:0}
+.rv-cnt{font-size:12px;font-weight:800;border-radius:999px;padding:2px 9px;background:var(--card2);color:var(--muted);white-space:nowrap}
+.rv-cnt.on{background:rgba(245,158,11,.25);color:#FDE68A;animation:nwPop .4s}
+.rv-say{display:block;margin:2px 0 8px}
+.rv-say span{display:block;font-size:12.5px;font-weight:800;margin-bottom:4px}
+.rv-say textarea{width:100%;border-radius:12px;border:1.5px solid rgba(245,158,11,.5);background:rgba(255,255,255,.06);padding:8px 10px;font:inherit;font-size:16px;color:inherit;resize:vertical;min-height:52px}
+.rv-say.need textarea{border-color:#F43F5E;box-shadow:0 0 0 3px rgba(244,63,94,.25)}
+.rv-big{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rv-big button{height:48px;border-radius:14px;font-weight:800;font-size:15.5px;border:1.5px solid var(--line);background:var(--card2);color:#fff;font-family:inherit;cursor:pointer}
+.rv-big .ok{border-color:rgba(34,197,94,.6)}.rv-big .ok.on{background:linear-gradient(135deg,#22C55E,#14B8A6);border-color:transparent}
+.rv-big .bad{border-color:rgba(244,63,94,.55)}.rv-big .bad.on{background:linear-gradient(135deg,#F43F5E,#F97316);border-color:transparent}
+.rv-nav{margin-top:8px}
+.rv-nav #tourPrev,.rv-nav #tourX{flex:0 0 44px}
+.rv-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;max-height:40vh;overflow-y:auto}
+.rv-li{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px 10px;font-size:14px}
+.rv-li.bad{border-color:rgba(244,63,94,.5)}.rv-li.ok{border-color:rgba(34,197,94,.4)}
+.rv-li p{margin:3px 0 0;color:var(--muted);font-size:13.5px}
+.rv-send{height:56px;font-size:18px}
