@@ -20,7 +20,7 @@ const today = () => ymd(new Date());
 const isToday = iso => iso && ymd(new Date(iso)) === today();
 
 const S = { items: [], msgs: [], log: [], top3: null, settings: { morning: '07:00', evening: '20:00', city: 'ירושלים', candleMin: 40, shabbatAlerts: [60], melody: 'bells' }, pending: null, day: today(),
-  people: [], uid: null, myP: null, who: 'all', busy: [], resources: C.DEFAULT_RES, travel: {}, alerted: [] };
+  people: [], uid: null, myP: null, who: 'all', busy: [], ext: [], extHost: '', resources: C.DEFAULT_RES, travel: {}, alerted: [] };
 const item = id => S.items.find(x => x.id === id && x.status !== 'deleted');
 const openItems = () => S.items.filter(x => x.status === 'open');
 const isTask = x => x.kind === 'task' || x.kind === 'meeting';
@@ -842,9 +842,14 @@ async function query(day) {
   const list = rankForToday(tasksOpen().filter(x => x.due && new Date(x.due) >= from && new Date(x.due) < to));
   const late = day === 'today' ? tasksOpen().filter(overdueDays) : [];
   const name = day === 'tomorrow' ? 'מחר' : day === 'week' ? 'השבוע' : 'היום';
-  if (!list.length && !late.length) return bot('📋', 'var(--g2)', `${name} אין שום דבר מתוכנן`, 'כתוב לי מה תרצה להוסיף');
+  const ext = S.ext.filter(x => new Date(x.due) >= from && new Date(x.due) < to);
+  if (!list.length && !late.length && !ext.length) return bot('📋', 'var(--g2)', `${name} אין שום דבר מתוכנן`, 'כתוב לי מה תרצה להוסיף');
   const line = x => `${x.hasTime ? hm(new Date(x.due)) : '•'} ${x.kind === 'meeting' ? '👥 ' : ''}${x.text}${day === 'week' ? ` (${whenLabel(x).split(' ב-')[0]})` : ''}`;
-  let sub = list.map(line).join('\n');
+  // מה שמהיומן נכנס לפי השעה, עם "📅 … · מהיומן"
+  const tOf = x => x.hasTime ? +new Date(x.due) : +sod(new Date(x.due));
+  const all = list.map(x => [x, 0]);
+  for (const x of ext) { const i = all.findIndex(([y]) => tOf(y) > tOf(x)); all.splice(i < 0 ? all.length : i, 0, [x, 1]); }
+  let sub = all.map(([x, e]) => e ? `${x.hasTime ? hm(new Date(x.due)) : '•'} 📅 ${x.text}${day === 'week' ? ` (${whenLabel(x).split(' ב-')[0]})` : ''} · מהיומן` : line(x)).join('\n');
   if (late.length) sub += `${sub ? '\n' : ''}⚠️ באיחור: ${late.map(x => x.text).join(', ')}`;
   return bot('📋', 'var(--g2)', `מה יש ${name}`, sub, [{ l: 'למסך המשימות', op: 'goto', a: ['tasks'] }]);
 }
@@ -1213,7 +1218,7 @@ function openReplyNo(id, mode) {
   const slots = [];
   if (inv?.hasTime) {
     const dur = (inv.dur || 60) * 60e3, base = { due: inv.due, dur: inv.dur || 60 };
-    const freeFor = (o, t) => S.items.concat(S.busy).filter(x => x.status === 'open' && x.due && x.hasTime && x.dur > 0 && (ownerOf(x) === o)).every(y => !(t < C.endOf(y) && C.startOf(y) < t + dur));
+    const freeFor = (o, t) => S.items.concat(S.busy, S.ext).filter(x => x.status === 'open' && x.due && x.hasTime && x.dur > 0 && (ownerOf(x) === o)).every(y => !(t < C.endOf(y) && C.startOf(y) < t + dur));
     let from = C.startOf(base);
     for (let i = 0; i < 3; i++) {
       const d = freeWhen({ ...base, due: new Date(from).toISOString() }, t => t !== C.startOf(base) && !slots.some(s => Math.abs(s - t) < 2 * 3600e3) && freeFor(meId(), t) && freeFor(other, t) && !Z.quietAt(t) && !Z.quietAt(t + dur));
@@ -1255,7 +1260,7 @@ const ownerOf = x => x.busy ? (x.forP || personOfUid(x.forU)?.id || personOfUid(
 // מבוגרים עם חשבון — בקבוצה של המשימה (בשביל "מישהו מאיתנו")
 const adults = it => { const gid = it?.group_id; const a = S.people.filter(p => p.uid && (!gid || p.nicks.some(n => n.g === gid && n.role !== 'child'))).map(p => p.id); return a.length ? a : [S.myP || 'me']; };
 const meId = () => S.myP || 'me';
-const ctx = () => ({ items: S.items, busy: S.busy, owner: ownerOf, adults, resources: S.resources, travel: S.travel });
+const ctx = () => ({ items: S.items, busy: S.busy.concat(S.ext), owner: ownerOf, adults, resources: S.resources, travel: S.travel });
 const allConflicts = () => C.detect(ctx()).concat(shabbatConflicts());
 // משהו שנקבע בשבת/חג, או שמסתיים פחות משעה לפני הכניסה
 function shabbatConflicts() {
@@ -1278,7 +1283,7 @@ function concerns(c) {
   if (c.type === 'nobody' || c.type === 'res') return mine || adults(c.a).includes(meId());
   return mine;
 }
-const nameOf = x => x.busy ? `${who(ownerOf(x))} תפוס/ה` : x.text;
+const nameOf = x => x.ext ? `📅 ${x.text} (מהיומן)` : x.busy ? `${who(ownerOf(x))} תפוס/ה` : x.text;
 const lineOf = x => `${nameOf(x)} (${C.span(x)}${family() && !x.busy ? ' · ' + whoIn(ownerOf(x), x.group_id) : ''})`;
 function describe(c) {
   const day = whenLabel({ due: c.a.due, hasTime: false });
@@ -1335,9 +1340,9 @@ function openConflict(aId, bId) {
   const pair = [c.a, c.b, ...(c.blockers || [])].filter(Boolean);
   const t0 = Math.min(...pair.map(C.startOf)) - 45 * 60e3, t1 = Math.max(...pair.map(C.endOf)) + 45 * 60e3, W = t1 - t0;
   const owners = [...new Set(c.type === 'nobody' ? adults(c.a) : pair.map(ownerOf))];
-  const pool = S.items.concat(S.busy).filter(x => x.status === 'open' && x.due && x.hasTime && x.dur > 0 && C.endOf(x) > t0 && C.startOf(x) < t1);
+  const pool = S.items.concat(S.busy, S.ext).filter(x => x.status === 'open' && x.due && x.hasTime && x.dur > 0 && C.endOf(x) > t0 && C.startOf(x) < t1);
   const bar = x => { const l = (C.startOf(x) - t0) / W * 100, w = Math.max(2, x.dur * 60e3 / W * 100); const hot = pair.includes(x);
-    return `<div class="tl-bar${hot ? ' hot' : ''}${x.busy ? ' busy' : ''}" style="right:${l}%;width:${w}%" title="${esc(nameOf(x))}">${esc(x.busy ? '🔒 תפוס' : x.text)}</div>`; };
+    return `<div class="tl-bar${hot ? ' hot' : ''}${x.busy ? ' busy' : ''}" style="right:${l}%;width:${w}%" title="${esc(nameOf(x))}">${esc(x.ext ? '📅 ' + x.text : x.busy ? '🔒 תפוס' : x.text)}</div>`; };
   const rows = owners.map(o => `<div class="tl-row"><div class="tl-who">${o === 'any' ? '👨‍👩‍👧' : esc(who(o) || 'אני')}</div><div class="tl-track">${pool.filter(x => ownerOf(x) === o || (c.type === 'nobody' && x === c.a)).map(bar).join('')}</div></div>`).join('');
   const ticks = []; for (let t = Math.ceil(t0 / 3600e3) * 3600e3; t < t1; t += 3600e3) ticks.push(`<span style="right:${(t - t0) / W * 100}%">${hm(new Date(t))}</span>`);
   const [, , title, sub] = describe(c);
@@ -1358,7 +1363,7 @@ function suggestions(c) {
   const other = tgt === c.a ? c.b : c.a;
   const dayLbl = d => whenLabel({ due: d.toISOString(), hasTime: true });
   const move = (x, d) => async () => { x.due = d.toISOString(); x.askedKey = null; await save(x); toast(`🕐 הוזז ל${dayLbl(d)}`); };
-  const busyFor = o => S.items.concat(S.busy).filter(x => x.status === 'open' && x.due && x.hasTime && x.dur > 0 && ownerOf(x) === o);
+  const busyFor = o => S.items.concat(S.busy, S.ext).filter(x => x.status === 'open' && x.due && x.hasTime && x.dur > 0 && ownerOf(x) === o);
   const blockersOf = x => {
     const o = ownerOf(x);
     let list = o === 'any' ? [] : busyFor(o);
@@ -2116,7 +2121,7 @@ function renderDayline() {
     <div class="dl-bar">${ev.map(e => { const a = pos(e.start), b = pos(Math.max(+e.end, +e.start + 30 * 60e3)); return `<i class="${e.done ? 'done' : ''}" style="right:${a}%;width:${Math.max(2.5, b - a)}%;background:${e.cat?.color || e.color}" title="${esc(hm(e.start) + ' ' + e.text)}"></i>`; }).join('')}
       ${nowP > 0 && nowP < 100 ? `<b class="dl-now" style="right:${nowP}%"></b>` : ''}</div>
     <div class="dl-t"><span>7:00</span><span>12:00</span><span>17:00</span><span>23:00</span></div>
-    ${ev.filter(e => !e.done && +e.start > Date.now()).slice(0, 1).map(e => `<div class="dl-next">הבא: <b>${hm(e.start)}</b> ${esc(e.it?.icon || '')} ${esc(e.text)}</div>`).join('')}`;
+    ${ev.filter(e => !e.done && +e.start > Date.now()).slice(0, 1).map(e => `<div class="dl-next">הבא: <b>${hm(e.start)}</b> ${esc(e.ext ? '📅' : e.it?.icon || '')} ${esc(e.text)}</div>`).join('')}`;
 }
 $h('#dayline').onclick = () => { CAL.day = sod(new Date()); CAL.mode = 'day'; showView('cal'); };
 
@@ -2538,6 +2543,11 @@ function calEvents(from, to) {
     const p = person(pid); if (!p?.uid) continue;
     for (const r of CAL.other[p.uid] || []) if (!seen.has(r.id)) push({ ...r.data, id: r.id }, pid, false, r.busy);
   }
+  // 📅 מהיומן של הטלפון (גוגל / אייפון): לקריאה בלבד, בצבע משלו
+  if (S.settings.calMe !== false) for (const x of S.ext) {
+    const s0 = new Date(x.due); if (s0 >= to || +s0 + (x.dur || 0) * 60e3 < +from) continue;
+    ev.push({ id: x.id, it: x, ext: true, mine: false, busy: false, owner: S.myP, color: '#3B82F6', start: s0, hasTime: x.hasTime, end: new Date(+s0 + (x.dur || 0) * 60e3), dur: x.dur, done: false, text: x.text, kind: 'ext', cat: null });
+  }
   return ev.sort((a, b) => a.start - b.start);
 }
 async function loadOthers(force) {
@@ -2557,8 +2567,8 @@ const holOf = d => CAL.hol[`${d.getFullYear()}-${d.getMonth()}`]?.[ymd(d)] || nu
 const hebMain = () => S.settings.mainDate === 'heb';
 const hebDay = d => { try { const n = +new Intl.DateTimeFormat('he-u-ca-hebrew', { day: 'numeric' }).format(d); return gematria(n); } catch { return ''; } };
 const hebMonth = d => { try { return new Intl.DateTimeFormat('he-u-ca-hebrew', { month: 'long' }).format(d).replace('חשון', 'חשוון'); } catch { return ''; } };
-const evLabel = e => `${e.kind === 'meeting' ? 'פגישה' : e.kind === 'thought' ? 'מחשבה' : 'משימה'}: ${e.busy ? 'תפוס' : e.text}${e.hasTime ? `, ${hm(e.start)}${e.dur ? ' עד ' + hm(e.end) : ''}` : ''}${e.owner !== S.myP ? ', של ' + pName(e.owner) : ''}${e.done ? ', בוצע' : ''}`;
-const evIcon = e => e.busy ? '⛔' : e.done ? '✅' : e.it?.icon ? e.it.icon : e.kind === 'meeting' ? '👥' : e.kind === 'thought' ? '💭' : e.it?.repeat ? '🔁' : '📌';
+const evLabel = e => `${e.ext ? 'מהיומן' : e.kind === 'meeting' ? 'פגישה' : e.kind === 'thought' ? 'מחשבה' : 'משימה'}: ${e.busy ? 'תפוס' : e.text}${e.hasTime ? `, ${hm(e.start)}${e.dur ? ' עד ' + hm(e.end) : ''}` : ''}${e.owner !== S.myP ? ', של ' + pName(e.owner) : ''}${e.done ? ', בוצע' : ''}`;
+const evIcon = e => e.ext ? '📅' : e.busy ? '⛔' : e.done ? '✅' : e.it?.icon ? e.it.icon : e.kind === 'meeting' ? '👥' : e.kind === 'thought' ? '💭' : e.it?.repeat ? '🔁' : '📌';
 
 async function renderCal(force) {
   if (!$('#v-cal').classList.contains('on')) return;
@@ -2598,13 +2608,13 @@ function drawDay(d, ev, jump) {
   if (!shade.length && h?.havdalah) shade.push([sod0, +new Date(h.havdalah), h.hol[0] || 'שבת']);
   const y = t => (t - sod0) / 36e5 * HOUR_PX;
   $('#calBody').innerHTML = `
-    ${allDay.length ? `<div class="cal-allday"><small>בלי שעה</small>${allDay.map(e => `<button class="cal-pill${e.done ? ' done' : ''}" data-ev="${e.id}" style="--c:${e.color}" aria-label="${esc(evLabel(e))}">${evIcon(e)} ${esc(e.busy ? 'תפוס/ה' : e.text)}</button>`).join('')}</div>` : ''}
+    ${allDay.length ? `<div class="cal-allday"><small>בלי שעה</small>${allDay.map(e => `<button class="cal-pill${e.done ? ' done' : ''}${e.ext ? ' ext' : ''}" data-ev="${e.id}" style="--c:${e.color}" aria-label="${esc(evLabel(e))}">${evIcon(e)} ${esc(e.busy ? 'תפוס/ה' : e.text)}</button>`).join('')}</div>` : ''}
     ${h?.candles ? `<div class="cal-zman">🕯️ הדלקת נרות ${hm(new Date(h.candles))}</div>` : ''}${h?.havdalah ? `<div class="cal-zman">✨ צאת ${esc(h.hol[0] && !/שבת/.test(h.hol[0]) ? 'החג' : 'השבת')} ${hm(new Date(h.havdalah))}</div>` : ''}
     <div class="cal-day" id="calDay" style="height:${24 * HOUR_PX}px" aria-label="ציר השעות של היום. לחיצה על שעה ריקה מוסיפה משימה">
       ${shade.map(([a, b, n]) => `<div class="cal-shade" style="top:${y(a)}px;height:${y(b) - y(a)}px"><span>🕯️ ${esc(n)}</span></div>`).join('')}
       ${Array.from({ length: 24 }, (_, i) => `<div class="cal-hr" style="top:${i * HOUR_PX}px"><span>${String(i).padStart(2, '0')}:00</span></div>`).join('')}
       ${timed.map(e => { const top = y(+e.start), ht = Math.max(e.dur ? y(+e.end) - top : 0, 26);
-        return `<button class="cal-ev${e.done ? ' done' : ''}${e.busy ? ' busy' : ''}" data-ev="${e.id}" data-t="${+e.start}" aria-label="${esc(evLabel(e))}"
+        return `<button class="cal-ev${e.done ? ' done' : ''}${e.busy ? ' busy' : ''}${e.ext ? ' ext' : ''}" data-ev="${e.id}" data-t="${+e.start}" aria-label="${esc(evLabel(e))}"
           style="--c:${e.color};${e.cat ? `box-shadow:inset -5px 0 0 ${e.cat.color};` : ''}top:${top}px;height:${ht - 2}px;right:calc(52px + (100% - 56px) * ${e.col / e.n});width:calc((100% - 56px) / ${e.n} - 3px)">
           <b dir="ltr">${hm(e.start)}${e.dur && e.n === 1 ? '–' + hm(e.end) : ''}</b> ${e.cat ? esc(e.cat.icon) : evIcon(e)} ${esc(e.busy ? 'תפוס/ה' : e.text)}${e.owner !== S.myP ? ` <small>· ${esc(pName(e.owner))}</small>` : ''}</button>`; }).join('')}
       ${isT ? `<div class="cal-now" style="top:${y(Date.now())}px"><i></i></div>` : ''}
@@ -2624,7 +2634,7 @@ function drawWeek(from, ev) {
     return `<button class="cal-col${ymd(d) === today() ? ' today' : ''}${dayKind(d, h)}" data-day="${ymd(d)}" aria-label="יום ${DAYS[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}, ${list.length} דברים">
       <span class="cal-dh"><b>${DSH[d.getDay()]}׳</b>${hebMain() ? `<i>${hebDay(d)}</i><small>${d.getDate()}</small>` : `<i>${d.getDate()}</i><small>${hebDay(d)}</small>`}</span>
       ${h?.hol.length ? `<span class="cal-holname">${esc(h.hol[0])}</span>` : ''}${h?.mod?.length ? `<span class="cal-holname mod">${esc(h.mod[0])}</span>` : ''}
-      ${list.map(e => `<span class="cal-wi${e.done ? ' done' : ''}" style="--c:${e.color}">${e.hasTime ? `<b>${hm(e.start)}</b>` : ''}${esc(e.busy ? 'תפוס/ה' : e.text)}</span>`).join('')}
+      ${list.map(e => `<span class="cal-wi${e.done ? ' done' : ''}${e.ext ? ' ext' : ''}" style="--c:${e.color}">${e.hasTime ? `<b>${hm(e.start)}</b>` : ''}${esc(e.busy ? 'תפוס/ה' : e.text)}</span>`).join('')}
     </button>`; }).join('')}</div>`;
 }
 
@@ -2684,6 +2694,12 @@ $h('#calBody').addEventListener('click', e => {
   });
 })();
 function openCalEvent(id, t) {
+  const x = S.ext.find(e => e.id === id);
+  if (x) { // 📅 מהיומן של הטלפון: לקריאה בלבד
+    sheet(`<h3>📅 ${esc(x.text)}</h3><p class="note">${whenLabel(x)}${x.dur && x.hasTime ? ' · ⏱️ ' + durLbl(x.dur) : ''}${x.place ? ' · 📍 ' + esc(x.place) : ''}</p>
+      <p class="note" style="margin-top:8px"><span class="ext-tag">📅 מהיומן</span> הגיע מהיומן שלך${S.extHost ? ` (${esc(S.extHost)})` : ''}. משנים או מוחקים אותו שם, וזה מתעדכן כאן לבד תוך 15 דקות.</p>
+      <button class="btn" id="ceClose" style="margin-top:14px">סגירה</button>`); $('#ceClose').onclick = closeSheet; return;
+  }
   const it = item(id);
   if (!it) { // של מישהו אחר (מהיומן שלו)
     const r = Object.values(CAL.other).flat().find(x => x.id === id); if (!r) return;
@@ -4031,12 +4047,14 @@ async function openCalendarSub(renew = false) {
         <div class="cal-step"><b>💻 מחשב / אחר</b><small>מעתיקים את הקישור ← ביומן: "הוספת יומן" ← "מכתובת URL" / "From URL" ← מדביקים.</small>
           <button class="btn" id="calCopy">📋 העתקת הקישור</button></div>
       </div>
-      <p class="note" style="margin-top:10px">⏳ <b>חשוב לדעת:</b> גוגל מרענן יומן כזה <b>כל כמה שעות</b> (לא מיד), ואייפון בערך כל שעה. זה בכיוון אחד: מה שמוסיפים ביומן לא חוזר לכאן.${isDemo ? '' : '<br>🔒 הקישור אישי ופרטי. מישהו קיבל אותו בטעות? <button class="chip" id="calRenew" style="margin-top:4px">🔄 חידוש קישור (הישן מפסיק לעבוד)</button>'}</p>`);
+      <div class="card cal-in" id="calIn" style="margin-top:12px"><b>📥 ולהפך: היומן שלך, באפליקציה</b><p class="note">⏳ בודק…</p></div>
+      <p class="note" style="margin-top:10px">⏳ <b>חשוב לדעת:</b> גוגל מרענן יומן כזה <b>כל כמה שעות</b> (לא מיד), ואייפון בערך כל שעה. רוצים גם את היומן שלך בתוך האפליקציה? ראו "📥 ולהפך" למעלה.${isDemo ? '' : '<br>🔒 הקישור אישי ופרטי. מישהו קיבל אותו בטעות? <button class="chip" id="calRenew" style="margin-top:4px">🔄 חידוש קישור (הישן מפסיק לעבוד)</button>'}</p>`);
     $('#calCopy').onclick = async () => { try { await navigator.clipboard.writeText(url); toast('📋 הקישור הועתק'); } catch { toast(url); } };
     $('#calRenew')?.addEventListener('click', e => {
       if (!e.target.dataset.armed) { e.target.dataset.armed = '1'; e.target.textContent = '⚠️ בטוח? הקישור הישן יפסיק לעבוד. לחיצה שנייה'; return; }
       openCalendarSub(true);
     });
+    drawCalIn($('#calIn'));
   };
   if (demo.DEMO) return draw(`${sync.CAL_FN}?t=demo`, true);
   sheet(`<h3>📅 חיבור ליומן של הטלפון</h3><p class="note" style="margin:-6px 0 12px">⏳ ${renew ? 'מחדש' : 'מכין'} קישור אישי…</p>`);
@@ -4044,6 +4062,66 @@ async function openCalendarSub(renew = false) {
   catch (e) { sheet(`<h3>📅 חיבור ליומן</h3><p class="note" style="color:#FB7185">${esc(e.message)}</p>`); }
 }
 $h('#calSubBtn').onclick = () => openCalendarSub();
+
+// ---------- 📥 ולהפך: האירועים מהיומן של הטלפון בתוך האפליקציה (לקריאה בלבד) ----------
+// נשמרים גם בטלפון, כדי שיופיעו גם בלי אינטרנט. השרת קורא את היומן כל 15 דקות
+const extOf = r => {
+  const allDay = !!r.all_day, s0 = allDay ? (([y, m, d]) => new Date(y, m - 1, d))(r.starts_at.slice(0, 10).split('-').map(Number)) : new Date(r.starts_at);
+  const dur = allDay ? null : Math.max(5, Math.round((new Date(r.ends_at || +s0 + 36e5) - s0) / 6e4));
+  return { id: `ext-${r.uid}-${r.starts_at}`, ext: true, busy: true, kind: 'ext', status: 'open', text: (r.title || '(בלי שם)').slice(0, 200), place: r.location || null,
+    due: s0.toISOString(), hasTime: !allDay, dur, by: S.uid, forP: S.myP };
+};
+async function loadExt(first) {
+  if (demo.DEMO) { // 🎭 בהדגמה: כמה אירועים לדוגמה "מהיומן", כדי לראות איך זה נראה
+    const d = n => { const x = sod(new Date()); x.setDate(x.getDate() + n); return x; }, at = (n, h, m = 0) => { const x = d(n); x.setHours(h, m); return x.toISOString(); };
+    S.ext = [{ uid: 'd1', starts_at: at(0, 18), ends_at: at(0, 19), title: 'חוג ציור של נועה', location: 'מתנ"ס' },
+      { uid: 'd2', starts_at: at(1, 16, 30), ends_at: at(1, 17, 30), title: 'רופא שיניים' },
+      { uid: 'd3', starts_at: ymd(d(3)) + 'T00:00:00Z', all_day: true, title: 'חתונה של שירה' }].map(extOf);
+    S.extHost = 'calendar.google.com'; return;
+  }
+  if (first) { const c = await db.getKV('ext'); if (Array.isArray(c)) { S.ext = c; S.extHost = (await db.getKV('extHost')) || ''; } }
+  if (!S.uid || !navigator.onLine) return;
+  const st = await sync.myCalendar().catch(() => null);
+  const rows = st ? await sync.externalEvents() : [];
+  if (rows === null) return; // שגיאת רשת: נשאר מה שנשמר
+  S.ext = rows.map(extOf); S.extHost = st?.host || '';
+  await db.setKV('ext', S.ext); await db.setKV('extHost', S.extHost);
+  if (curView() === 'cal') renderCal(); renderDayline?.();
+  if (started) scanConflicts(); // משהו שלי מתנגש עם אירוע מהיומן? מופיע בשיחה ובפעמון
+}
+setInterval(() => { if (!document.hidden) loadExt(); }, 15 * 60e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - (S._extAt || 0) > 5 * 60e3) { S._extAt = Date.now(); loadExt(); } });
+
+// הכרטיס "📥 ולהפך" בתוך מסך החיבור (כמו בכסף בכיף)
+const fmtExt = x => `${new Date(x.due).toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric' })}${x.hasTime ? ' · ' + hm(new Date(x.due)) : ' · כל היום'}`;
+async function drawCalIn(el) {
+  if (!el) return;
+  const head = '<b>📥 ולהפך: היומן שלך, באפליקציה</b>';
+  if (demo.DEMO) { el.innerHTML = `${head}<p class="note" style="margin-top:4px">מדביקים כאן את הקישור הסודי של היומן שלך (גוגל / אייפון), והאירועים מופיעים ביומן של זמן בכיף. 🎭 במצב הדגמה לא מתחברים. <a href="guide/#calin" target="_blank" style="color:#F9A8D4">איך מוצאים את הקישור?</a></p>`; return; }
+  let st = null; try { st = await sync.myCalendar(); } catch { /* */ }
+  if (!st) {
+    el.innerHTML = `${head}<p class="note" style="margin:4px 0 8px">מדביקים את <b>"הכתובת הסודית בפורמט iCal"</b> של היומן שלך, והאירועים (חתונה, טיפול, פגישה בעבודה…) מופיעים ביומן של זמן בכיף בכחול, עם <span class="ext-tag">📅 מהיומן</span>. האפליקציה גם תזהיר אם משהו חדש מתנגש איתם. 🔒 נשמר מוצפן, ורק את/ה רואה.</p>
+      <a class="chip" href="guide/#calin" target="_blank" style="text-decoration:none;display:inline-block;margin-bottom:8px">📖 איך מוצאים את הקישור בגוגל / אייפון?</a>
+      <input id="calUrl" dir="ltr" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" style="width:100%;height:46px;border-radius:12px;border:1px solid var(--line);background:var(--card2);padding:0 12px;font-size:16px;color:#fff">
+      <div id="calErr" style="color:#FB7185;font-size:13px;min-height:16px"></div><button class="btn pri" id="calGo">🔗 חיבור היומן שלי</button>`;
+    el.querySelector('#calGo').onclick = async e => {
+      const b = e.currentTarget, v = el.querySelector('#calUrl').value.trim(); if (!v) return el.querySelector('#calUrl').focus();
+      b.disabled = true; b.textContent = '⏳ מתחבר וקורא את היומן…';
+      try { const h = await sync.connectCalendar(v); toast(`📥 היומן חובר (${h})`); confetti(); await loadExt(); drawCalIn(el); }
+      catch (err) { el.querySelector('#calErr').textContent = err.message; b.disabled = false; b.textContent = '🔗 חיבור היומן שלי'; }
+    };
+    return;
+  }
+  const now = Date.now(), ev = S.ext.filter(x => +new Date(x.due) + (x.dur || 1440) * 6e4 >= now).slice(0, 8);
+  el.innerHTML = `${head}<p class="note" style="margin:4px 0 8px">✅ מחובר: <b dir="ltr">${esc(st.host)}</b> · ${st.last_error ? `<span style="color:#FB7185">⚠️ ${esc(st.last_error)}</span>` : st.last_sync ? `עודכן ${new Date(st.last_sync).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })} · ${st.events} אירועים` : '⏳ קורא בפעם הראשונה…'} · מתעדכן כל 15 דקות. 🔒 רק את/ה רואה.</p>
+    ${ev.length ? `<div class="xcal-list">${ev.map(x => `<div><span>${esc(fmtExt(x))}</span><b>${esc(x.text)}</b></div>`).join('')}</div>` : '<p class="note">אין אירועים קרובים.</p>'}
+    <button class="btn danger" id="calOff" style="margin-top:10px">🔌 ניתוק: מוחק את הקישור ואת כל האירועים</button>`;
+  el.querySelector('#calOff').onclick = async e => {
+    const b = e.currentTarget;
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '⚠️ בטוח? לחיצה שנייה מנתקת ומוחקת'; return; }
+    try { await sync.disconnectCalendar(); S.ext = []; await db.setKV('ext', []); toast('🔌 היומן נותק. הקישור והאירועים נמחקו'); if (curView() === 'cal') renderCal(); drawCalIn(el); } catch (err) { toast(err.message, true); }
+  };
+}
 
 async function boot() {
   started = true;
@@ -4076,7 +4154,8 @@ async function boot() {
   S.items = await db.all('items');
   if (await showGate()) {
     buildPeople(); renderAll(); renderFamily(); boot();
-    sync.whenReady().then(async () => { await migrateToGroups(); buildPeople(); renderAll(); renderFamily(); renderMe(); });
+    sync.whenReady().then(async () => { await migrateToGroups(); buildPeople(); renderAll(); renderFamily(); renderMe(); S._extAt = Date.now(); loadExt(); });
+    loadExt(true).then(() => { if (curView() === 'cal') renderCal(); });
   }
   if (startView() === 'chat') seeView('chat'); drawUnread();
   if (startView() !== 'chat' && !new URLSearchParams(location.search).has('take') && !new URLSearchParams(location.search).has('dose')) showView(startView());

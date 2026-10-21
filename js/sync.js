@@ -200,6 +200,33 @@ export async function saveCategory(row) {
 // 📆 יומן גוגל
 export const GCAL_FN = CONFIG.url + '/functions/v1/zman-gcal';
 export const CAL_FN = CONFIG.url + '/functions/v1/zman-calendar';
+// 📥 ולהפך: היומן של המשתמש (גוגל / אייפון) באפליקציה. אותה טבלה כמו בכסף בכיף, ורק הוא רואה
+export async function myCalendar() {
+  if (DEMO || !me) return null;
+  const { data } = await (await client()).from('user_calendars').select('host,last_sync,last_error,events').eq('user_id', me.id).maybeSingle();
+  return data || null;
+}
+export async function connectCalendar(url) {
+  if (DEMO) throw new Error('במצב הדגמה לא מתחברים');
+  const c = await client();
+  const { data: host, error } = await c.rpc('set_my_calendar', { p_url: url });
+  if (error) throw new Error(nice(error));
+  const r = await c.functions.invoke('calendar-import', { body: {} }); // קורא עכשיו (ואחר כך כל 15 דקות)
+  if (r.error) console.warn('calendar-import', r.error);
+  return host;
+}
+export async function disconnectCalendar() {
+  const { error } = await (await client()).rpc('clear_my_calendar'); if (error) throw new Error(nice(error));
+}
+// האירועים מהיומן, מחודש אחורה עד 3 חודשים קדימה. יום שלם: רק התאריך, בלי המרת שעון
+export async function externalEvents() {
+  if (DEMO || !me) return [];
+  const from = new Date(Date.now() - 31 * 864e5).toISOString();
+  const { data, error } = await (await client()).from('external_events').select('uid,starts_at,ends_at,all_day,title,location')
+    .eq('user_id', me.id).gte('starts_at', from).order('starts_at').limit(2000);
+  if (error) { console.warn('external_events', error); return null; }
+  return data || [];
+}
 // 📆 מנוי ליומן של הטלפון: מפתח סודי אישי. renew = מפתח חדש (הקישור הישן מפסיק לעבוד)
 export async function calendarURL(renew = false) {
   if (DEMO) throw new Error('במצב הדגמה אין קישור ליומן');

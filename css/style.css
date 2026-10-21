@@ -725,3 +725,12 @@ nav .badge.new{background:#22C55E;left:auto;right:6px;animation:popin .3s both}
 .cal-step b{font-size:16px}.cal-step small{color:var(--muted);font-size:13px;line-height:1.45}
 .cal-step .btn{margin-top:2px}
 .cal-step a.btn{color:#fff!important;display:flex!important;align-items:center;justify-content:center;min-height:52px;height:auto;text-decoration:none}
+/* 📅 אירועים מהיומן של הטלפון: כחול, עם תווית, לקריאה בלבד */
+.cal-ev.ext{background:rgba(59,130,246,.22)!important;border:1.5px dashed rgba(96,165,250,.8)!important;color:#DBEAFE}
+.cal-pill.ext,.cal-wi.ext{border:1.5px dashed rgba(96,165,250,.8);background:rgba(59,130,246,.18)}
+.ext-tag{display:inline-block;font-size:12px;font-weight:800;border-radius:999px;padding:1px 8px;background:rgba(59,130,246,.25);color:#BFDBFE;white-space:nowrap}
+.cal-in{border-color:rgba(59,130,246,.45)}
+.xcal-list{display:flex;flex-direction:column;gap:6px}
+.xcal-list div{display:flex;flex-direction:column;background:var(--card2);border-inline-start:3px solid #3B82F6;border-radius:10px;padding:7px 10px;animation:nwRise .35s both}
+.xcal-list span{font-size:12.5px;color:var(--muted)}.xcal-list b{font-size:14.5px}
+.cal-in a.chip{color:inherit}
