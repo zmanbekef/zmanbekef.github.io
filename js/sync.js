@@ -10,6 +10,8 @@ const CONFIG = {
 };
 const DEMO = db.DEMO;
 if (!DEMO) track.init({ app: 'zman', url: CONFIG.url, key: CONFIG.key });
+// ⚠️ "משתמש נתקע": כישלון שקט (בלי קריסה) נרשם בלוח הבקרה, בלי מיילים ובלי תוכן
+const fail = (kind, e) => { if (!DEMO) try { track.fail(kind, e?.status || e?.code ? `${e.status || ''} ${e.code || e.message || ''}`.trim() : (e?.message || String(e || ''))); } catch { /* */ } };
 const LOCAL_ONLY = ['askedKey']; // "כבר שאלתי" — שייך לטלפון הזה בלבד
 
 let sb = null, hh = null, me = null, channel = null, flushing = false, cb = {};
@@ -63,7 +65,7 @@ export async function currentUser() {
 }
 export async function signIn(email, password) {
   const { error } = await (await client()).auth.signInWithPassword({ email, password });
-  if (error) throw new Error(nice(error));
+  if (error) { fail('auth', error); throw new Error(nice(error)); }
   await currentUser(); track.ping(sb);
 }
 // שכחתי סיסמה: מייל עם קישור שחוזר לאפליקציה, ושם בוחרים סיסמה חדשה
@@ -83,7 +85,7 @@ export async function verifyPassword(password) {
 }
 export async function signUp(email, password) {
   const { data, error } = await (await client()).auth.signUp({ email, password });
-  if (error) throw new Error(nice(error));
+  if (error) { fail('auth', error); throw new Error(nice(error)); }
   if (!data.session) throw new Error(HEB_ERR['Email not confirmed']);
   await currentUser(); track.ping(sb);
 }
@@ -214,7 +216,7 @@ export async function connectCalendar(url, label = '') {
   const { data: host, error } = await c.rpc('set_my_calendar', { p_url: url, p_label: label || null });
   if (error) throw new Error(nice(error));
   const r = await c.functions.invoke('calendar-import', { body: {} }); // קורא עכשיו (ואחר כך כל 15 דקות)
-  if (r.error) console.warn('calendar-import', r.error);
+  if (r.error) { console.warn('calendar-import', r.error); fail('server', r.error); }
   return host;
 }
 // בלי id: מנתק את כל היומנים. עם id: רק אחד
@@ -250,7 +252,7 @@ export const gcalPrefs = p => rpc('zman_gcal_prefs', { p });
 export const gcalDisconnect = () => rpc('zman_gcal_disconnect');
 export async function gcalSync() {
   const { data, error } = await (await client()).functions.invoke('zman-gcal', { body: { action: 'sync' } });
-  if (error) throw new Error(nice(error)); return data;
+  if (error) { fail('server', error); throw new Error(nice(error)); } return data;
 }
 export const setColor = async (mid, c) => { await rpc('zman_set_color', { mid, c }); await loadGroups(); };
 export const setCalShare = async (g, v) => { await rpc('zman_set_cal_share', { g, v }); await loadGroups(); };
@@ -301,7 +303,7 @@ export async function saveFeedbackAny(f) {
     const { error } = await c.from('feedback').insert({ user_id: u.id, app: 'zman-bekef', ...f });
     if (error) console.warn('feedback', error);
     return !error;
-  } catch (e) { console.warn('feedback', e); return false; }
+  } catch (e) { console.warn('feedback', e); fail('feedback', e); return false; }
 }
 
 // ---------- תור שליחה (עובד גם כשאין רשת) ----------
@@ -351,7 +353,7 @@ export async function flush() {
       await db.setKV('outbox', box);
     }
     cb.onStatus?.('ok');
-  } catch (e) { console.warn('sync flush', e); cb.onStatus?.('wait'); }
+  } catch (e) { console.warn('sync flush', e); fail('sync', e); cb.onStatus?.('wait'); }
   finally { flushing = false; }
 }
 
@@ -444,7 +446,7 @@ export async function start(callbacks) {
       try { await loadHousehold(); } catch { /* בלי רשת */ }
       await loadProfile(); await loadGroups(); cb.onGroups?.();
       await connected(false);
-    } catch (e) { console.warn('sync start', e); cb.onStatus?.('wait'); }
+    } catch (e) { console.warn('sync start', e); fail('sync', e); cb.onStatus?.('wait'); }
   })();
   if (!profile) await ready;
   return { user: me };
@@ -549,3 +551,6 @@ export async function isAppAdmin() {
   try { const ok = !!(await rpc('is_app_admin')); if (ok) adminOf = me.id; return ok; } catch { return false; }
 }
 export function _testState(st) { if (st.user) me = st.user; if (st.groups) groups = st.groups; if (st.profile) profile = st.profile; }
+
+// בשביל app.js: לדווח "נתקע" גם ממסכים (תזכורת, יומן…)
+export { fail };

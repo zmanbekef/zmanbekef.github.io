@@ -893,6 +893,7 @@ function openFeedback(text = '', hint = text) {
     const saved = await cloud;
     if (mailed || saved) { closeSheet(); confetti(); toast('💌 תודה! המשוב נשלח'); return; }
     e.target.disabled = false; e.target.textContent = '📨 שליחה';
+    sync.fail('feedback', 'feedback form not sent');
     $('#fErr').innerHTML = `לא הצלחתי לשלוח (אין אינטרנט?). אפשר <a href="mailto:${FEEDBACK_TO}?subject=${encodeURIComponent('משוב — זמן בכיף')}&body=${encodeURIComponent(message)}" style="color:#F9A8D4">לשלוח במייל רגיל</a>`;
   };
 }
@@ -968,7 +969,7 @@ async function sendDemoNotes(text, n, o = null) {
     });
     mailed = await formOk(r);
   } catch { mailed = false; }
-  return (await cloud) || mailed;
+  const ok = (await cloud) || mailed; if (!ok) sync.fail('feedback', `${o?.label || 'demo notes'} not sent`); return ok;
 }
 
 // ---------- עזרה: שאלות ותשובות בחלון נפרד ----------
@@ -1080,7 +1081,7 @@ async function syncSchedule() {
     const sig = r => `${r.at}|${r.title}|${r.body}`;
     const changed = want.filter(r => had[r.id] !== sig(r));
     const gone = Object.keys(had).filter(id => !want.some(r => r.id === id));
-    if (changed.length && !(await sync.upsertNotify(changed))) return;
+    if (changed.length && !(await sync.upsertNotify(changed))) { sync.fail('reminder', `schedule upsert failed (${changed.length})`); return; }
     const removed = gone.filter(id => { const at = had[id]?.split('|')[0]; return !at || new Date(at) > new Date(); });
     if (removed.length) await sync.deleteNotify(removed);
     const next = {}; for (const r of want) next[r.id] = sig(r);
@@ -1115,7 +1116,7 @@ async function drawPush() {
         <button class="btn" id="pushTest">🧪 שלח לי התראת ניסיון</button><button class="btn danger" id="pushOff">לכבות התראות בטלפון הזה</button>
         <p class="note" style="margin-top:6px">בשבת ובחג לא נשלחות התראות. באנדרואיד אפשר לבחור צליל מיוחד: הגדרות הטלפון ← התראות ← Chrome ← זמן בכיף ← צליל.</p>`}`;
   $('#pushLogin')?.addEventListener('click', () => showGate());
-  $('#pushOn')?.addEventListener('click', async () => { try { await sync.enablePush(S.settings.push || {}); toast('🔔 ההתראות הופעלו'); await syncSchedule(); } catch (e) { toast(e.message, true); } drawPush(); });
+  $('#pushOn')?.addEventListener('click', async () => { try { await sync.enablePush(S.settings.push || {}); toast('🔔 ההתראות הופעלו'); await syncSchedule(); } catch (e) { sync.fail('push', e); toast(e.message, true); } drawPush(); });
   $('#pushOff')?.addEventListener('click', async () => { await sync.disablePush(); toast('ההתראות כובו בטלפון הזה'); drawPush(); });
   $('#pushTest')?.addEventListener('click', async () => { await queueNotify(S.uid, 'msg', '🧪 התראת ניסיון', 'אם רואים את זה — ההתראות עובדות! אפשר גם לנעול את הטלפון ולנסות שוב.', 'test'); toast('📨 נשלח. תוך דקה תקפוץ התראה'); });
   el.querySelectorAll('[data-cat]').forEach(c => c.onchange = async () => {
@@ -4060,7 +4061,7 @@ async function openCalendarSub(renew = false) {
   if (demo.DEMO) return draw(`${sync.CAL_FN}?t=demo`, true);
   sheet(`<h3>📅 חיבור ליומן של הטלפון</h3><p class="note" style="margin:-6px 0 12px">⏳ ${renew ? 'מחדש' : 'מכין'} קישור אישי…</p>`);
   try { const url = await sync.calendarURL(renew); if (renew) toast('🔄 קישור חדש. צריך להוסיף אותו שוב ליומן'); draw(url, false); }
-  catch (e) { sheet(`<h3>📅 חיבור ליומן</h3><p class="note" style="color:#FB7185">${esc(e.message)}</p>`); }
+  catch (e) { sync.fail('calendar', e); sheet(`<h3>📅 חיבור ליומן</h3><p class="note" style="color:#FB7185">${esc(e.message)}</p>`); }
 }
 $h('#calSubBtn').onclick = () => openCalendarSub();
 
@@ -4116,7 +4117,7 @@ async function drawCalIn(el) {
     const b = e.currentTarget, v = el.querySelector('#calUrl').value.trim(), lbl = el.querySelector('#calLbl').value.trim(); if (!v) return el.querySelector('#calUrl').focus();
     b.disabled = true; b.textContent = '⏳ מתחבר וקורא את היומן…';
     try { const h = await sync.connectCalendar(v, lbl); toast(`📥 היומן חובר (${lbl || h})`); confetti(); await loadExt(); drawCalIn(el); }
-    catch (err) { el.querySelector('#calErr').textContent = err.message; b.disabled = false; b.textContent = '🔗 חיבור'; }
+    catch (err) { sync.fail('calendar', err); el.querySelector('#calErr').textContent = err.message; b.disabled = false; b.textContent = '🔗 חיבור'; }
   };
   el.querySelectorAll('[data-off]').forEach(b => b.onclick = async () => {
     if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '⚠️ בטוח? מוחק את הקישור והאירועים'; return; }

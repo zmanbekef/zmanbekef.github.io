@@ -55,6 +55,14 @@ export async function ping(client) {
 const seen = new Set();
 /** דיווח יזום מהאפליקציה (למשל "קובץ בנק בפורמט שלא נתמך") — רק שם הפורמט, בלי תוכן */
 export function issue(message, source) { report(message, source); }
+/** ⚠️ משתמש נתקע — בלי קריסה (ייבוא שנכשל, כניסה, סנכרון, משוב שלא נשלח, שרת).
+ *  kind = סוג הכישלון; details = פרטים טכניים בלבד — בלי מייל, שמות, סכומים או תוכן. בלוח הבקרה: ⚠️ (קריסה = 💥) */
+const NET = /fetch|network|load failed|timeout|offline/i;
+export function fail(kind, details = '') {
+  const d = String(details || '').replace(/[^\s@]+@[^\s@]+/g, '<מייל>').replace(/\d{5,}/g, '#').slice(0, 200);
+  if (!navigator.onLine || NET.test(d)) return; // בלי אינטרנט — מצב רגיל, לא תקלה
+  report(`⚠️ ${kind}: ${d}`, `fail:${kind}`);
+}
 function report(message, source) {
   message = String(message || '').slice(0, 300);
   if (!message || /ResizeObserver|^Script error\.?$/.test(message) || seen.has(message)) return;
