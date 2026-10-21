@@ -12,6 +12,8 @@ import * as demo from './demo.js';
 import { NEWS } from './whats-new.js';
 
 const $ = s => document.querySelector(s);
+// כפתורים שמחברים בטעינה: אם הדף עוד ישן ואין בו את הכפתור, ממשיכים בלי להיתקע
+const $h = sel => document.querySelector(sel) || document.createElement('i');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const today = () => ymd(new Date());
 const isToday = iso => iso && ymd(new Date(iso)) === today();
@@ -1454,7 +1456,7 @@ function renderTop3() {
   $('#t3title').textContent = fold && list.length ? `⭐ החשובים · ${n}/${list.length}${n === list.length ? ' 🎉' : ''}` : '⭐ החשובים של היום';
 }
 // ⭐ נעוץ למעלה בשיחה, ואפשר לקפל לשורה אחת
-$('#t3fold').onclick = e => { e.stopPropagation(); const f = !$('.hero').classList.contains('fold'); try { localStorage.setItem('zman-t3fold', f ? '1' : '0'); } catch { /* */ } renderTop3(); };
+$h('#t3fold').onclick = e => { e.stopPropagation(); const f = !$('.hero').classList.contains('fold'); try { localStorage.setItem('zman-t3fold', f ? '1' : '0'); } catch { /* */ } renderTop3(); };
 
 function streak() {
   const days = new Set(S.log.filter(l => l.action === 'done').map(l => ymd(new Date(l.ts))));
@@ -1528,9 +1530,9 @@ function renderTasks() {
     else { r.style.transform = ''; r.classList.remove('swipe-del'); }
   });
 })();
-$('#catFilter').addEventListener('click', e => { const b = e.target.closest('[data-cf]'); if (b) { S.catF = b.dataset.cf || null; renderTasks(); } });
-$('#whoFilter').addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (b) { S.who = b.dataset.w; renderTasks(); } });
-$('#taskList').addEventListener('click', async e => {
+$h('#catFilter').addEventListener('click', e => { const b = e.target.closest('[data-cf]'); if (b) { S.catF = b.dataset.cf || null; renderTasks(); } });
+$h('#whoFilter').addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (b) { S.who = b.dataset.w; renderTasks(); } });
+$h('#taskList').addEventListener('click', async e => {
   const op = e.target.closest('[data-op]')?.dataset.op, id = e.target.closest('.row')?.dataset.id;
   if (!op || !id) return;
   const it = S.items.find(x => x.id === id);
@@ -1654,7 +1656,7 @@ function renderShop() {
     for (const x of done) { x.status = 'deleted'; await save(x); } renderShop(); toast('🧹 נוקה');
   });
 }
-$('#shopWho').onclick = e => { const b = e.target.closest('[data-sg]'); if (!b) return; S.shopG = b.dataset.sg || null; renderShop(); };
+$h('#shopWho').onclick = e => { const b = e.target.closest('[data-sg]'); if (!b) return; S.shopG = b.dataset.sg || null; renderShop(); };
 const SL_ICONS = ['🏪', '🛒', '🔨', '🥬', '💊', '🧸', '👕', '📚', '🧹', '🎁', '🐟', '🍞', '🌸', '⛽', '🖥️', '🧴'];
 function openShopList(l) {
   const gid = shopGid(); let icon = l?.icon || '🏪';
@@ -1677,7 +1679,7 @@ function openShopList(l) {
     $('#slY').onclick = async () => { for (const x of shopOf(gid, l.id)) { x.status = 'deleted'; await save(x); } l.status = 'deleted'; await save(l); S.shopL = { ...(S.shopL || {}), [gid || '']: null }; closeSheet(); renderShop(); toast('🗑️ הרשימה נמחקה'); };
   });
 }
-$('#shopLists').onclick = e => {
+$h('#shopLists').onclick = e => {
   const b = e.target.closest('[data-sl]'); if (!b) return; const v = b.dataset.sl, gid = shopGid();
   if (v === '+') return openShopList(null);
   if (v === 'edit') return openShopList(item(shopLid(gid)));
@@ -1689,10 +1691,10 @@ const shopGo = async () => {
   $('#shopIn').value = ''; const a = await addShop(parts);
   if (a.length) toast(`🛒 נוסף${a.length > 1 ? 'ו ' + a.length : ''}`); else toast('כבר ברשימה');
 };
-$('#shopAdd').onclick = shopGo;
-$('#menuBtn').onclick = () => openMenu();
-$('#shopIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) shopGo(); });
-$('#shopList').addEventListener('click', async e => {
+$h('#shopAdd').onclick = shopGo;
+$h('#menuBtn').onclick = () => openMenu();
+$h('#shopIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) shopGo(); });
+$h('#shopList').addEventListener('click', async e => {
   const op = e.target.closest('[data-sop]')?.dataset.sop, id = e.target.closest('[data-id]')?.dataset.id, x = id && item(id);
   if (!op || !x) return;
   if (op === 'check') { x.status = x.status === 'done' ? 'open' : 'done'; x.doneAt = x.status === 'done' ? new Date().toISOString() : null; await save(x); e.target.closest('.cb')?.classList.add('pop'); setTimeout(renderShop, 180); return; }
@@ -1805,7 +1807,7 @@ function openPrize(gid, p) {
   };
   $('#pzD')?.addEventListener('click', async e => { if (!tapAgain(e.currentTarget, '🗑️ בטוח? לחץ שוב')) return; p.status = 'deleted'; await save(p); closeSheet(); renderKids(); });
 }
-$('#kidList').addEventListener('click', async e => {
+$h('#kidList').addEventListener('click', async e => {
   const pz = e.target.closest('[data-pz]'); if (pz) return openPrize(item(pz.dataset.pz).group_id, item(pz.dataset.pz));
   const pn = e.target.closest('[data-pznew]'); if (pn) return openPrize(pn.dataset.pznew, null);
   const op = e.target.closest('[data-kop]')?.dataset.kop, kid = e.target.closest('[data-kid]')?.dataset.kid; if (!op || !kid) return;
@@ -2011,7 +2013,7 @@ function openHabit(h, preText) {
   };
   $('#hbX')?.addEventListener('click', async e => { if (!tapAgain(e.currentTarget, '🗑️ בטוח? לחץ שוב')) return; h.status = 'deleted'; await save(h); closeSheet(); renderTasks(); });
 }
-$('#v-tasks').addEventListener('click', e => {
+$h('#v-tasks').addEventListener('click', e => {
   if (e.target.closest('#hbNew')) return openHabit(null);
   const op = e.target.closest('[data-hop]')?.dataset.hop, id = e.target.closest('[data-h]')?.dataset.h; if (!op || !id) return;
   if (op === 'tick') return tickHabit(id, e.target.closest('.cb'));
@@ -2094,10 +2096,10 @@ async function stopFocus() {
   if (!S.focus) return;
   S.focus = null; await db.setKV('focus', null); drawFocus(); toast('⏹️ הטיימר נעצר');
 }
-$('#fcStop').onclick = e => { if (tapAgain(e.currentTarget, '⏹️ לעצור? לחץ שוב')) stopFocus(); };
-$('#fcHide').onclick = () => drawFocus(false);
-$('#focusPill').onclick = () => drawFocus(true);
-$('#fcDone').onclick = async () => { const f = S.focus; if (!f) return; S.focus = null; await db.setKV('focus', null); drawFocus(); await markDone(f.id); };
+$h('#fcStop').onclick = e => { if (tapAgain(e.currentTarget, '⏹️ לעצור? לחץ שוב')) stopFocus(); };
+$h('#fcHide').onclick = () => drawFocus(false);
+$h('#focusPill').onclick = () => drawFocus(true);
+$h('#fcDone').onclick = async () => { const f = S.focus; if (!f) return; S.focus = null; await db.setKV('focus', null); drawFocus(); await markDone(f.id); };
 
 // 🕐 ציר היום: פס קטן במסך הראשי — מה יש היום לפי שעות, וקו "עכשיו"
 function renderDayline() {
@@ -2113,7 +2115,7 @@ function renderDayline() {
     <div class="dl-t"><span>7:00</span><span>12:00</span><span>17:00</span><span>23:00</span></div>
     ${ev.filter(e => !e.done && +e.start > Date.now()).slice(0, 1).map(e => `<div class="dl-next">הבא: <b>${hm(e.start)}</b> ${esc(e.it?.icon || '')} ${esc(e.text)}</div>`).join('')}`;
 }
-$('#dayline').onclick = () => { CAL.day = sod(new Date()); CAL.mode = 'day'; showView('cal'); };
+$h('#dayline').onclick = () => { CAL.day = sod(new Date()); CAL.mode = 'day'; showView('cal'); };
 
 // ---------- 🍲 תפריט שבת → רשימת קניות ----------
 const DISHES = {
@@ -2436,7 +2438,7 @@ function goTo(go) {
   if (go.view) showView(go.view);
   if (go.item && item(go.item)) { if (item(go.item).kind === 'msg') return showView('chat'); if (go.comments) return openComments(go.item); return openCalEvent(go.item); }
 }
-$('#bellBtn').onclick = openBell;
+$h('#bellBtn').onclick = openBell;
 
 // ---------- 🔔 הקפצה: "פסי מזכירה למוישי" ----------
 const canBump = it => S.uid && it?.status === 'open' && it.forP && it.forP !== S.myP && it.forP !== 'any' && !!person(it.forP)?.uid;
@@ -2644,11 +2646,11 @@ function calMove(n) {
   CAL.day = CAL.mode === 'day' ? addDays(d, n) : CAL.mode === 'week' ? addDays(d, 7 * n) : new Date(d.getFullYear(), d.getMonth() + n, 1);
   renderCal();
 }
-$('#calMode').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; CAL.mode = b.dataset.m; CAL.jump = true; renderCal(); };
-$('#calPrev').onclick = () => calMove(-1);
-$('#calNext').onclick = () => calMove(1);
-$('#calToday').onclick = () => { CAL.day = sod(new Date()); CAL.jump = true; enterAnim($('#v-cal')); renderCal(); };
-$('#calWho').onclick = async e => {
+$h('#calMode').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; CAL.mode = b.dataset.m; CAL.jump = true; renderCal(); };
+$h('#calPrev').onclick = () => calMove(-1);
+$h('#calNext').onclick = () => calMove(1);
+$h('#calToday').onclick = () => { CAL.day = sod(new Date()); CAL.jump = true; enterAnim($('#v-cal')); renderCal(); };
+$h('#calWho').onclick = async e => {
   const b = e.target.closest('[data-p]'); if (!b) return;
   const cur = calWho(), id = b.dataset.p, on = !cur.includes(id);
   if (id === 'me') { S.settings.calMe = S.settings.calMe === false; await db.setKV('settings', S.settings); return renderCal(); }
@@ -2658,7 +2660,7 @@ $('#calWho').onclick = async e => {
   const p = person(id);
   if (on && p?.uid && !(CAL.other[p.uid] || []).length && !S.items.some(x => ownerP(x) === id && x.due)) toast(`ל${pName(id)} אין כרגע מה להראות, או שעוד לא שיתף/ה את היומן`);
 };
-$('#calBody').addEventListener('click', e => {
+$h('#calBody').addEventListener('click', e => {
   const evb = e.target.closest('[data-ev]');
   if (evb) return openCalEvent(evb.dataset.ev, evb.dataset.t);
   const day = e.target.closest('[data-day]');
@@ -2742,7 +2744,7 @@ function renderThoughts() {
       <button class="act" data-op="star">⭐ להיום</button><button class="act" data-op="remove">🗑️ מחק</button></div></div>`).join('')
       : `<div class="empty-state"><span class="em">💭</span>התיבה ריקה.<br>כל מחשבה שעולה לך בראש, פשוט כתוב לי בשיחה, למשל: "רעיון: לסדר את המחסן"</div>`);
 }
-$('#thoughtList').addEventListener('click', e => {
+$h('#thoughtList').addEventListener('click', e => {
   const op = e.target.closest('[data-op]')?.dataset.op, id = e.target.closest('[data-id]')?.dataset.id;
   if (!op || !id) return;
   ({ toTask: () => OPS.toTask(id), date: () => openEdit(id, 'date', 'task'), star: () => OPS.star(id), remove: () => OPS.remove(id), edit: () => openEdit(id) })[op]?.();
@@ -2775,7 +2777,7 @@ addEventListener('pointerdown', () => syncTrap(), { capture: true });
 function sheet(html) { $('#sheet').innerHTML = html; $('#sheetBg').classList.add('on'); syncTrap(); }
 function closeSheet() { $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = ''; setTimeout(syncTrap, 0); }
 
-$('#sheetBg').addEventListener('click', e => { if (e.target.id === 'sheetBg') closeSheet(); });
+$h('#sheetBg').addEventListener('click', e => { if (e.target.id === 'sheetBg') closeSheet(); });
 
 // משיכה כלפי מטה: בחלון — סוגרת אותו; במסך (משימות, מחשבות, הגדרות) — חוזרת לשיחה
 function pullDown(el, scroller, ok, close) {
@@ -2929,7 +2931,7 @@ function openPlus() {
     }
   };
 }
-$('#plusBtn').onclick = () => openPlus();
+$h('#plusBtn').onclick = () => openPlus();
 
 function openEdit(id, focus, forceKind) {
   const it = item(id); if (!it) return toast('המשימה הזאת כבר לא קיימת', true);
@@ -3117,8 +3119,8 @@ function showView(v, fromPop) {
 }
 document.querySelectorAll('.tabs2').forEach(t => t.onclick = e => { const b = e.target.closest('[data-v]'); if (b) showView(b.dataset.v); });
 document.querySelectorAll('nav button[data-v]').forEach(b => b.onclick = () => showView(b.dataset.v));
-$('#todayBtn').onclick = () => { showView('chat'); send('מה יש לי היום?'); };
-$('#t3edit').onclick = () => openPicker();
+$h('#todayBtn').onclick = () => { showView('chat'); send('מה יש לי היום?'); };
+$h('#t3edit').onclick = () => openPicker();
 
 function renderChat() {
   $('#chat').innerHTML = ''; lastDay = null;
@@ -3249,26 +3251,26 @@ mic.addEventListener('click', () => {
   if (R.on) return recStop(false);
   if (inp.value.trim()) { const v = inp.value; inp.value = ''; updateMic(); send(v); }
 });
-$('#recStop').onclick = () => recStop(false);
-$('#recCancel').onclick = () => { recStop(true); toast('🗑️ ההקלטה בוטלה'); };
+$h('#recStop').onclick = () => recStop(false);
+$h('#recCancel').onclick = () => { recStop(true); toast('🗑️ ההקלטה בוטלה'); };
 
 const CHIPS = ['מה יש לי היום?', 'מה יש מחר?', 'סיכום', 'עזרה'];
 $('#chips').innerHTML = CHIPS.map(c => `<button class="chip">${c}</button>`).join('');
-$('#chips').onclick = e => { const c = e.target.closest('.chip'); if (c) send(c.textContent); };
+$h('#chips').onclick = e => { const c = e.target.closest('.chip'); if (c) send(c.textContent); };
 
 // ---------- דברים משותפים (רכב וכו') ----------
 function renderRes() {
   const custom = S.resources.filter(r => !C.DEFAULT_RES.some(d => d.id === r.id));
   $('#resList').innerHTML = S.resources.map(r => `<span class="chip" style="display:inline-block;margin:4px 0 0 6px">${r.e} ${esc(r.n)}${custom.includes(r) ? ` <b data-del="${r.id}" style="cursor:pointer">✕</b>` : ''}</span>`).join('');
 }
-$('#resAdd').onclick = async () => {
+$h('#resAdd').onclick = async () => {
   const n = $('#resNew').value.trim(); if (!n) return;
   const bare = n.replace(/^ה/, '');
   const custom = (await db.getKV('resources', [])).concat({ id: db.newId(), e: '🔑', n, words: [...new Set([n, bare, 'ה' + bare])] });
   await db.setKV('resources', custom); S.resources = C.DEFAULT_RES.concat(custom); $('#resNew').value = ''; renderRes(); toast('נוסף ✓');
   sync.saveRes(custom).catch(() => {});
 };
-$('#resList').onclick = async e => {
+$h('#resList').onclick = async e => {
   const id = e.target.dataset?.del; if (!id) return;
   const custom = (await db.getKV('resources', [])).filter(r => r.id !== id);
   await db.setKV('resources', custom); S.resources = C.DEFAULT_RES.concat(custom); renderRes();
@@ -3289,12 +3291,12 @@ function drawShabbatSettings() {
   $('#setMelody').innerHTML = Object.entries(Z.MELODIES).map(([k, v]) => `<option value="${k}">${v}</option>`).join(''); $('#setMelody').value = S.settings.melody;
   $('#setShAlerts').innerHTML = [[180, '3 שעות'], [120, 'שעתיים'], [60, 'שעה'], [30, 'חצי שעה'], [15, 'רבע שעה']].map(([m, l]) => `<button class="chip ${(S.settings.shabbatAlerts || []).includes(m) ? 'on' : ''}" data-m="${m}">${l}</button>`).join('');
 }
-$('#setCity').onchange = () => { const c = Z.cityOf($('#setCity').value); $('#setCandle').value = c[3]; saveSettings(); };
-$('#setCandle').onchange = saveSettings; $('#setMelody').onchange = () => { Z.play($('#setMelody').value); saveSettings(); };
-$('#setShAlerts').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; b.classList.toggle('on'); saveSettings(); };
-$('#testMelody').onclick = () => Z.play($('#setMelody').value);
-$('#setMorning').onchange = saveSettings; $('#setEvening').onchange = saveSettings;
-$('#backupBtn').onclick = async () => {
+$h('#setCity').onchange = () => { const c = Z.cityOf($('#setCity').value); $('#setCandle').value = c[3]; saveSettings(); };
+$h('#setCandle').onchange = saveSettings; $('#setMelody').onchange = () => { Z.play($('#setMelody').value); saveSettings(); };
+$h('#setShAlerts').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; b.classList.toggle('on'); saveSettings(); };
+$h('#testMelody').onclick = () => Z.play($('#setMelody').value);
+$h('#setMorning').onchange = saveSettings; $('#setEvening').onchange = saveSettings;
+$h('#backupBtn').onclick = async () => {
   const data = await db.exportAll();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
@@ -3302,14 +3304,14 @@ $('#backupBtn').onclick = async () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   toast('💾 הגיבוי נשמר');
 };
-$('#restoreBtn').onclick = () => $('#restoreFile').click();
-$('#restoreFile').onchange = async e => {
+$h('#restoreBtn').onclick = () => $('#restoreFile').click();
+$h('#restoreFile').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   try { const items = await db.importAll(JSON.parse(await f.text())); await sync.queueMany(items); await load(); toast('📂 השחזור הצליח'); }
   catch (err) { toast(err.message || 'הקובץ לא תקין', true); }
   e.target.value = '';
 };
-$('#clearChatBtn').onclick = async e => {
+$h('#clearChatBtn').onclick = async e => {
   if (!tapAgain(e.currentTarget, '🧹 בטוח? לחץ שוב למחיקה')) return;
   await db.clear('msgs'); S.msgs = []; renderChat(); toast('🧹 השיחה נוקתה');
 };
@@ -3335,7 +3337,7 @@ function drawInstallBanner() {
   $('#instGo').onclick = openInstallSheet;
   $('#instX').onclick = () => { try { localStorage.setItem('zman-install-hide', '1'); } catch { /* */ } drawInstallBanner(); };
 }
-$('#installBtn').onclick = openInstallSheet;
+$h('#installBtn').onclick = openInstallSheet;
 drawInstallBanner();
 
 // חזרה מהמייל של "שכחתי סיסמה" — בוחרים סיסמה חדשה
@@ -3362,7 +3364,7 @@ function showLock() {
   $('#lock').classList.add('on');
   if (st.cred && !isIOS()) tryBio(true);
 }
-$('#lock').addEventListener('click', e => { if (e.target.closest('#lockPad') || e.target.closest('#lockBio')) return; if (lock.settings()?.cred) tryBio(false); });
+$h('#lock').addEventListener('click', e => { if (e.target.closest('#lockPad') || e.target.closest('#lockBio')) return; if (lock.settings()?.cred) tryBio(false); });
 function unlockNow() { $('#lock').classList.remove('on'); fails = 0; }
 async function tryBio(auto) {
   try { if (await lock.bioUnlock()) unlockNow(); }
@@ -3370,7 +3372,7 @@ async function tryBio(auto) {
 }
 function drawDots() { document.querySelectorAll('#lockDots i').forEach((d, i) => d.classList.toggle('f', i < pinBuf.length)); }
 $('#lockPad').innerHTML = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map(k => k ? `<button data-k="${k}" aria-label="${k === '⌫' ? 'מחיקה' : k}">${k}</button>` : '<span></span>').join('');
-$('#lockPad').addEventListener('click', async e => {
+$h('#lockPad').addEventListener('click', async e => {
   const b = e.target.closest('[data-k]'); if (!b) return;
   if (Date.now() < lockedUntil) { $('#lockErr').textContent = `יותר מדי ניסיונות. נסה שוב בעוד ${Math.ceil((lockedUntil - Date.now()) / 1000)} שניות`; return; }
   const k = b.dataset.k;
@@ -3384,13 +3386,13 @@ $('#lockPad').addEventListener('click', async e => {
     else $('#lockErr').textContent = 'קוד שגוי';
   }
 });
-$('#lockBio').onclick = () => tryBio(false);
+$h('#lockBio').onclick = () => tryBio(false);
 // שכחתי את קוד הנעילה → פותחים עם הסיסמה של החשבון, והנעילה מתבטלת
-$('#lockForgot').onclick = () => {
+$h('#lockForgot').onclick = () => {
   if (!sync.user()) { $('#lockErr').textContent = 'בלי חשבון אי אפשר לשחזר. אפשר למחוק את האפליקציה ולהתקין מחדש (מה שבענן חוזר)'; return; }
   $('#lockRec').hidden = false; $('#lockForgot').hidden = true; $('#lockPad').hidden = true; $('#lockDots').hidden = true; $('#lockRecPass').focus();
 };
-$('#lockRecGo').onclick = async () => {
+$h('#lockRecGo').onclick = async () => {
   const b = $('#lockRecGo'); b.disabled = true;
   const ok = await sync.verifyPassword($('#lockRecPass').value);
   b.disabled = false;
@@ -3434,12 +3436,12 @@ function drawLockCard() {
   el.querySelectorAll('[data-min]').forEach(b => b.onclick = () => { lock.setMinutes(+b.dataset.min); drawLockCard(); });
   $('#lkOffBtn').onclick = async () => { if (!(await lock.pinOk($('#lkOff').value))) return $('#lkErr').textContent = 'קוד שגוי'; lock.disable(); drawLockCard(); toast('הנעילה כובתה'); };
 }
-$('#shareAppBtn').onclick = shareApp;
-$('#feedbackBtn').onclick = () => openFeedback();
-$('#helpBtn').onclick = () => openHelp();
-$('#meBtn').onclick = () => showView('settings');
-$('#setBtn').onclick = () => showView(curView() === 'settings' ? 'chat' : 'settings');
-$('#helpBtn2').onclick = () => openHelp();
+$h('#shareAppBtn').onclick = shareApp;
+$h('#feedbackBtn').onclick = () => openFeedback();
+$h('#helpBtn').onclick = () => openHelp();
+$h('#meBtn').onclick = () => showView('settings');
+$h('#setBtn').onclick = () => showView(curView() === 'settings' ? 'chat' : 'settings');
+$h('#helpBtn2').onclick = () => openHelp();
 
 // ---------- הפעלה ----------
 async function load() {
@@ -3978,7 +3980,7 @@ function newsFab() {
   d.querySelector('.nf-x').onclick = () => { newsBack = null; d.remove(); };
   $('#app').appendChild(d);
 }
-$('#toNews').onclick = () => openNews(true);
+$h('#toNews').onclick = () => openNews(true);
 
 async function boot() {
   started = true;
