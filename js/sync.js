@@ -201,28 +201,31 @@ export async function saveCategory(row) {
 export const GCAL_FN = CONFIG.url + '/functions/v1/zman-gcal';
 export const CAL_FN = CONFIG.url + '/functions/v1/zman-calendar';
 // 📥 ולהפך: היומן של המשתמש (גוגל / אייפון) באפליקציה. אותה טבלה כמו בכסף בכיף, ורק הוא רואה
-export async function myCalendar() {
-  if (DEMO || !me) return null;
-  const { data } = await (await client()).from('user_calendars').select('host,last_sync,last_error,events').eq('user_id', me.id).maybeSingle();
-  return data || null;
+// אפשר כמה יומנים (עד 5): שלי, המשפחתי…
+export async function myCalendars() {
+  if (DEMO || !me) return [];
+  const { data } = await (await client()).from('user_calendars').select('id,label,host,last_sync,last_error,events,created_at').eq('user_id', me.id).order('created_at');
+  return data || [];
 }
-export async function connectCalendar(url) {
+export async function myCalendar() { return (await myCalendars())[0] || null; }
+export async function connectCalendar(url, label = '') {
   if (DEMO) throw new Error('במצב הדגמה לא מתחברים');
   const c = await client();
-  const { data: host, error } = await c.rpc('set_my_calendar', { p_url: url });
+  const { data: host, error } = await c.rpc('set_my_calendar', { p_url: url, p_label: label || null });
   if (error) throw new Error(nice(error));
   const r = await c.functions.invoke('calendar-import', { body: {} }); // קורא עכשיו (ואחר כך כל 15 דקות)
   if (r.error) console.warn('calendar-import', r.error);
   return host;
 }
-export async function disconnectCalendar() {
-  const { error } = await (await client()).rpc('clear_my_calendar'); if (error) throw new Error(nice(error));
+// בלי id: מנתק את כל היומנים. עם id: רק אחד
+export async function disconnectCalendar(id = null) {
+  const { error } = await (await client()).rpc('clear_my_calendar', { p_id: id }); if (error) throw new Error(nice(error));
 }
 // האירועים מהיומן, מחודש אחורה עד 3 חודשים קדימה. יום שלם: רק התאריך, בלי המרת שעון
 export async function externalEvents() {
   if (DEMO || !me) return [];
   const from = new Date(Date.now() - 31 * 864e5).toISOString();
-  const { data, error } = await (await client()).from('external_events').select('uid,starts_at,ends_at,all_day,title,location')
+  const { data, error } = await (await client()).from('external_events').select('cal_id,uid,starts_at,ends_at,all_day,title,location')
     .eq('user_id', me.id).gte('starts_at', from).order('starts_at').limit(2000);
   if (error) { console.warn('external_events', error); return null; }
   return data || [];

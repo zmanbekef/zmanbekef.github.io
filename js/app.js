@@ -2697,7 +2697,7 @@ function openCalEvent(id, t) {
   const x = S.ext.find(e => e.id === id);
   if (x) { // 📅 מהיומן של הטלפון: לקריאה בלבד
     sheet(`<h3>📅 ${esc(x.text)}</h3><p class="note">${whenLabel(x)}${x.dur && x.hasTime ? ' · ⏱️ ' + durLbl(x.dur) : ''}${x.place ? ' · 📍 ' + esc(x.place) : ''}</p>
-      <p class="note" style="margin-top:8px"><span class="ext-tag">📅 מהיומן</span> הגיע מהיומן שלך${S.extHost ? ` (${esc(S.extHost)})` : ''}. משנים או מוחקים אותו שם, וזה מתעדכן כאן לבד תוך 15 דקות.</p>
+      <p class="note" style="margin-top:8px"><span class="ext-tag">📅 מהיומן</span> הגיע מהיומן ${esc(x.calName || S.extHost || 'שלך')}. משנים או מוחקים אותו שם, וזה מתעדכן כאן לבד תוך 15 דקות.</p>
       <button class="btn" id="ceClose" style="margin-top:14px">סגירה</button>`); $('#ceClose').onclick = closeSheet; return;
   }
   const it = item(id);
@@ -4042,8 +4042,9 @@ async function openCalendarSub(renew = false) {
       <div class="cal-steps">
         <div class="cal-step"><b>🍏 אייפון / Mac</b><small>לוחצים ← "הירשם" (Subscribe) ← "הוסף". וזהו.</small>
           <a class="btn pri" href="${webcal}">🍏 להוסיף ליומן של אייפון</a></div>
-        <div class="cal-step"><b>📅 Google / אנדרואיד</b><small>נפתח Google Calendar ← "הוספה" (Add). אחרי כמה דקות היומן מופיע גם באפליקציית Google Calendar בטלפון.</small>
+        <div class="cal-step"><b>📅 Google / אנדרואיד</b><small>נפתח Google Calendar (גם בדפדפן, לא צריך את האפליקציה) ← "הוספה" (Add). היומן נכנס לחשבון הגוגל שלך, ומופיע בכל יומן בטלפון שמחובר לחשבון. נפתח דף פרסום של גוגל? מתחברים לחשבון הגוגל, ולוחצים שוב.</small>
           <a class="btn pri" href="${g}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#3B82F6,#22C55E)">📅 להוסיף ל־Google יומן</a></div>
+        <div class="cal-step cal-tip"><b>📱 משתמשים ב"לוח עברי" (או יומן סמסונג)?</b><small>אחרי ההוספה בגוגל: ב"לוח עברי" ← ⚙️ הגדרות ← <b>חשבונות</b> ← תחת חשבון הגוגל מסמנים <b>✓</b> ליד <b>"⏰ זמן בכיף"</b> (אם כתוב "לא מסונכרן"). ולהפך, כדי שאירועים שתוסיפו שם יגיעו לאפליקציה: ⚙️ ← <b>אירועים</b> ← יומן ברירת מחדל = "אירועים" של חשבון הגוגל (לא יומן מקומי של הטלפון).</small></div>
         <div class="cal-step"><b>💻 מחשב / אחר</b><small>מעתיקים את הקישור ← ביומן: "הוספת יומן" ← "מכתובת URL" / "From URL" ← מדביקים.</small>
           <button class="btn" id="calCopy">📋 העתקת הקישור</button></div>
       </div>
@@ -4068,7 +4069,7 @@ $h('#calSubBtn').onclick = () => openCalendarSub();
 const extOf = r => {
   const allDay = !!r.all_day, s0 = allDay ? (([y, m, d]) => new Date(y, m - 1, d))(r.starts_at.slice(0, 10).split('-').map(Number)) : new Date(r.starts_at);
   const dur = allDay ? null : Math.max(5, Math.round((new Date(r.ends_at || +s0 + 36e5) - s0) / 6e4));
-  return { id: `ext-${r.uid}-${r.starts_at}`, ext: true, busy: true, kind: 'ext', status: 'open', text: (r.title || '(בלי שם)').slice(0, 200), place: r.location || null,
+  return { id: `ext-${r.cal_id || ''}-${r.uid}-${r.starts_at}`, ext: true, cal: r.cal_id || null, busy: true, kind: 'ext', status: 'open', text: (r.title || '(בלי שם)').slice(0, 200), place: r.location || null,
     due: s0.toISOString(), hasTime: !allDay, dur, by: S.uid, forP: S.myP };
 };
 async function loadExt(first) {
@@ -4081,10 +4082,11 @@ async function loadExt(first) {
   }
   if (first) { const c = await db.getKV('ext'); if (Array.isArray(c)) { S.ext = c; S.extHost = (await db.getKV('extHost')) || ''; } }
   if (!S.uid || !navigator.onLine) return;
-  const st = await sync.myCalendar().catch(() => null);
-  const rows = st ? await sync.externalEvents() : [];
+  const cals = await sync.myCalendars().catch(() => null); if (cals === null) return;
+  const rows = cals.length ? await sync.externalEvents() : [];
   if (rows === null) return; // שגיאת רשת: נשאר מה שנשמר
-  S.ext = rows.map(extOf); S.extHost = st?.host || '';
+  const nm = Object.fromEntries(cals.map(c => [c.id, c.label || c.host]));
+  S.ext = rows.map(r => ({ ...extOf(r), calName: nm[r.cal_id] || '' })); S.extHost = cals.map(c => c.label || c.host).join(', ');
   await db.setKV('ext', S.ext); await db.setKV('extHost', S.extHost);
   if (curView() === 'cal') renderCal(); renderDayline?.();
   if (started) scanConflicts(); // משהו שלי מתנגש עם אירוע מהיומן? מופיע בשיחה ובפעמון
@@ -4097,30 +4099,29 @@ const fmtExt = x => `${new Date(x.due).toLocaleDateString('he-IL', { weekday: 's
 async function drawCalIn(el) {
   if (!el) return;
   const head = '<b>📥 ולהפך: היומן שלך, באפליקציה</b>';
-  if (demo.DEMO) { el.innerHTML = `${head}<p class="note" style="margin-top:4px">מדביקים כאן את הקישור הסודי של היומן שלך (גוגל / אייפון), והאירועים מופיעים ביומן של זמן בכיף. 🎭 במצב הדגמה לא מתחברים. <a href="guide/#calin" target="_blank" style="color:#F9A8D4">איך מוצאים את הקישור?</a></p>`; return; }
-  let st = null; try { st = await sync.myCalendar(); } catch { /* */ }
-  if (!st) {
-    el.innerHTML = `${head}<p class="note" style="margin:4px 0 8px">מדביקים את <b>"הכתובת הסודית בפורמט iCal"</b> של היומן שלך, והאירועים (חתונה, טיפול, פגישה בעבודה…) מופיעים ביומן של זמן בכיף בכחול, עם <span class="ext-tag">📅 מהיומן</span>. האפליקציה גם תזהיר אם משהו חדש מתנגש איתם. 🔒 נשמר מוצפן, ורק את/ה רואה.</p>
-      <a class="chip" href="guide/#calin" target="_blank" style="text-decoration:none;display:inline-block;margin-bottom:8px">📖 איך מוצאים את הקישור בגוגל / אייפון?</a>
-      <input id="calUrl" dir="ltr" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" style="width:100%;height:46px;border-radius:12px;border:1px solid var(--line);background:var(--card2);padding:0 12px;font-size:16px;color:#fff">
-      <div id="calErr" style="color:#FB7185;font-size:13px;min-height:16px"></div><button class="btn pri" id="calGo">🔗 חיבור היומן שלי</button>`;
-    el.querySelector('#calGo').onclick = async e => {
-      const b = e.currentTarget, v = el.querySelector('#calUrl').value.trim(); if (!v) return el.querySelector('#calUrl').focus();
-      b.disabled = true; b.textContent = '⏳ מתחבר וקורא את היומן…';
-      try { const h = await sync.connectCalendar(v); toast(`📥 היומן חובר (${h})`); confetti(); await loadExt(); drawCalIn(el); }
-      catch (err) { el.querySelector('#calErr').textContent = err.message; b.disabled = false; b.textContent = '🔗 חיבור היומן שלי'; }
-    };
-    return;
-  }
+  if (demo.DEMO) { el.innerHTML = `${head}<p class="note" style="margin-top:4px">מדביקים כאן את הקישור הסודי של היומן שלך (גוגל / אייפון), והאירועים מופיעים ביומן של זמן בכיף. אפשר כמה יומנים (שלי + המשפחתי). 🎭 במצב הדגמה לא מתחברים. <a href="guide/#calin" target="_blank" style="color:#F9A8D4">איך מוצאים את הקישור?</a></p>`; return; }
+  let cals = []; try { cals = await sync.myCalendars(); } catch { /* */ }
   const now = Date.now(), ev = S.ext.filter(x => +new Date(x.due) + (x.dur || 1440) * 6e4 >= now).slice(0, 8);
-  el.innerHTML = `${head}<p class="note" style="margin:4px 0 8px">✅ מחובר: <b dir="ltr">${esc(st.host)}</b> · ${st.last_error ? `<span style="color:#FB7185">⚠️ ${esc(st.last_error)}</span>` : st.last_sync ? `עודכן ${new Date(st.last_sync).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })} · ${st.events} אירועים` : '⏳ קורא בפעם הראשונה…'} · מתעדכן כל 15 דקות. 🔒 רק את/ה רואה.</p>
-    ${ev.length ? `<div class="xcal-list">${ev.map(x => `<div><span>${esc(fmtExt(x))}</span><b>${esc(x.text)}</b></div>`).join('')}</div>` : '<p class="note">אין אירועים קרובים.</p>'}
-    <button class="btn danger" id="calOff" style="margin-top:10px">🔌 ניתוק: מוחק את הקישור ואת כל האירועים</button>`;
-  el.querySelector('#calOff').onclick = async e => {
-    const b = e.currentTarget;
-    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '⚠️ בטוח? לחיצה שנייה מנתקת ומוחקת'; return; }
-    try { await sync.disconnectCalendar(); S.ext = []; await db.setKV('ext', []); toast('🔌 היומן נותק. הקישור והאירועים נמחקו'); if (curView() === 'cal') renderCal(); drawCalIn(el); } catch (err) { toast(err.message, true); }
+  const form = `<div class="cal-add" ${cals.length ? 'hidden' : ''}>
+      <input id="calUrl" dir="ltr" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" class="cal-inp">
+      <input id="calLbl" maxlength="40" placeholder="שם (לא חובה). למשל: היומן המשפחתי" class="cal-inp" style="margin-top:6px">
+      <div id="calErr" style="color:#FB7185;font-size:13px;min-height:16px"></div><button class="btn pri" id="calGo">🔗 ${cals.length ? 'חיבור עוד יומן' : 'חיבור היומן שלי'}</button></div>`;
+  el.innerHTML = `${head}<p class="note" style="margin:4px 0 8px">${cals.length ? '' : 'מדביקים את <b>"הכתובת הסודית בפורמט iCal"</b> של היומן שלך, והאירועים (חתונה, טיפול, פגישה בעבודה…) מופיעים ביומן של זמן בכיף בכחול, עם <span class="ext-tag">📅 מהיומן</span>. האפליקציה גם תזהיר אם משהו חדש מתנגש איתם. '}🔒 מוצפן, ורק את/ה רואה. מתעדכן כל 15 דקות.</p>
+    ${cals.length ? `<div class="cal-list">${cals.map(c => `<div class="cal-li"><div><b>📅 ${esc(c.label || c.host)}</b><small>${c.label ? `<span dir="ltr">${esc(c.host)}</span> · ` : ''}${c.last_error ? `<span style="color:#FB7185">⚠️ ${esc(c.last_error)}</span>` : c.last_sync ? `עודכן ${new Date(c.last_sync).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })} · ${c.events} אירועים` : '⏳ קורא בפעם הראשונה…'}</small></div><button class="chip cal-off" data-off="${c.id}">🔌 ניתוק</button></div>`).join('')}</div>
+      ${ev.length ? `<p class="note" style="margin:8px 0 4px">הקרובים:</p><div class="xcal-list">${ev.map(x => `<div><span>${esc(fmtExt(x))}${cals.length > 1 && x.calName ? ' · ' + esc(x.calName) : ''}</span><b>${esc(x.text)}</b></div>`).join('')}</div>` : '<p class="note" style="margin-top:6px">אין אירועים קרובים.</p>'}
+      ${cals.length < 5 ? '<button class="chip" id="calMore" style="margin-top:10px">➕ עוד יומן (למשל היומן המשפחתי)</button>' : ''}` : '<a class="chip" href="guide/#calin" target="_blank" style="text-decoration:none;display:inline-block;margin-bottom:8px">📖 איך מוצאים את הקישור בגוגל / אייפון?</a>'}
+    ${form}`;
+  el.querySelector('#calMore')?.addEventListener('click', e => { e.currentTarget.hidden = true; el.querySelector('.cal-add').hidden = false; el.querySelector('#calUrl').focus(); });
+  el.querySelector('#calGo').onclick = async e => {
+    const b = e.currentTarget, v = el.querySelector('#calUrl').value.trim(), lbl = el.querySelector('#calLbl').value.trim(); if (!v) return el.querySelector('#calUrl').focus();
+    b.disabled = true; b.textContent = '⏳ מתחבר וקורא את היומן…';
+    try { const h = await sync.connectCalendar(v, lbl); toast(`📥 היומן חובר (${lbl || h})`); confetti(); await loadExt(); drawCalIn(el); }
+    catch (err) { el.querySelector('#calErr').textContent = err.message; b.disabled = false; b.textContent = '🔗 חיבור'; }
   };
+  el.querySelectorAll('[data-off]').forEach(b => b.onclick = async () => {
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '⚠️ בטוח? מוחק את הקישור והאירועים'; return; }
+    try { await sync.disconnectCalendar(b.dataset.off); toast('🔌 היומן נותק. הקישור והאירועים שלו נמחקו'); await loadExt(); if (curView() === 'cal') renderCal(); drawCalIn(el); } catch (err) { toast(err.message, true); }
+  });
 }
 
 async function boot() {
