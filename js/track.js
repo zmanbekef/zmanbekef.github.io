@@ -53,6 +53,8 @@ export async function ping(client) {
 
 // תקלות: נשמרות במכשיר ונשלחות כשיש אינטרנט (בלי שיוך למשתמש)
 const seen = new Set();
+/** דיווח יזום מהאפליקציה (למשל "קובץ בנק בפורמט שלא נתמך") — רק שם הפורמט, בלי תוכן */
+export function issue(message, source) { report(message, source); }
 function report(message, source) {
   message = String(message || '').slice(0, 300);
   if (!message || /ResizeObserver|^Script error\.?$/.test(message) || seen.has(message)) return;
@@ -71,4 +73,6 @@ async function sendErrors() {
   const v = await version(), d = deviceName();
   for (const e of q) { try { await anon('track_error', { p_app: APP, p_device_id: dev, p_message: e.message, p_source: e.source, p_device: d, p_version: v }); } catch { /* */ } }
   sending = false;
+  // תקלה שנוספה בזמן השליחה — נשלחת מיד אחרי (לא הולכת לאיבוד)
+  try { if (JSON.parse(ls.get('app-err-queue') || '[]').length) setTimeout(sendErrors, 500); } catch { /* */ }
 }
