@@ -14,6 +14,7 @@ import { NEWS } from './whats-new.js';
 const $ = s => document.querySelector(s);
 // כפתורים שמחברים בטעינה: אם הדף עוד ישן ואין בו את הכפתור, ממשיכים בלי להיתקע
 const $h = sel => document.querySelector(sel) || document.createElement('i');
+let nxTimer = 0; // טיימר המעבר האוטומטי ב"✨ מה חדש"
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const today = () => ymd(new Date());
 const isToday = iso => iso && ymd(new Date(iso)) === today();
@@ -2776,8 +2777,9 @@ addEventListener('popstate', () => {
 });
 // הלחיצה הראשונה באפליקציה "מפעילה" את כפתור חזור (דפדפנים מדלגים על רשומות שנוספו בלי לחיצה)
 addEventListener('pointerdown', () => syncTrap(), { capture: true });
-function sheet(html) { $('#sheet').innerHTML = html; $('#sheetBg').classList.add('on'); syncTrap(); }
-function closeSheet() { $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = ''; setTimeout(syncTrap, 0); }
+// HTML שמתחיל ב-<!--full--> נפתח כמסך מלא (כמו "✨ מה חדש"), וכפתור החזור עדיין סוגר אותו
+function sheet(html) { clearTimeout(nxTimer); $('#sheet').classList.toggle('full', html.startsWith('<!--full-->')); $('#sheet').innerHTML = html; $('#sheetBg').classList.add('on'); syncTrap(); }
+function closeSheet() { clearTimeout(nxTimer); $('#sheetBg').classList.remove('on'); $('#sheet').style.transform = ''; setTimeout(() => { if (!sheetOpen()) $('#sheet').classList.remove('full'); }, 300); setTimeout(syncTrap, 0); }
 
 $h('#sheetBg').addEventListener('click', e => { if (e.target.id === 'sheetBg') closeSheet(); });
 
@@ -3910,6 +3912,8 @@ function openEditMe() {
 // ---------- ✨ מה חדש ----------
 // קופץ פעם אחת אחרי עדכון. 'zman-news' = הגרסה האחרונה שראו בטלפון הזה. משתמש חדש לא מקבל (יש לו את המדריך)
 const NEWS_KEY = 'zman-news';
+// מפתח מהדורה: תאריך, ו-rev כשרוצים לפתוח שוב באותו יום
+const nKey = n => n ? n.v + (n.rev ? '.' + n.rev : '') : '';
 const lsGetN = () => { try { return localStorage.getItem(NEWS_KEY); } catch { return null; } };
 const lsSetN = v => { try { localStorage.setItem(NEWS_KEY, v); } catch { /* */ } };
 const newsFor = items => items.filter(i => !iAmKid() || i.kids);
@@ -3931,11 +3935,11 @@ function spot(sel) {
 }
 function maybeNews(tries = 0) {
   if (!NEWS.length || demo.DEMO) return;
-  const last = NEWS[0].v, seen = lsGetN();
+  const last = nKey(NEWS[0]), seen = lsGetN();
   if (seen === last) return;
   // אין סימון: משתמש ותיק (יש נתונים) רואה רק את העדכון האחרון. משתמש חדש לא מקבל כלום
   if (!seen && !S.items.length) return lsSetN(last);
-  const fresh = NEWS.filter(n => !seen ? n.v === last : n.v > seen);
+  const fresh = NEWS.filter(n => !seen ? nKey(n) === last : nKey(n) > seen);
   const items = newsFor(fresh.flatMap(n => n.items));
   if (!items.length) return lsSetN(last);
   // קודם כניסה, נעילה, חלון פתוח או סיור, ורק אחר כך
@@ -3945,32 +3949,61 @@ function maybeNews(tries = 0) {
 }
 // newsBack = איפה עצרנו ברשימה, כדי לחזור אליה אחרי "👀 תראו לי"
 let newsBack = null;
+// ✨ מה חדש: מסך מלא נוצץ בסגנון סטוריז. כרטיס לכל חידוש, פסי התקדמות למעלה, מעבר אוטומטי, ובסוף "🎉 זהו!"
+const NX_MS = 6500;
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('no-anim');
 function openNews(all = false, items = null, restore = false) {
-  lsSetN(NEWS[0]?.v || '');
-  $('.news-fab')?.remove();
+  lsSetN(nKey(NEWS[0]));
+  $('.news-fab')?.remove(); clearTimeout(nxTimer);
   const seen = newsBack?.seen || [];
-  const row = (i, k) => `<div class="nw-row ${seen.includes(i.go) ? 'seen' : ''}" ${i.go ? `data-ng="${i.go}" role="button"` : ''} style="--d:${restore ? 0 : k * 90}ms"><span class="nw-e">${i.e}</span><span class="nw-t"><b>${esc(i.t)}</b><small>${esc(i.d)}</small></span>${i.go && i.go !== 'news' ? `<button class="nw-go" data-ng="${i.go}">${seen.includes(i.go) ? '✓ ' : ''}👀 תראו לי</button>` : ''}</div>`;
   const dLabel = v => new Date(v + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long' });
-  const body = all
-    ? NEWS.map(n => ({ ...n, items: newsFor(n.items) })).filter(n => n.items.length).map((n, j) => `<div class="nw-day">${j === 0 ? '🆕 ' : ''}${dLabel(n.v)}</div>${n.items.map(row).join('')}`).join('')
-    : (items.length > 6 ? items.slice(0, 6) : items).map(row).join('') + (items.length > 6 ? `<button class="chip" id="nwAll" style="margin-top:4px">ועוד ${items.length - 6}: לכל הרשימה</button>` : '');
-  const pool = items || newsFor(NEWS[0].items);
-  const first = pool.find(i => i.go && i.go !== 'news' && !seen.includes(i.go)) || pool.find(i => i.go && i.go !== 'news');
-  sheet(`<div class="nw-head"><span class="nw-spark">✨</span><h3>מה חדש${all ? '' : ' באפליקציה'}</h3><div class="sub">${all ? 'כל העדכונים, החדש למעלה. "👀 תראו לי" לוקח לשם, ו"✨ חזרה" מחזיר לכאן.' : 'עדכנו את האפליקציה. הנה מה שהשתנה 👇'}</div></div>
-    <div class="nw-list">${body}</div>
-    ${all ? '' : `<div class="nw-btns">${first ? `<button class="btn pri" id="nwShow">👀 ${seen.length ? 'הבא' : 'תראו לי'}</button>` : ''}<button class="btn" id="nwOk">הבנתי ✓</button></div>`}`);
-  const sh = $('#sheet');
+  // כל חידוש = כרטיס. בהיסטוריה: מכל הימים (החדש קודם), עם התאריך על הכרטיס
+  const list = all ? NEWS.flatMap(n => newsFor(n.items).map(it => ({ ...it, v: n.v }))) : (items || newsFor(NEWS[0].items)).map(it => ({ ...it, v: it.v || NEWS[0].v }));
+  const n = list.length, many = n > 20, calm = reducedMotion();
+  const stars = Array.from({ length: 16 }, (_, k) => `<i style="--x:${(k * 37) % 100}%;--y:${(k * 53) % 100}%;--s:${.6 + (k % 4) * .25};--t:${2 + (k % 5) * .6}s;--dl:${(k % 7) * .4}s">${k % 3 ? '✦' : '✧'}</i>`).join('');
+  const card = (it, k) => `<section class="nx-card" data-k="${k}">
+      <div class="nx-emo">${it.e}</div><h2>${esc(it.t)}</h2><p>${esc(it.d)}</p>
+      ${it.go && it.go !== 'news' ? `<button class="nx-go ${seen.includes(it.go) ? 'seen' : ''}" data-ng="${it.go}">${seen.includes(it.go) ? '✓ ' : ''}👀 תראו לי</button>` : ''}
+      <small class="nx-day">${all ? '📅 ' + dLabel(it.v) : `${k + 1} מתוך ${n}`}</small></section>`;
+  const end = `<section class="nx-card nx-end" data-k="${n}"><div class="nx-emo">🎉</div><h2>זהו! תיהנו</h2><p>${all ? 'זו כל ההיסטוריה.' : 'אפשר לראות הכל שוב ב־⚙️ ← "✨ מה חדש".'}</p>
+      <button class="nx-done" id="nxDone">יאללה, להמשיך ✨</button></section>`;
+  sheet(`<!--full--><div class="nx ${calm ? 'calm' : ''}">
+    <div class="nx-bg">${stars}</div>
+    ${many ? `<div class="nx-count"><span id="nxCnt">1</span> / ${n + 1}</div>` : `<div class="nx-bars">${[...list, 0].map(() => '<i><b></b></i>').join('')}</div>`}
+    <div class="nx-top"><div><b class="nx-title">✨ ${all ? 'כל מה שחדש' : 'יש חדש!'}</b><small>${all ? `${n} חידושים` : `${dLabel(NEWS[0].v)} · <span class="nx-pill">${n} חידושים</span>`}</small></div><button class="nx-x" id="nxX" aria-label="סגירה">✕</button></div>
+    <div class="nx-track" id="nxTrack">${list.map(card).join('')}${end}</div>
+    <div class="nx-hint">${calm ? 'מחליקים ←' : 'מחליקים או נוגעים בצד ←'}</div></div>`);
+  const sh = $('#sheet'), track = sh.querySelector('#nxTrack'), cards = [...track.children], bars = [...sh.querySelectorAll('.nx-bars i')];
+  let idx = -1, paused = false;
+  const auto = !all && !calm;
+  const show = k => { k = Math.max(0, Math.min(cards.length - 1, k)); cards[k].scrollIntoView({ inline: 'start', block: 'nearest', behavior: calm ? 'auto' : 'smooth' }); };
+  const setIdx = k => {
+    if (k === idx) return; idx = k; clearTimeout(nxTimer);
+    cards.forEach((c, j) => c.classList.toggle('on', j === k));
+    bars.forEach((b, j) => { b.className = j < k ? 'done' : j === k ? (auto ? 'run' : 'done') : ''; });
+    const cnt = sh.querySelector('#nxCnt'); if (cnt) cnt.textContent = k + 1;
+    if (newsBack) newsBack.idx = k;
+    if (k === cards.length - 1 && !all && !calm) confetti();
+    if (auto && k < cards.length - 1) nxTimer = setTimeout(() => { if (!paused && sh.classList.contains('full')) show(k + 1); }, NX_MS);
+  };
+  const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting && e.intersectionRatio > .6) setIdx(+e.target.dataset.k); }), { root: track, threshold: [.6] });
+  cards.forEach(c => io.observe(c));
+  // נגיעה בצד: שמאל = הבא, ימין = הקודם (עברית). אצבע על המסך עוצרת את המעבר האוטומטי
+  track.addEventListener('click', e => { if (e.target.closest('button')) return; const r = track.getBoundingClientRect(); show(idx + (e.clientX < r.left + r.width / 2 ? 1 : -1)); });
+  track.addEventListener('pointerdown', () => { paused = true; sh.querySelector('.nx').classList.add('paused'); });
+  const resume = () => { if (!paused) return; paused = false; sh.querySelector('.nx')?.classList.remove('paused'); if (auto && idx < cards.length - 1) { clearTimeout(nxTimer); nxTimer = setTimeout(() => show(idx + 1), NX_MS / 2); } };
+  track.addEventListener('pointerup', resume); track.addEventListener('pointercancel', resume);
   const goTo = key => {
     const f = NEWS_GO[key]; if (!f) return;
-    if (key === 'news') return f();
-    newsBack = { all, items, scroll: sh.scrollTop, seen: [...new Set([...seen, key])] };
+    newsBack = { all, items, idx, seen: [...new Set([...seen, key])] };
     closeSheet(); setTimeout(() => { f(); newsFab(); }, 250);
   };
   sh.querySelectorAll('[data-ng]').forEach(b => b.onclick = e => { e.stopPropagation(); goTo(b.dataset.ng); });
-  sh.querySelector('#nwShow')?.addEventListener('click', () => goTo(first.go));
-  sh.querySelector('#nwOk')?.addEventListener('click', () => { newsBack = null; closeSheet(); });
-  sh.querySelector('#nwAll')?.addEventListener('click', () => openNews(true));
-  if (restore && newsBack) requestAnimationFrame(() => { sh.scrollTop = newsBack.scroll; });
+  const done = () => { newsBack = null; closeSheet(); };
+  sh.querySelector('#nxX').onclick = done; sh.querySelector('#nxDone').onclick = done;
+  const start = restore && newsBack?.idx != null ? newsBack.idx : 0;
+  setTimeout(() => { if (start) cards[start].scrollIntoView({ inline: 'start', block: 'nearest' }); setIdx(start); }, 30);
+  if (!restore && !all && !calm) setTimeout(() => confetti(), 250);
 }
 // ✨ כפתור צף: חזרה לרשימת "מה חדש" אחרי שניסו משהו. נשאר עד "הבנתי ✓" או ✕
 function newsFab() {
