@@ -199,6 +199,21 @@ export async function saveCategory(row) {
 // יומן: מי בקבוצה רואה את היומן שלי ('all' / 'busy' / 'none'), והיומן של מישהו אחר לפי מה שהוא הרשה
 // 📆 יומן גוגל
 export const GCAL_FN = CONFIG.url + '/functions/v1/zman-gcal';
+export const CAL_FN = CONFIG.url + '/functions/v1/zman-calendar';
+// 📆 מנוי ליומן של הטלפון: מפתח סודי אישי. renew = מפתח חדש (הקישור הישן מפסיק לעבוד)
+export async function calendarURL(renew = false) {
+  if (DEMO) throw new Error('במצב הדגמה אין קישור ליומן');
+  if (!me) throw new Error('צריך להיכנס לחשבון קודם');
+  const c = await client();
+  let { data } = await c.from('zman_cal_tokens').select('token').eq('user_id', me.id).maybeSingle();
+  if (!data || renew) {
+    const token = [...crypto.getRandomValues(new Uint8Array(18))].map(b => b.toString(16).padStart(2, '0')).join('');
+    const { error } = await c.from('zman_cal_tokens').upsert({ user_id: me.id, token });
+    if (error) throw new Error(nice(error));
+    data = { token };
+  }
+  return `${CAL_FN}?t=${data.token}`;
+}
 export const gcalStatus = async () => (await rpc('zman_gcal_status'))?.[0] || null;
 export const gcalStart = () => rpc('zman_gcal_start');
 export const gcalPrefs = p => rpc('zman_gcal_prefs', { p });

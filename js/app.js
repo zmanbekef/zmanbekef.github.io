@@ -3928,6 +3928,7 @@ const NEWS_GO = {
   recur: () => OPS.recurList(),
   habits: () => { showView('tasks'); spot('.habits'); },
   view: () => { showView('settings'); spot('#viewCard'); },
+  calendar: () => { showView('settings'); spot('#calSubCard'); },
 };
 // מאיר רכיב במסך לכמה שניות
 function spot(sel) {
@@ -4017,6 +4018,33 @@ function newsFab() {
 }
 $h('#toNews').onclick = () => openNews(true);
 
+// ---------- 📆 חיבור ליומן של הטלפון (מנוי ICS שמתעדכן לבד). אותו מסך כמו בכסף בכיף ----------
+async function openCalendarSub(renew = false) {
+  const draw = (url, isDemo) => {
+    const webcal = url.replace(/^https:/, 'webcal:'), g = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
+    sheet(`<h3>📅 חיבור ליומן של הטלפון</h3><p class="note" style="margin:-6px 0 12px">${isDemo ? '🎭 <b>יומן לדוגמה</b> (משפחה מדומה), כדי לנסות. בטלפון האמיתי מקבלים יומן אישי.<br>' : ''}יומן <b>"⏰ זמן בכיף"</b> שמתעדכן לבד: משימות עם תאריך, פגישות ותזכורות קבועות (כמו תרופות), עם תזכורת 10 דקות לפני.</p>
+      <div class="cal-steps">
+        <div class="cal-step"><b>🍏 אייפון / Mac</b><small>לוחצים ← "הירשם" (Subscribe) ← "הוסף". וזהו.</small>
+          <a class="btn pri" href="${webcal}">🍏 להוסיף ליומן של אייפון</a></div>
+        <div class="cal-step"><b>📅 Google / אנדרואיד</b><small>נפתח Google Calendar ← "הוספה" (Add). אחרי כמה דקות היומן מופיע גם באפליקציית Google Calendar בטלפון.</small>
+          <a class="btn pri" href="${g}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#3B82F6,#22C55E)">📅 להוסיף ל־Google יומן</a></div>
+        <div class="cal-step"><b>💻 מחשב / אחר</b><small>מעתיקים את הקישור ← ביומן: "הוספת יומן" ← "מכתובת URL" / "From URL" ← מדביקים.</small>
+          <button class="btn" id="calCopy">📋 העתקת הקישור</button></div>
+      </div>
+      <p class="note" style="margin-top:10px">⏳ <b>חשוב לדעת:</b> גוגל מרענן יומן כזה <b>כל כמה שעות</b> (לא מיד), ואייפון בערך כל שעה. זה בכיוון אחד: מה שמוסיפים ביומן לא חוזר לכאן.${isDemo ? '' : '<br>🔒 הקישור אישי ופרטי. מישהו קיבל אותו בטעות? <button class="chip" id="calRenew" style="margin-top:4px">🔄 חידוש קישור (הישן מפסיק לעבוד)</button>'}</p>`);
+    $('#calCopy').onclick = async () => { try { await navigator.clipboard.writeText(url); toast('📋 הקישור הועתק'); } catch { toast(url); } };
+    $('#calRenew')?.addEventListener('click', e => {
+      if (!e.target.dataset.armed) { e.target.dataset.armed = '1'; e.target.textContent = '⚠️ בטוח? הקישור הישן יפסיק לעבוד. לחיצה שנייה'; return; }
+      openCalendarSub(true);
+    });
+  };
+  if (demo.DEMO) return draw(`${sync.CAL_FN}?t=demo`, true);
+  sheet(`<h3>📅 חיבור ליומן של הטלפון</h3><p class="note" style="margin:-6px 0 12px">⏳ ${renew ? 'מחדש' : 'מכין'} קישור אישי…</p>`);
+  try { const url = await sync.calendarURL(renew); if (renew) toast('🔄 קישור חדש. צריך להוסיף אותו שוב ליומן'); draw(url, false); }
+  catch (e) { sheet(`<h3>📅 חיבור ליומן</h3><p class="note" style="color:#FB7185">${esc(e.message)}</p>`); }
+}
+$h('#calSubBtn').onclick = () => openCalendarSub();
+
 async function boot() {
   started = true;
   await welcomeMe();
@@ -4069,4 +4097,4 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 // לבדיקות מהדפדפן
-window.__zman = { demo, openNews, maybeNews, shrinkPhoto, faceHtml, removedFromGroups, startFocus, endFocus, renderAll, CAL, renderCal, showView, bell, openBell, bumpTask, openCatEdit, drawCatCard, renderTasks, openQuick, showIncoming, showReply, openEdit, buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };
+window.__zman = { demo, openCalendarSub, openNews, maybeNews, shrinkPhoto, faceHtml, removedFromGroups, startFocus, endFocus, renderAll, CAL, renderCal, showView, bell, openBell, bumpTask, openCatEdit, drawCatCard, renderTasks, openQuick, showIncoming, showReply, openEdit, buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };

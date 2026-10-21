@@ -718,3 +718,10 @@ nav .badge.new{background:#22C55E;left:auto;right:6px;animation:popin .3s both}
 .nx.calm .nx-bg{display:none}
 .nx.calm .nx-emo{transform:none;opacity:1}
 @media (prefers-reduced-motion:reduce){.nx,.nx *{animation:none!important;transition:none!important}.nx .nx-bg{display:none}}
+/* 📅 חיבור ליומן של הטלפון (כמו בכסף בכיף) */
+.cal-steps{display:flex;flex-direction:column;gap:10px}
+.cal-step{background:var(--card2);border:1px solid var(--line);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:6px;animation:nwRise .4s both}
+.cal-step:nth-child(2){animation-delay:.08s}.cal-step:nth-child(3){animation-delay:.16s}
+.cal-step b{font-size:16px}.cal-step small{color:var(--muted);font-size:13px;line-height:1.45}
+.cal-step .btn{margin-top:2px}
+.cal-step a.btn{color:#fff!important;display:flex!important;align-items:center;justify-content:center;min-height:52px;height:auto;text-decoration:none}
