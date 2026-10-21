@@ -9,6 +9,7 @@ import * as lock from './lock.js';
 import { smartParse, iconFor } from './smart.js';
 import { DEPTS, deptOf, guessDept, shopItems } from './shop.js';
 import * as demo from './demo.js';
+import { NEWS } from './whats-new.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -3901,6 +3902,61 @@ function openEditMe() {
   };
 }
 
+// ---------- ✨ מה חדש ----------
+// קופץ פעם אחת אחרי עדכון. 'zman-news' = הגרסה האחרונה שראו בטלפון הזה. משתמש חדש לא מקבל (יש לו את המדריך)
+const NEWS_KEY = 'zman-news';
+const lsGetN = () => { try { return localStorage.getItem(NEWS_KEY); } catch { return null; } };
+const lsSetN = v => { try { localStorage.setItem(NEWS_KEY, v); } catch { /* */ } };
+const newsFor = items => items.filter(i => !iAmKid() || i.kids);
+const NEWS_GO = {
+  news: () => openNews(true),
+  plus: () => openPlus(),
+  tasks: () => showView('tasks'),
+  shop: () => showView('shop'),
+  cal: () => { showView('cal'); spot('.cal-who, #calWho'); },
+  settings: () => showView('settings'),
+  photo: () => openEditMe(),
+  recur: () => OPS.recurList(),
+  habits: () => { showView('tasks'); spot('.habits'); },
+  view: () => { showView('settings'); spot('#viewCard'); },
+};
+// מאיר רכיב במסך לכמה שניות
+function spot(sel) {
+  setTimeout(() => { const el = $(sel); if (!el) return; el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.remove('spot'); void el.offsetWidth; el.classList.add('spot'); setTimeout(() => el.classList.remove('spot'), 2600); }, 350);
+}
+function maybeNews(tries = 0) {
+  if (!NEWS.length || demo.DEMO) return;
+  const last = NEWS[0].v, seen = lsGetN();
+  if (seen === last) return;
+  // אין סימון: משתמש ותיק (יש נתונים) רואה רק את העדכון האחרון. משתמש חדש לא מקבל כלום
+  if (!seen && !S.items.length) return lsSetN(last);
+  const fresh = NEWS.filter(n => !seen ? n.v === last : n.v > seen);
+  const items = newsFor(fresh.flatMap(n => n.items));
+  if (!items.length) return lsSetN(last);
+  // קודם כניסה, נעילה, חלון פתוח או סיור, ורק אחר כך
+  const busy = $('#gate').classList.contains('on') || $('#lock').classList.contains('on') || sheetOpen() || ($('#tour') && !$('#tour').hidden);
+  if (busy) { if (tries < 20) setTimeout(() => maybeNews(tries + 1), 1500); return; }
+  openNews(false, items);
+}
+function openNews(all = false, items = null) {
+  lsSetN(NEWS[0]?.v || '');
+  const row = (i, k) => `<button class="nw-row" ${i.go ? `data-ng="${i.go}"` : 'disabled'} style="--d:${k * 90}ms"><span class="nw-e">${i.e}</span><span class="nw-t"><b>${esc(i.t)}</b><small>${esc(i.d)}</small></span>${i.go ? '<i>‹</i>' : ''}</button>`;
+  const dLabel = v => new Date(v + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long' });
+  const body = all
+    ? NEWS.map(n => ({ ...n, items: newsFor(n.items) })).filter(n => n.items.length).map((n, j) => `<div class="nw-day">${j === 0 ? '🆕 ' : ''}${dLabel(n.v)}</div>${n.items.map(row).join('')}`).join('')
+    : (items.length > 6 ? items.slice(0, 6) : items).map(row).join('') + (items.length > 6 ? `<button class="chip" id="nwAll" style="margin-top:4px">ועוד ${items.length - 6}: לכל הרשימה</button>` : '');
+  const first = (items || newsFor(NEWS[0].items)).find(i => i.go && i.go !== 'news');
+  sheet(`<div class="nw-head"><span class="nw-spark">✨</span><h3>מה חדש${all ? '' : ' באפליקציה'}</h3><div class="sub">${all ? 'כל העדכונים, החדש למעלה. לוחצים על שורה כדי לעבור לשם.' : 'עדכנו את האפליקציה. הנה מה שהשתנה 👇'}</div></div>
+    <div class="nw-list">${body}</div>
+    ${all ? '' : `<div class="nw-btns">${first ? '<button class="btn pri" id="nwShow">👀 תראו לי</button>' : ''}<button class="btn" id="nwOk">הבנתי ✓</button></div>`}`);
+  const sh = $('#sheet');
+  sh.querySelectorAll('[data-ng]').forEach(b => b.onclick = () => { const f = NEWS_GO[b.dataset.ng]; if (b.dataset.ng === 'news') return f(); closeSheet(); if (f) setTimeout(f, 250); });
+  sh.querySelector('#nwShow')?.addEventListener('click', () => { closeSheet(); setTimeout(NEWS_GO[first.go], 250); });
+  sh.querySelector('#nwOk')?.addEventListener('click', () => closeSheet());
+  sh.querySelector('#nwAll')?.addEventListener('click', () => openNews(true));
+}
+$('#toNews').onclick = () => openNews(true);
+
 async function boot() {
   started = true;
   await welcomeMe();
@@ -3911,6 +3967,7 @@ async function boot() {
   }
   await tick();
   setInterval(tick, 30000);
+  setTimeout(maybeNews, 1200);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { document.title = 'זמן בכיף'; tick(); seeView(curView()); } });
 }
 
@@ -3952,4 +4009,4 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 // לבדיקות מהדפדפן
-window.__zman = { demo, shrinkPhoto, faceHtml, removedFromGroups, startFocus, endFocus, renderAll, CAL, renderCal, showView, bell, openBell, bumpTask, openCatEdit, drawCatCard, renderTasks, openQuick, showIncoming, showReply, openEdit, buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };
+window.__zman = { demo, openNews, maybeNews, shrinkPhoto, faceHtml, removedFromGroups, startFocus, endFocus, renderAll, CAL, renderCal, showView, bell, openBell, bumpTask, openCatEdit, drawCatCard, renderTasks, openQuick, showIncoming, showReply, openEdit, buildPeople, openAssign, renderFamily, renderProfile, S, parse, send, forWhom, sync, OPS, scanConflicts, openConflict, allConflicts, Z, tick, onRemoteItem, inviteOf, desiredSchedule, welcomeMe };
