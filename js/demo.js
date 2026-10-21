@@ -2,6 +2,7 @@
 // 🧭 סיור מודרך שעובר על כל האפשרויות, ו-💬 כפתור הערות שאוסף הכל ושולח בבת אחת.
 // כלל קבוע: כל תוספת חדשה באפליקציה מקבלת שלב משלה במערך TOUR שלמטה.
 import * as db from './db.js';
+import { REVIEW } from './review.js';
 import { nextOccurrence, sod, addDays, ymd } from './parse.js';
 
 export const DEMO = db.DEMO;
@@ -187,7 +188,7 @@ export const TOUR = [
 ];
 
 // ---------- הפעלה בתוך האפליקציה ----------
-let A = null, step = -1;
+let A = null, step = -1, STEPS = TOUR;
 const viewName = { chat: 'שיחה', cal: 'יומן', tasks: 'משימות', thoughts: 'מחשבות', shop: 'קניות', kids: 'ילדים', settings: 'הגדרות' };
 const curView = () => document.querySelector('.view.on')?.id?.slice(2) || 'chat';
 
@@ -196,7 +197,7 @@ export function init(api) {
   if (!DEMO) return;
   document.documentElement.classList.add('demo-on');
   const bar = document.createElement('div'); bar.className = 'demo-bar'; bar.id = 'demoBar';
-  bar.innerHTML = '<span>🎭 <b>מצב הדגמה</b> — הנתונים לא אמיתיים</span><button class="chip" id="demoTour">🧭 סיור</button><button class="chip" id="demoExit">יציאה ✕</button>';
+  bar.innerHTML = '<span>🎭 <b>מצב הדגמה</b> — הנתונים לא אמיתיים</span><button class="chip rv-btn" id="dbReview" hidden></button><button class="chip" id="demoTour">🧭 סיור</button><button class="chip" id="demoExit">יציאה ✕</button>';
   $('#app').prepend(bar);
   const fab = document.createElement('button'); fab.className = 'demo-fab'; fab.id = 'demoNotes'; fab.setAttribute('aria-label', 'הערות לתיקון');
   fab.innerHTML = '💬<i class="badge" id="demoCount" hidden></i>';
@@ -205,6 +206,7 @@ export function init(api) {
   tour.innerHTML = '<i class="tour-dim"></i><i class="tour-dim"></i><i class="tour-dim"></i><i class="tour-dim"></i><div class="tour-spot" id="tourSpot"></div><div class="tour-card" id="tourCard" role="dialog" aria-live="polite"></div>';
   $('#app').append(tour);
   $('#demoTour').onclick = () => startTour(0);
+  $('#dbReview').onclick = reviewStart;
   $('#demoExit').onclick = e => {
     const b = e.currentTarget, n = notes().length;
     if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = n ? `${nN(n)} ${n === 1 ? 'לא נשלחה' : 'לא נשלחו'} — לצאת?` : 'לצאת? לחיצה נוספת'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'יציאה ✕'; }, 4000); return; }
@@ -214,12 +216,12 @@ export function init(api) {
   tour.addEventListener('click', e => { if (e.target === tour || e.target.id === 'tourSpot') next(1); });
   // מקלדת שנפתחת באנדרואיד = resize. בזמן כתיבה לא מזיזים כלום
   addEventListener('resize', () => { if (step >= 0 && !$('#sheetBg').classList.contains('on') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) place(); });
-  drawCount();
+  drawCount(); reviewBadge();
 }
 
 // ---------- הסיור ----------
-export function startTour(i = 0) { step = -1; $('#tour').hidden = false; go(i); }
-function stopTour() { step = -1; $('#tour').hidden = true; liftFab(); }
+export function startTour(i = 0) { step = -1; STEPS = TOUR; $('#tour').hidden = false; go(i); }
+function stopTour() { step = -1; STEPS = TOUR; $('#tour').hidden = true; liftFab(); }
 // כפתור ההערות לא מסתיר את כרטיס הסיור: כשהכרטיס למטה — הכפתור עולה מעליו
 function liftFab() {
   const fab = $('#demoNotes'), card = $('#tourCard'); if (!fab) return;
@@ -227,7 +229,7 @@ function liftFab() {
   const box = $('#app').getBoundingClientRect();
   fab.style.bottom = Math.round(box.bottom - card.getBoundingClientRect().top + 10) + 'px';
 }
-const next = d => go(Math.min(TOUR.length - 1, Math.max(0, step + d)));
+const next = d => go(Math.min(STEPS.length - 1, Math.max(0, step + d)));
 function target(s) {
   for (const sel of s.sel.split(',').map(x => x.trim())) {
     if (sel.startsWith('text:')) { // האלמנט שמכיל את הטקסט (למשל משימה מסוימת)
@@ -241,7 +243,7 @@ function target(s) {
   return null;
 }
 async function go(i) {
-  step = i; const s = TOUR[i];
+  step = i; const s = STEPS[i];
   if (curView() !== s.v) A.showView(s.v);
   try { s.run?.(A); } catch (e) { console.warn('tour', e); }
   await new Promise(r => setTimeout(r, 260));
@@ -250,7 +252,7 @@ async function go(i) {
   drawCard(); place(); liftFab();
 }
 function place() {
-  const s = TOUR[step]; if (!s) return;
+  const s = STEPS[step]; if (!s) return;
   const el = target(s), spot = $('#tourSpot'), card = $('#tourCard'), box = $('#app').getBoundingClientRect();
   // ארבעה מלבנים כהים סביב "החור" שמאיר את הכפתור
   const dims = document.querySelectorAll('.tour-dim'), W = box.width, H = box.height;
@@ -268,10 +270,12 @@ function place() {
   liftFab();
 }
 function drawCard(list) {
-  const s = TOUR[step], n = TOUR.length, card = $('#tourCard');
+  const s = STEPS[step], n = STEPS.length, card = $('#tourCard');
+  if (s?.review && !list) return reviewCard(card, s, step);
+  card.classList.remove('rv');
   if (list) {
     card.innerHTML = `<div class="tour-h"><b>📋 כל השלבים</b><button class="tour-x" id="tourBack" aria-label="חזרה">↩️</button></div>
-      <div class="tour-list">${TOUR.map((x, i) => `<button class="${i === step ? 'on' : ''}" data-ts="${i}"><span>${i + 1}</span>${esc(x.t)}</button>`).join('')}</div>`;
+      <div class="tour-list">${STEPS.map((x, i) => `<button class="${i === step ? 'on' : ''}" data-ts="${i}"><span>${i + 1}</span>${esc(x.t)}</button>`).join('')}</div>`;
     card.querySelectorAll('[data-ts]').forEach(b => b.onclick = () => go(+b.dataset.ts));
     $('#tourBack').onclick = () => drawCard();
     card.querySelector('.tour-list .on')?.scrollIntoView({ block: 'center' });
@@ -295,7 +299,7 @@ const notes = () => { try { return JSON.parse(localStorage.getItem(NOTES)) || []
 const setNotes = l => { try { localStorage.setItem(NOTES, JSON.stringify(l)); } catch { /* */ } drawCount(); };
 function drawCount() { const c = $('#demoCount'); if (!c) return; const n = notes().length; c.hidden = !n; c.textContent = n; }
 const nN = n => n === 1 ? 'הערה אחת' : `${n} הערות`;
-const where = () => `📍 מסך: ${viewName[curView()] || curView()}${step >= 0 ? ` · שלב ${step + 1}: ${TOUR[step].t}` : ''}`;
+const where = () => `📍 מסך: ${viewName[curView()] || curView()}${step >= 0 ? (STEPS[step].review ? ` · 🔁 סיור תיקונים: ${STEPS[step].t}` : ` · שלב ${step + 1}: ${STEPS[step].t}`) : ''}`;
 const allText = () => notes().map((x, i) => `${i + 1}. [${x.w}]\n${x.t}`).join('\n\n');
 function openNotes() {
   const w = where(), list = notes();
@@ -324,5 +328,87 @@ function openNotes() {
     if (ok) { setNotes([]); A.closeSheet(); A.confetti?.(); A.toast('📤 כל ההערות נשלחו! תודה 🙏'); return; }
     b.disabled = false; b.textContent = '📤 שלח את כל ההערות';
     $('#dnErr').textContent = 'לא הצלחתי לשלוח. ההערות נשארו שמורות בטלפון. אפשר לנסות שוב, או "📋 העתק" ולהדביק בצ\'אט.';
+  });
+}
+
+// ---------- 🔁 סיור תיקונים: עובר רק על המסכים שבהם נכתבו הערות, ומראה מה השתנה ----------
+// zman-review = { [id]: 'ok' | 'seen' | 'note' }: מה כבר נסקר בטלפון הזה. zman-review-sent = ids שהאישור שלהם כבר נשלח
+const RV_KEY = 'zman-review', RV_SENT = 'zman-review-sent';
+const rvGet = k => { try { return JSON.parse(localStorage.getItem(k) || (k === RV_SENT ? '[]' : '{}')); } catch { return k === RV_SENT ? [] : {}; } };
+const rvSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* */ } };
+const RV_ST = { fixed: ['✅', 'תוקן'], answered: ['💬', 'נענה'], todo: ['⏳', 'עוד לא'] };
+const REVIEW_AT = {
+  back: { v: 'chat', sel: '#plusBtn' },
+  chat: { v: 'chat', sel: '#inp' },
+  top: { v: 'chat', sel: '.hero' },
+  calWho: { v: 'cal', sel: '#calWho, #calBody', run: a => a.calMode?.('week') },
+  month: { v: 'cal', sel: '#calBody', run: a => a.calMode?.('month') },
+  mainDate: { v: 'settings', sel: '#calCard' },
+  cats: { v: 'settings', sel: '#catCard' },
+  habits: { v: 'tasks', sel: '.habits, #taskList' },
+  focus: { v: 'chat', sel: 'text:פוקוס, #plusBtn' },
+  shopLists: { v: 'shop', sel: '#shopLists' },
+  menu: { v: 'shop', sel: '#menuBtn' },
+  me: { v: 'settings', sel: '#meCard' },
+  recur: { v: 'tasks', sel: '#recurCard, #taskList' },
+  lock: { v: 'settings', sel: '#lockCard' },
+  backup: { v: 'settings', sel: '#backupBtn' },
+};
+const rvPending = () => { const done = rvGet(RV_KEY); return REVIEW.filter(r => r.st !== 'todo' && !done[r.id]); };
+function reviewBadge() {
+  const b = $('#dbReview'); if (!b) return;
+  const n = rvPending().length; b.hidden = !n; b.textContent = `🔁 תיקונים ${n}`;
+}
+function reviewStart() {
+  if (!REVIEW.length) return;
+  const done = rvGet(RV_KEY), order = [...REVIEW.filter(r => r.st !== 'todo'), ...REVIEW.filter(r => r.st === 'todo')];
+  STEPS = order.map(r => ({ ...(REVIEW_AT[r.at] || REVIEW_AT.chat), t: r.where, review: r }));
+  const first = Math.max(0, STEPS.findIndex(x => x.review.st !== 'todo' && !done[x.review.id]));
+  step = -1; $('#tour').hidden = false; go(first);
+}
+function reviewMark(id, v) { const d = rvGet(RV_KEY); d[id] = v; rvSet(RV_KEY, d); reviewBadge(); }
+function reviewNext(i) { if (i >= STEPS.length - 1) { stopTour(); return reviewSummary(); } go(i + 1); }
+function reviewCard(card, s, i) {
+  const r = s.review, [se, sl] = RV_ST[r.st] || RV_ST.fixed, mine = rvGet(RV_KEY)[r.id], n = STEPS.length;
+  const dd = new Date(r.date + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
+  card.classList.add('rv');
+  card.innerHTML = `<div class="tour-h"><small>🔁 סיור תיקונים · ${i + 1} מתוך ${n} · הערה מ־${dd}${mine ? ` · ${mine === 'ok' ? '✅ אישרת' : mine === 'note' ? '💬 הוספת הערה' : '👍 ראית'}` : ''}</small><button class="tour-x" id="tourX" aria-label="סגירת הסיור">✕</button></div>
+    <div class="tour-bar"><i style="width:${(i + 1) / n * 100}%"></i></div>
+    <div class="rv-h"><span class="rv-st ${r.st}">${se} ${sl}</span><b>${esc(r.where)}</b></div>
+    <div class="rv-note" title="לחיצה: לקרוא הכל"><small>📝 ההערה שלך</small>${esc(r.note)}</div>
+    <div class="rv-did ${r.st}"><small>${r.st === 'todo' ? '⏳ מה מתוכנן' : r.st === 'answered' ? '💬 התשובה' : '✨ מה שינינו'}</small>${esc(r.did)}</div>
+    ${r.before ? '<button class="chip" id="rBefore">👀 איך זה היה לפני</button>' : ''}
+    <div class="tour-btns rv-btns"><button class="btn" id="tourPrev" ${i ? '' : 'disabled'} aria-label="הקודם">→</button><button class="btn ok" id="rOk">${r.st === 'todo' ? '👍 ראיתי' : '✅ מאשר'}</button><button class="btn" id="rMore">💬 עוד הערה</button><button class="btn pri" id="tourNext">${i === n - 1 ? 'סיום' : 'הבא ←'}</button></div>`;
+  card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop');
+  card.querySelector('.rv-note').onclick = e => { e.currentTarget.classList.toggle('open'); place(); };
+  $('#tourX').onclick = stopTour;
+  $('#tourPrev').onclick = () => go(i - 1);
+  $('#tourNext').onclick = () => reviewNext(i);
+  $('#rOk').onclick = () => { reviewMark(r.id, r.st === 'todo' ? 'seen' : 'ok'); if (r.st !== 'todo') A.confetti?.(); reviewNext(i); };
+  $('#rMore').onclick = () => { reviewMark(r.id, 'note'); openNotes(); };
+  card.querySelector('#rBefore')?.addEventListener('click', () => {
+    const ov = document.createElement('div'); ov.className = 'qr-zoom';
+    ov.innerHTML = `<div class="qr-card" style="padding:10px"><div class="note" style="margin-bottom:6px">👀 לפני התיקון</div><img src="${esc(r.before)}" alt="לפני" style="width:100%;max-height:70vh;object-fit:contain;border-radius:14px"><button class="btn pri" style="margin-top:10px">סגירה</button></div>`;
+    ov.onclick = ev => { if (ev.target === ov || ev.target.closest('button')) ov.remove(); }; document.body.appendChild(ov);
+  });
+}
+function reviewSummary() {
+  const done = rvGet(RV_KEY), sent = rvGet(RV_SENT);
+  const ok = REVIEW.filter(r => done[r.id] === 'ok'), more = REVIEW.filter(r => done[r.id] === 'note'), todo = REVIEW.filter(r => r.st === 'todo');
+  const left = rvPending(), fresh = [...ok, ...more].filter(r => !sent.includes(r.id)), nNotes = notes().length;
+  A.sheet(`<div class="nw-head"><span class="nw-spark">🔁</span><h3>סיור התיקונים הסתיים</h3></div>
+    <div class="rv-sum"><div><b>${ok.length}</b><span>✅ אישרת</span></div><div><b>${more.length}</b><span>💬 עם הערה</span></div><div><b>${left.length}</b><span>⏭️ דילגת</span></div><div><b>${todo.length}</b><span>⏳ בעבודה</span></div></div>
+    ${nNotes ? `<button class="btn pri" id="rvNotes">📤 יש ${nN(nNotes)} חדשות: לשליחה</button>` : ''}
+    ${fresh.length ? `<button class="btn pri" id="rvSend">✅ שליחת האישורים (${fresh.length})</button>` : '<p class="note" style="text-align:center;margin:8px 0">כל האישורים כבר נשלחו 👍</p>'}
+    <button class="btn" id="rvAgain">🔁 לעבור שוב</button><div id="rvErr" style="color:#FB7185;font-size:13px;min-height:16px"></div>`);
+  $('#rvNotes')?.addEventListener('click', () => openNotes());
+  $('#rvAgain').onclick = () => { A.closeSheet(); setTimeout(reviewStart, 250); };
+  $('#rvSend')?.addEventListener('click', async e => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'שולח…';
+    const line = r => `${done[r.id] === 'ok' ? '✅ אושר' : '💬 אושר עם הערה נוספת'} · ${r.id} · ${r.where}\n   ההערה: ${r.note.slice(0, 120)}${r.note.length > 120 ? '…' : ''}`;
+    const okSent = await A.sendNotes(fresh.map(line).join('\n\n'), fresh.length, 'approval');
+    if (okSent) { rvSet(RV_SENT, [...new Set([...sent, ...fresh.map(r => r.id)])]); A.confetti?.(); A.toast('✅ האישורים נשלחו. תודה!'); reviewSummary(); return; }
+    b.disabled = false; b.textContent = `✅ שליחת האישורים (${fresh.length})`;
+    $('#rvErr').textContent = 'לא הצלחתי לשלוח (אין אינטרנט?). אפשר לנסות שוב.';
   });
 }

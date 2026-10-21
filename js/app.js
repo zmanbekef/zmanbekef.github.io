@@ -950,13 +950,14 @@ async function drawDemoCard() {
 // FormSubmit עונה 200 גם כשלא נשלח (למשל טופס שעוד לא הופעל) — בודקים success באמת
 async function formOk(r) { if (!r.ok) return false; try { const j = await r.json(); return j.success === true || j.success === 'true'; } catch { return false; } }
 // ההערות נשמרות גם בטבלת המשוב בענן וגם במייל. נמחקות מהטלפון רק אם לפחות אחד מהם הצליח באמת
-async function sendDemoNotes(text, n) {
-  const cloud = sync.saveFeedbackAny({ kind: 'idea', message: `🎭 הערות מצב הדגמה (${n})\n\n${text}`.slice(0, 4900), contact: sync.user()?.email && !demo.DEMO ? sync.user().email : '', device: `${navigator.userAgent.match(/iPhone|iPad|Android[^;)]*|Mac|Windows/)?.[0] || ''} · ${screen.width}×${screen.height}` });
+async function sendDemoNotes(text, n, kind = 'notes') {
+  const ap = kind === 'approval', label = ap ? 'אישור תיקונים' : 'הערות מצב הדגמה';
+  const cloud = sync.saveFeedbackAny({ kind: ap ? 'approval' : 'idea', message: `${ap ? '✅' : '🎭'} ${label} (${n})\n\n${text}`.slice(0, 4900), contact: sync.user()?.email && !demo.DEMO ? sync.user().email : '', device: `${navigator.userAgent.match(/iPhone|iPad|Android[^;)]*|Mac|Windows/)?.[0] || ''} · ${screen.width}×${screen.height}` });
   let mailed = false;
   try {
     const r = await fetch(`https://formsubmit.co/ajax/${FEEDBACK_FORM}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ _subject: `📝 הערות מצב הדגמה — זמן בכיף (${n})`, _template: 'box', _captcha: 'false', 'אפליקציה': 'זמן בכיף ⏰', 'סוג': 'הערות מצב הדגמה', 'הערות': text }),
+      body: JSON.stringify({ _subject: `${ap ? '✅' : '📝'} ${label} — זמן בכיף (${n})`, _template: 'box', _captcha: 'false', 'אפליקציה': 'זמן בכיף ⏰', 'סוג': label, 'הערות': text }),
     });
     mailed = await formOk(r);
   } catch { mailed = false; }
