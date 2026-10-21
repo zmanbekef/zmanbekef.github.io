@@ -155,17 +155,16 @@ footer{padding:28px 0;text-align:center;color:#8B82A6;font-size:14px}
 @keyframes swap{0%,100%{transform:translateX(0)}50%{transform:translateX(-14px)}}.gcd .ar{animation:swap 2s infinite;font-size:20px;color:#7C3AED}
 @keyframes swap2{0%,100%{transform:translateX(0)}50%{transform:translateX(14px)}}.gcd .ar2{animation:swap2 2s infinite;font-size:20px;color:#EC4899}
 .gcd .r{opacity:0;animation:popc 5s infinite 1s;width:100%}
-.enter-wrap{text-align:center;margin:22px auto 0;padding:0 16px}
-.enter-big{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;max-width:340px;min-height:64px;margin:0 auto;padding:12px 20px;box-sizing:border-box;border-radius:18px;background:var(--g);color:#fff!important;font-weight:800;font-size:21px;text-decoration:none!important;box-shadow:0 10px 30px rgba(236,72,153,.4);animation:enterPulse 2.4s ease-in-out infinite}
-.enter-big small{display:block;font-size:13px;font-weight:600;opacity:.9}
+.enter-wrap{text-align:center;margin:22px auto 0;max-width:440px;padding:0 16px}
+.enter-big{display:block;width:100%;box-sizing:border-box;text-decoration:none!important;font-weight:800;font-size:22px;padding:18px 20px;border-radius:20px;background:linear-gradient(135deg,#22C55E,#14B8A6)!important;color:#fff!important;box-shadow:0 10px 28px rgba(20,184,166,.4);border:2px solid rgba(255,255,255,.55);text-align:center}
+.enter-big small{display:block;font-weight:600;font-size:14px;opacity:.9;margin-top:2px}
 .enter-big:active{transform:scale(.97)}
 .enter-sec{padding:34px 0;text-align:center;background:var(--paper)}
 .enter-sec p{margin:0 0 12px;font-size:17px;color:var(--soft)}
-@keyframes enterPulse{0%,100%{box-shadow:0 10px 30px rgba(236,72,153,.35)}50%{box-shadow:0 10px 38px rgba(236,72,153,.7),0 0 0 6px rgba(236,72,153,.15)}}
-.enter-fab{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translate(-50%,140%);z-index:20;display:flex;align-items:center;gap:8px;padding:14px 26px;border-radius:999px;background:var(--g);color:#fff!important;font-weight:800;font-size:18px;text-decoration:none!important;white-space:nowrap;box-shadow:0 12px 32px rgba(124,58,237,.45);transition:transform .35s cubic-bezier(.2,.9,.3,1.2),opacity .3s;opacity:0;pointer-events:none}
-.enter-fab.on{transform:translate(-50%,0);opacity:1;pointer-events:auto}
+.enter-fab{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));transform:translate(-50%,120px);z-index:20;text-decoration:none!important;font-weight:800;font-size:17px;padding:13px 24px;border-radius:999px;background:linear-gradient(135deg,#22C55E,#14B8A6);color:#fff!important;box-shadow:0 8px 24px rgba(0,0,0,.3);border:2px solid #fff;white-space:nowrap;transition:transform .3s}
+.enter-fab.on{transform:translate(-50%,0)}
 footer{padding-bottom:96px}
-@media (prefers-reduced-motion:reduce){.enter-big{animation:none}.enter-fab{transition:none}}
+@media (prefers-reduced-motion:reduce){.enter-fab{transition:none}}
 </style>
 </head>
 <body>
@@ -176,7 +175,7 @@ footer{padding-bottom:96px}
     <h1>זמן בכיף ⏰</h1>
     <p class="lead">משימות, תזכורות ופגישות — כותבים או אומרים, כמו הודעה בוואטסאפ.<br>והיא כבר שואלת "עשית?", מתריעה על התנגשויות, ושומרת שבת.</p>
     <a class="btn install" href="../">📲 התקנת האפליקציה</a> <a class="btn ghost" href="#features" style="margin-top:10px">🔥 מה היא יודעת?</a>
-    <div class="enter-wrap"><a class="open-app enter-big" href="../">🚀 כניסה לאפליקציה</a><p style="margin-top:8px;font-size:15px;color:#E9D5FF">כבר מותקן? פשוט נכנסים 👆</p></div>
+    <div class="enter-wrap"><a class="open-app enter-big" href="../">🚀 כניסה לאפליקציה<small>כבר מותקן? לחצו כאן</small></a></div>
     <div class="phone">
       <div class="me">תזכיר לי מחר ב-10 להתקשר לבנק</div>
       <div class="bot">📌 להתקשר לבנק<small>מחר ב-10:00 · אשאל אותך אם עשית</small></div>
@@ -483,7 +482,7 @@ footer{padding-bottom:96px}
 </section>
 
 
-<div class="enter-sec"><p>התקנתם? נכנסים 👇</p><a class="open-app enter-big" href="../">🚀 כניסה לאפליקציה</a></div>
+<div class="enter-sec"><p>התקנתם? נכנסים 👇</p><a class="open-app enter-big" href="../">🚀 כניסה לאפליקציה<small>כבר מותקן? לחצו כאן</small></a></div>
 <section id="signup">
   <div class="wrap">
     <div class="eyebrow">שלב 2 · נרשמים</div>
@@ -523,7 +522,7 @@ footer{padding-bottom:96px}
 </section>
 
 
-<div class="enter-sec"><p>מוכנים? אפשר להיכנס כבר עכשיו 👇</p><a class="open-app enter-big" href="../">🚀 כניסה לאפליקציה</a></div>
+<div class="enter-sec"><p>מוכנים? אפשר להיכנס כבר עכשיו 👇</p><a class="open-app enter-big" href="../">🚀 כניסה לאפליקציה<small>כבר מותקן? לחצו כאן</small></a></div>
 <section class="dark" id="use">
   <div class="wrap">
     <div class="eyebrow">שלב 3 · משתמשים כל יום</div>
@@ -602,7 +601,7 @@ footer{padding-bottom:96px}
     <h2>זהו, אפשר להתחיל! 🚀</h2>
     <p class="lead" style="color:#fff">כותבים את הדבר הראשון שצריך לזכור — ומשם זה כבר זורם</p>
     <a class="btn install" href="../" style="background:#fff;color:#7C3AED">📲 להתקנה ולכניסה</a>
-    <div class="enter-wrap"><a class="open-app enter-big" href="../" style="background:#fff;color:#7C3AED!important">🚀 כניסה לאפליקציה</a></div>
+    <div class="enter-wrap"><a class="open-app enter-big" href="../">🚀 כניסה לאפליקציה<small>כבר מותקן? לחצו כאן</small></a></div>
     <div class="contact">
       <p style="font-size:18px;font-weight:700">צריך עזרה? 🙋</p>
       <p style="font-size:17px;margin-top:6px">מוישי וינדיש · <a href="tel:0542964361">054-2964361</a> · <a href="mailto:mvindish@gmail.com">mvindish@gmail.com</a></p>
@@ -646,7 +645,7 @@ footer{padding-bottom:96px}
   if (fab) {
     var tops = document.querySelectorAll('.enter-big');
     var vis = function (el) { var r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; };
-    var tick = function () { var show = scrollY > 500 && !Array.prototype.some.call(tops, vis); fab.classList.toggle('on', show); };
+    var tick = function () { var show = scrollY > 350 && !Array.prototype.some.call(tops, vis); fab.classList.toggle('on', show); };
     addEventListener('scroll', tick, { passive: true }); addEventListener('resize', tick); tick();
   }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('../sw.js').catch(function () {});
