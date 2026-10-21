@@ -977,7 +977,7 @@ function openHelp(question = '', showGuide = false) {
       <button class="act pri" id="hAsk" style="padding:0 16px">שאל</button></div>
     <div id="hAns" class="chat" style="padding:0;margin-bottom:12px;gap:8px"></div>
     <div id="hGuide"></div>
-    <button class="btn" id="hOpenGuide" style="margin-bottom:12px">📖 המדריך המלא (עם תמונות)</button>
+    <div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" id="hOpenGuide" style="flex:2;margin-top:0">📖 המדריך המלא</button><button class="btn news-btn" id="hNews" style="flex:1;margin-top:0">✨ מה חדש</button></div>
     <p class="note" style="margin-bottom:6px">שאלות נפוצות:</p>
     <div class="chips" style="flex-wrap:wrap;padding:0 0 12px">${topics.map(t => `<button class="chip" data-topic="${t.id}">${t.t}</button>`).join('')}</div>
     <button class="btn" id="hFeedback" style="margin-bottom:10px">💌 שליחת משוב / דיווח על תקלה</button>
@@ -1010,6 +1010,7 @@ function openHelp(question = '', showGuide = false) {
   $('#hAsk').onclick = () => ask($('#hQ').value);
   $('#hQ').addEventListener('keydown', e => { if (e.key === 'Enter') ask(e.target.value); });
   $('#hOpenGuide').onclick = showGuideFrame;
+  $('#hNews').onclick = () => openNews(true);
   $('#hFeedback').onclick = () => openFeedback();
   $('#sheet').querySelectorAll('[data-topic]').forEach(c => c.onclick = () => {
     const t = help.TOPICS.find(x => x.id === c.dataset.topic);
@@ -3938,22 +3939,44 @@ function maybeNews(tries = 0) {
   if (busy) { if (tries < 20) setTimeout(() => maybeNews(tries + 1), 1500); return; }
   openNews(false, items);
 }
-function openNews(all = false, items = null) {
+// newsBack = איפה עצרנו ברשימה, כדי לחזור אליה אחרי "👀 תראו לי"
+let newsBack = null;
+function openNews(all = false, items = null, restore = false) {
   lsSetN(NEWS[0]?.v || '');
-  const row = (i, k) => `<button class="nw-row" ${i.go ? `data-ng="${i.go}"` : 'disabled'} style="--d:${k * 90}ms"><span class="nw-e">${i.e}</span><span class="nw-t"><b>${esc(i.t)}</b><small>${esc(i.d)}</small></span>${i.go ? '<i>‹</i>' : ''}</button>`;
+  $('.news-fab')?.remove();
+  const seen = newsBack?.seen || [];
+  const row = (i, k) => `<div class="nw-row ${seen.includes(i.go) ? 'seen' : ''}" ${i.go ? `data-ng="${i.go}" role="button"` : ''} style="--d:${restore ? 0 : k * 90}ms"><span class="nw-e">${i.e}</span><span class="nw-t"><b>${esc(i.t)}</b><small>${esc(i.d)}</small></span>${i.go && i.go !== 'news' ? `<button class="nw-go" data-ng="${i.go}">${seen.includes(i.go) ? '✓ ' : ''}👀 תראו לי</button>` : ''}</div>`;
   const dLabel = v => new Date(v + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long' });
   const body = all
     ? NEWS.map(n => ({ ...n, items: newsFor(n.items) })).filter(n => n.items.length).map((n, j) => `<div class="nw-day">${j === 0 ? '🆕 ' : ''}${dLabel(n.v)}</div>${n.items.map(row).join('')}`).join('')
     : (items.length > 6 ? items.slice(0, 6) : items).map(row).join('') + (items.length > 6 ? `<button class="chip" id="nwAll" style="margin-top:4px">ועוד ${items.length - 6}: לכל הרשימה</button>` : '');
-  const first = (items || newsFor(NEWS[0].items)).find(i => i.go && i.go !== 'news');
-  sheet(`<div class="nw-head"><span class="nw-spark">✨</span><h3>מה חדש${all ? '' : ' באפליקציה'}</h3><div class="sub">${all ? 'כל העדכונים, החדש למעלה. לוחצים על שורה כדי לעבור לשם.' : 'עדכנו את האפליקציה. הנה מה שהשתנה 👇'}</div></div>
+  const pool = items || newsFor(NEWS[0].items);
+  const first = pool.find(i => i.go && i.go !== 'news' && !seen.includes(i.go)) || pool.find(i => i.go && i.go !== 'news');
+  sheet(`<div class="nw-head"><span class="nw-spark">✨</span><h3>מה חדש${all ? '' : ' באפליקציה'}</h3><div class="sub">${all ? 'כל העדכונים, החדש למעלה. "👀 תראו לי" לוקח לשם, ו"✨ חזרה" מחזיר לכאן.' : 'עדכנו את האפליקציה. הנה מה שהשתנה 👇'}</div></div>
     <div class="nw-list">${body}</div>
-    ${all ? '' : `<div class="nw-btns">${first ? '<button class="btn pri" id="nwShow">👀 תראו לי</button>' : ''}<button class="btn" id="nwOk">הבנתי ✓</button></div>`}`);
+    ${all ? '' : `<div class="nw-btns">${first ? `<button class="btn pri" id="nwShow">👀 ${seen.length ? 'הבא' : 'תראו לי'}</button>` : ''}<button class="btn" id="nwOk">הבנתי ✓</button></div>`}`);
   const sh = $('#sheet');
-  sh.querySelectorAll('[data-ng]').forEach(b => b.onclick = () => { const f = NEWS_GO[b.dataset.ng]; if (b.dataset.ng === 'news') return f(); closeSheet(); if (f) setTimeout(f, 250); });
-  sh.querySelector('#nwShow')?.addEventListener('click', () => { closeSheet(); setTimeout(NEWS_GO[first.go], 250); });
-  sh.querySelector('#nwOk')?.addEventListener('click', () => closeSheet());
+  const goTo = key => {
+    const f = NEWS_GO[key]; if (!f) return;
+    if (key === 'news') return f();
+    newsBack = { all, items, scroll: sh.scrollTop, seen: [...new Set([...seen, key])] };
+    closeSheet(); setTimeout(() => { f(); newsFab(); }, 250);
+  };
+  sh.querySelectorAll('[data-ng]').forEach(b => b.onclick = e => { e.stopPropagation(); goTo(b.dataset.ng); });
+  sh.querySelector('#nwShow')?.addEventListener('click', () => goTo(first.go));
+  sh.querySelector('#nwOk')?.addEventListener('click', () => { newsBack = null; closeSheet(); });
   sh.querySelector('#nwAll')?.addEventListener('click', () => openNews(true));
+  if (restore && newsBack) requestAnimationFrame(() => { sh.scrollTop = newsBack.scroll; });
+}
+// ✨ כפתור צף: חזרה לרשימת "מה חדש" אחרי שניסו משהו. נשאר עד "הבנתי ✓" או ✕
+function newsFab() {
+  $('.news-fab')?.remove();
+  if (!newsBack) return;
+  const d = document.createElement('div'); d.className = 'news-fab';
+  d.innerHTML = '<button class="nf-go">✨ חזרה למה חדש</button><button class="nf-x" aria-label="סגירה">✕</button>';
+  d.querySelector('.nf-go').onclick = () => { const b = newsBack; if (b) openNews(b.all, b.items, true); };
+  d.querySelector('.nf-x').onclick = () => { newsBack = null; d.remove(); };
+  $('#app').appendChild(d);
 }
 $('#toNews').onclick = () => openNews(true);
 

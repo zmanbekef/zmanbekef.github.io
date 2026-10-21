@@ -615,7 +615,18 @@ nav .badge.new{background:#22C55E;left:auto;right:6px;animation:popin .3s both}
 .nw-t{flex:1;min-width:0}
 .nw-t b{display:block;font-size:15.5px}
 .nw-t small{display:block;color:var(--muted);font-size:13px;line-height:1.4;margin-top:2px}
-.nw-row i{font-style:normal;font-size:22px;color:var(--muted)}
+.nw-row[data-ng]{cursor:pointer}
+.nw-row.seen{border-color:rgba(74,222,128,.45)}
+.nw-go{flex:none;align-self:center;border:1px solid rgba(250,204,21,.55);background:rgba(250,204,21,.12);color:#FDE68A;font:inherit;font-weight:800;font-size:12.5px;border-radius:999px;padding:7px 10px;white-space:nowrap;cursor:pointer}
+.nw-row.seen .nw-go{border-color:rgba(74,222,128,.55);background:rgba(74,222,128,.12);color:#BBF7D0}
+.nw-go:active{transform:scale(.94)}
+/* ✨ חזרה למה חדש: צף מעל סרגל הלשוניות; כשחלון פתוח, למעלה */
+.news-fab{position:absolute;z-index:41;left:50%;bottom:calc(96px + var(--safe-b));transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:4px;border-radius:999px;background:linear-gradient(135deg,#7C3AED,#EC4899);box-shadow:0 10px 28px rgba(124,58,237,.55),0 0 0 2px rgba(255,255,255,.35);animation:nfin .45s cubic-bezier(.2,.9,.3,1.3) both}
+#sheetBg.on ~ .news-fab{bottom:auto;top:calc(10px + env(safe-area-inset-top,0px))}
+.news-fab button{border:0;background:transparent;color:#fff;font:inherit;font-weight:800;cursor:pointer}
+.nf-go{font-size:15px;padding:9px 12px 9px 6px;white-space:nowrap}
+.nf-x{width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.25)!important;font-size:14px}
+@keyframes nfin{from{opacity:0;transform:translate(-50%,20px) scale(.8)}}
 .nw-btns{display:flex;gap:8px;position:sticky;bottom:-19px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(to top,#14141F 75%,rgba(20,20,31,0))}
 .nw-btns .btn{flex:1}
 .news-btn{border-color:rgba(250,204,21,.5)!important;font-weight:700}
