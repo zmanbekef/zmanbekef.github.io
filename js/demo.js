@@ -361,11 +361,15 @@ const REVIEW_AT = {
   backup: { v: 'settings', sel: '#backupBtn' },
 };
 // עוד לא נסקרו: מה שתוקן / נענה, ושאין עליו סימון שכבר נשלח או מחכה לשליחה
-const rvPending = () => { const done = rvGet(RV_KEY), sent = rvGet(RV_SENT); return REVIEW.filter(r => r.st !== 'todo' && !done[r.id] && !sent[r.id]); };
+// ✅ מה שהמנהל כבר אישר בעמדת הבדיקה (zman|review|<id>) לא מופיע שוב בסיור
+let APPROVED = new Set();
+export function setApproved(set) { APPROVED = set || new Set(); reviewBadge(); }
+const rvList = () => REVIEW.filter(r => !APPROVED.has(`zman|review|${r.id}`));
+const rvPending = () => { const done = rvGet(RV_KEY), sent = rvGet(RV_SENT); return rvList().filter(r => r.st !== 'todo' && !done[r.id] && !sent[r.id]); };
 // מה שנכתב / סומן ועוד לא נשלח
 function rvUnsent() {
   const done = rvGet(RV_KEY), notes = rvGet(RV_NOTES), sent = rvGet(RV_SENT);
-  return REVIEW.filter(r => (done[r.id] && done[r.id] !== 'seen' && sent[r.id] !== done[r.id]) || (notes[r.id] || '').trim()).map(r => ({ r, st: done[r.id] || '', note: (notes[r.id] || '').trim() }));
+  return rvList().filter(r => (done[r.id] && done[r.id] !== 'seen' && sent[r.id] !== done[r.id]) || (notes[r.id] || '').trim()).map(r => ({ r, st: done[r.id] || '', note: (notes[r.id] || '').trim() }));
 }
 function reviewBadge() {
   const b = $('#dbReview'); if (!b) return;
@@ -374,7 +378,8 @@ function reviewBadge() {
 }
 function reviewStart() {
   if (!REVIEW.length) return;
-  const order = [...REVIEW.filter(r => r.st !== 'todo'), ...REVIEW.filter(r => r.st === 'todo')];
+  const L = rvList(); if (!L.length) return A.toast('✅ כל התיקונים כבר אושרו');
+  const order = [...L.filter(r => r.st !== 'todo'), ...L.filter(r => r.st === 'todo')];
   STEPS = order.map(r => ({ ...(REVIEW_AT[r.at] || REVIEW_AT.chat), t: r.where, review: r }));
   const pend = rvPending().map(r => r.id), pos = lsGet(RV_POS);
   let first = STEPS.findIndex(x => x.review.id === pos);

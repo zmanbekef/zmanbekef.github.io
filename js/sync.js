@@ -554,3 +554,10 @@ export function _testState(st) { if (st.user) me = st.user; if (st.groups) group
 
 // בשביל app.js: לדווח "נתקע" גם ממסכים (תזכורת, יומן…)
 export { fail };
+
+// ✅ מה שהמנהל כבר אישר בעמדת הבדיקה (מפתח: zman|<v>|<כותרת>). למי שאינו מנהל השרת מחזיר רשימה ריקה
+export async function bdikaApproved() {
+  if (DEMO || !me) return [];
+  try { const { data, error } = await (await client()).rpc('bdika_approved', { p_app: 'zman' }); if (error) throw error; return (data || []).map(r => typeof r === 'string' ? r : r.item_key || Object.values(r)[0]); }
+  catch (e) { console.warn('bdika_approved', e); return null; }
+}

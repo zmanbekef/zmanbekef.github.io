@@ -3935,6 +3935,17 @@ const nKey = n => n ? n.v + (n.rev ? '.' + n.rev : '') : '';
 const lsGetN = () => { try { return localStorage.getItem(NEWS_KEY); } catch { return null; } };
 const lsSetN = v => { try { localStorage.setItem(NEWS_KEY, v); } catch { /* */ } };
 const newsFor = items => items.filter(i => !iAmKid() || i.kids);
+// ✅ מה שכבר אישרת בעמדת הבדיקה לא מוצג שוב (רק למנהל; נשמר גם בטלפון)
+S.approved = new Set();
+const okd = (v, it) => S.approved.has(`zman|${v}|${it.t}`);
+const newsOf = n => newsFor(n.items).filter(it => !okd(n.v, it));
+// נשמר ב-localStorage, כדי שגם במצב הדגמה (בלי שרת) "סיור התיקונים" ידלג על מה שאושר
+async function loadApproved() {
+  try { const k = JSON.parse(localStorage.getItem('zman-approved') || 'null'); if (Array.isArray(k)) S.approved = new Set(k); } catch { /* */ }
+  const a = demo.DEMO ? null : await sync.bdikaApproved();
+  if (a) { S.approved = new Set(a); try { localStorage.setItem('zman-approved', JSON.stringify(a)); } catch { /* */ } }
+  demo.setApproved?.(S.approved);
+}
 const NEWS_GO = {
   news: () => openNews(true),
   plus: () => openPlus(),
@@ -3959,7 +3970,7 @@ function maybeNews(tries = 0) {
   // אין סימון: משתמש ותיק (יש נתונים) רואה רק את העדכון האחרון. משתמש חדש לא מקבל כלום
   if (!seen && !S.items.length) return lsSetN(last);
   const fresh = NEWS.filter(n => !seen ? nKey(n) === last : nKey(n) > seen);
-  const items = newsFor(fresh.flatMap(n => n.items));
+  const items = fresh.flatMap(n => newsOf(n).map(it => ({ ...it, v: n.v })));
   if (!items.length) return lsSetN(last);
   // קודם כניסה, נעילה, חלון פתוח או סיור, ורק אחר כך
   const busy = $('#gate').classList.contains('on') || $('#lock').classList.contains('on') || sheetOpen() || ($('#tour') && !$('#tour').hidden);
@@ -3977,7 +3988,7 @@ function openNews(all = false, items = null, restore = false) {
   const seen = newsBack?.seen || [];
   const dLabel = v => new Date(v + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long' });
   // כל חידוש = כרטיס. בהיסטוריה: מכל הימים (החדש קודם), עם התאריך על הכרטיס
-  const list = all ? NEWS.flatMap(n => newsFor(n.items).map(it => ({ ...it, v: n.v }))) : (items || newsFor(NEWS[0].items)).map(it => ({ ...it, v: it.v || NEWS[0].v }));
+  const list = all ? NEWS.flatMap(n => newsFor(n.items).map(it => ({ ...it, v: n.v }))) : (items || newsOf(NEWS[0])).map(it => ({ ...it, v: it.v || NEWS[0].v }));
   const n = list.length, many = n > 20, calm = reducedMotion();
   const stars = Array.from({ length: 16 }, (_, k) => `<i style="--x:${(k * 37) % 100}%;--y:${(k * 53) % 100}%;--s:${.6 + (k % 4) * .25};--t:${2 + (k % 5) * .6}s;--dl:${(k % 7) * .4}s">${k % 3 ? '✦' : '✧'}</i>`).join('');
   const card = (it, k) => `<section class="nx-card" data-k="${k}">
@@ -4151,7 +4162,7 @@ async function boot() {
   }
   await tick();
   setInterval(tick, 30000);
-  setTimeout(maybeNews, 1200);
+  setTimeout(async () => { await loadApproved().catch(() => {}); maybeNews(); }, 1200);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { document.title = 'זמן בכיף'; tick(); seeView(curView()); } });
 }
 
