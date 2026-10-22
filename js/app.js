@@ -3937,11 +3937,12 @@ const lsSetN = v => { try { localStorage.setItem(NEWS_KEY, v); } catch { /* */ }
 const newsFor = items => items.filter(i => !iAmKid() || i.kids);
 // ✅ מה שכבר אישרת בעמדת הבדיקה לא מוצג שוב (רק למנהל; נשמר גם בטלפון)
 S.approved = new Set();
-const okd = (v, it) => S.approved.has(`zman|${v}|${it.t}`);
+const okd = (v, it) => S.approved.has(`zman|${v}|${it.t}`) || (S.isAdmin && !!it.ok); // ok: 'תאריך' = אושר בעמדת הבדיקה
 const newsOf = n => newsFor(n.items).filter(it => !okd(n.v, it));
 // נשמר ב-localStorage, כדי שגם במצב הדגמה (בלי שרת) "סיור התיקונים" ידלג על מה שאושר
 async function loadApproved() {
   try { const k = JSON.parse(localStorage.getItem('zman-approved') || 'null'); if (Array.isArray(k)) S.approved = new Set(k); } catch { /* */ }
+  if (!demo.DEMO) S.isAdmin = await sync.isAppAdmin().catch(() => false);
   const a = demo.DEMO ? null : await sync.bdikaApproved();
   if (a) { S.approved = new Set(a); try { localStorage.setItem('zman-approved', JSON.stringify(a)); } catch { /* */ } }
   demo.setApproved?.(S.approved);
