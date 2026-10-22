@@ -24,10 +24,23 @@ function open() {
   return dbp;
 }
 
+// 📱 בעמדת הבדיקה האפליקציה רצה בתוך מסגרת של אתר אחר, ושם הדפדפן יכול לחסום אחסון.
+// לכן שם הכל נשמר רק בזיכרון (מתחיל מחדש בכל טעינה), בלי IndexedDB
+const MEM = { items: new Map(), msgs: new Map(), log: new Map(), kv: new Map() };
+const memReq = v => ({ result: v });
+const memStore = name => {
+  const m = MEM[name], key = v => name === 'kv' ? undefined : v.id;
+  return {
+    getAll: () => memReq(structuredClone([...m.values()])), get: id => memReq(structuredClone(m.get(id))),
+    put: (v, k) => { m.set(k ?? key(v), structuredClone(v)); return memReq(k ?? key(v)); },
+    delete: id => { m.delete(id); return memReq(undefined); }, clear: () => { m.clear(); return memReq(undefined); },
+  };
+};
 async function store(name, mode) {
+  if (BDIKA) return memStore(name);
   return (await open()).transaction(name, mode).objectStore(name);
 }
-const done = req => new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+const done = req => 'onsuccess' in req ? new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); }) : Promise.resolve(req.result);
 
 export const all = async name => done((await store(name, 'readonly')).getAll());
 export const get = async (name, id) => done((await store(name, 'readonly')).get(id));

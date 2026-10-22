@@ -4185,7 +4185,7 @@ async function boot() {
   try { navigator.storage?.persist?.(); } catch { /* */ } // שהדפדפן לא ימחק את הנתונים כשחסר מקום
 })();
 
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !db.BDIKA) { // בעמדת הבדיקה: בלי שירות מטמון
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js').then(r => r.update?.()).catch(() => {});
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (!hadController) return; if (document.hidden) S.reloadOnShow = true; else toast('✨ יש גרסה חדשה', false, { l: '🔄 לעדכן', run: () => location.reload() }); });
