@@ -3959,6 +3959,7 @@ const NEWS_GO = {
   habits: () => { showView('tasks'); spot('.habits'); },
   view: () => { showView('settings'); spot('#viewCard'); },
   calendar: () => { showView('settings'); spot('#calSubCard'); },
+  resetprefs: () => { showView('settings'); spot('#resetPrefsBtn'); },
 };
 // מאיר רכיב במסך לכמה שניות
 function spot(sel) {
@@ -4047,6 +4048,27 @@ function newsFab() {
   $('#app').appendChild(d);
 }
 $h('#toNews').onclick = () => openNews(true);
+
+// ---------- ↩️ שחזור הגדרות ההתחלה: רק העדפות. משימות, פגישות, מחשבות, קבוצות, קטגוריות, נעילה ויומנים נשארים ----------
+const RESET_LOCAL = ['zman-font', 'zman-anim', 'zman-start', 'zman-t3fold', 'zman-install-hide'];
+const DEFAULT_SETTINGS = () => ({ morning: '07:00', evening: '20:00', city: 'ירושלים', candleMin: 40, shabbatAlerts: [60], melody: 'bells' });
+function openResetPrefs() {
+  sheet(`<h3>↩️ לשחזר את הגדרות ההתחלה?</h3>
+    <p class="note" style="margin-bottom:8px"><b>חוזר להתחלה:</b><br>🎨 תצוגה: גודל כתב, אנימציות, המסך שנפתח ראשון, "החשובים של היום" פתוח<br>📅 יומן: התאריך הראשי, של מי רואים ומה מוצג<br>🔔 התראות: על מה מקבלים, סיכום בוקר וערב, צליל, התראה לפני שבת ודקות הדלקת נרות<br>⏱️ זמני טיימר הפוקוס, והקבוצה שנבחרת לבד למשימה חדשה<br>💡 רמזים שכבר סגרתם (למשל באנר ההתקנה)</p>
+    <p class="note" style="margin-bottom:10px"><b>✅ לא נוגעים:</b> משימות, פגישות, מחשבות, קניות, הרגלים, הקבוצות ובני המשפחה, קטגוריות, העיר שלך, נעילה, התמונה, והחיבור ליומן של הטלפון</p>
+    <button class="btn danger" id="rpGo">↩️ לשחזר</button><button class="btn" id="rpNo">ביטול</button>`);
+  $('#rpNo').onclick = closeSheet;
+  $('#rpGo').onclick = async e => {
+    if (!tapAgain(e.currentTarget, '⚠️ בטוח? אי אפשר לבטל. לחיצה שנייה')) return;
+    for (const k of RESET_LOCAL) try { localStorage.removeItem(k); } catch { /* */ }
+    const keep = { city: S.settings.city, shifts: S.settings.shifts };
+    S.settings = { ...DEFAULT_SETTINGS(), ...Object.fromEntries(Object.entries(keep).filter(([, v]) => v != null)) };
+    await db.setKV('settings', S.settings);
+    try { await syncSchedule(); } catch { /* */ }
+    toast('↩️ ההגדרות חזרו להתחלה'); setTimeout(() => location.reload(), 900);
+  };
+}
+$h('#resetPrefsBtn').onclick = openResetPrefs;
 
 // ---------- 📱 עמדת בדיקה: ?bdika=1&news=<v>|<i>, או הודעה {bdika:'news', v, i} מהדף שמסביב ----------
 function bdikaNews(v, i) {
