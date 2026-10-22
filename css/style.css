@@ -741,3 +741,5 @@ nav .badge.new{background:#22C55E;left:auto;right:6px;animation:popin .3s both}
 .cal-li b{display:block;font-size:14.5px}.cal-li small{color:var(--muted);font-size:12px}
 .cal-off{flex:none;color:#FB7185!important}
 .cal-tip{border-color:rgba(250,204,21,.45)}
+/* 📱 עמדת בדיקה: נראה כמו האפליקציה האמיתית, בלי פס ההדגמה וכפתור ההערות */
+.bdika .demo-bar,.bdika .demo-fab,.bdika #demoCard{display:none!important}

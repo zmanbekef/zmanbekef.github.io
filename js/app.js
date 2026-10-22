@@ -3351,6 +3351,7 @@ function openInstallSheet() {
 }
 function drawInstallBanner() {
   const el = $('#installBanner'); if (!el) return;
+  if (db.BDIKA) { el.innerHTML = ''; el.hidden = true; return; } // 📱 עמדת בדיקה: בלי באנר התקנה
   let hidden = false; try { hidden = localStorage.getItem('zman-install-hide') === '1'; } catch { /* */ }
   if (isStandalone() || hidden || !location.protocol.startsWith('https')) { el.innerHTML = ''; return; }
   el.innerHTML = `<div class="inst"><div class="em">📲</div><p><b>להתקין כאפליקציה?</b><br>אייקון במסך הבית + התראות</p>
@@ -4034,6 +4035,21 @@ function newsFab() {
   $('#app').appendChild(d);
 }
 $h('#toNews').onclick = () => openNews(true);
+
+// ---------- 📱 עמדת בדיקה: ?bdika=1&news=<v>|<i>, או הודעה {bdika:'news', v, i} מהדף שמסביב ----------
+function bdikaNews(v, i) {
+  const it = NEWS.find(n => n.v === v)?.items?.[+i]; if (!it) return;
+  closeSheet(); $('.news-fab')?.remove();
+  const f = typeof it.go === 'function' ? it.go : NEWS_GO[it.go];
+  if (!f || it.go === 'news') return showView('chat');
+  setTimeout(() => { try { f(); } catch (e) { console.warn('bdika', e); } }, 200);
+}
+if (db.BDIKA) {
+  document.documentElement.classList.add('bdika');
+  addEventListener('message', e => { const d = e.data || {}; if (d.bdika === 'news') bdikaNews(d.v, d.i); });
+  const q = new URLSearchParams(location.search).get('news');
+  if (q) { const [v, i] = q.split('|'); setTimeout(() => bdikaNews(v, i), 1500); }
+}
 
 // ---------- 📆 חיבור ליומן של הטלפון (מנוי ICS שמתעדכן לבד). אותו מסך כמו בכסף בכיף ----------
 async function openCalendarSub(renew = false) {

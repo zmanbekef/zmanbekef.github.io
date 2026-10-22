@@ -1,6 +1,8 @@
 // שמירת הנתונים בתוך המכשיר (IndexedDB) — נשמר גם אחרי סגירת האפליקציה
 // 🎭 מצב הדגמה: ארון נפרד לגמרי — הנתונים האמיתיים לא נוגעים בו
-export const DEMO = (() => { try { return localStorage.getItem('zman-demo') === '1'; } catch { return false; } })();
+// 📱 עמדת בדיקה (?bdika=1): נכנסים ישר להדגמה, בלי חשבון, בלי חלונות קופצים, בלי שרת ובלי מעקב
+export const BDIKA = (() => { try { return new URLSearchParams(location.search).get('bdika') === '1'; } catch { return false; } })();
+export const DEMO = BDIKA || (() => { try { return localStorage.getItem('zman-demo') === '1'; } catch { return false; } })();
 export const DEMO_DB = 'zman-bekef-demo';
 const DB_NAME = DEMO ? DEMO_DB : 'zman-bekef';
 let dbp;
