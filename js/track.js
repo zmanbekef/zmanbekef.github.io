@@ -27,9 +27,11 @@ const anon = (fn, body) => fetch(`${URL_}/rest/v1/rpc/${fn}`, { method: 'POST', 
   headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 /** מופעל פעם אחת בעליית האפליקציה */
+// 🧪 בדיקות במחשב של המפתח (localhost / 127.0.0.1 / *.localhost) — לא נשלחות ללוח הבקרה, כדי שיופיעו שם רק משתמשים אמיתיים
+const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$|\.localhost$/.test(location.hostname);
 export function init({ app, url, key }) {
   APP = app; URL_ = url; KEY = key;
-  if (!URL_ || !KEY) return;
+  if (!URL_ || !KEY || LOCAL) { URL_ = ''; return; }
   setTimeout(() => { if (!lastPing) anonPing(); }, 8000);
   addEventListener('error', e => report(e.message, (e.filename || '').split('/').pop() + ':' + (e.lineno || '')));
   addEventListener('unhandledrejection', e => { const r = e.reason; report(r?.message || r, (r?.stack || '').split('\n')[1]?.trim()); });
@@ -46,7 +48,7 @@ async function anonPing() {
 }
 /** מהחיבור הרגיל של האפליקציה (משתמש מחובר) — כך יודעים של מי המכשיר */
 export async function ping(client) {
-  if (!client || !navigator.onLine || Date.now() - lastPing < 5 * 60 * 1000) return;
+  if (!client || LOCAL || !navigator.onLine || Date.now() - lastPing < 5 * 60 * 1000) return;
   lastPing = Date.now();
   try { const { error } = await client.rpc('track_ping', await pingBody()); if (error) lastPing = 0; } catch { lastPing = 0; }
 }
