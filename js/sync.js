@@ -307,21 +307,39 @@ export async function saveFeedbackAny(f) {
 }
 
 // ---------- תור שליחה (עובד גם כשאין רשת) ----------
+// 🔒 כל קריאה+כתיבה של התור רצה אחת אחרי השנייה. בלי זה, כמה שמירות באותו רגע דורסות זו את זו ומשימות לא מגיעות לענן.
+let qLock = Promise.resolve();
+const locked = fn => { const p = qLock.then(fn, fn); qLock = p.catch(() => {}); return p; };
+const addToBox = (ids, now = Date.now()) => locked(async () => {
+  const set = new Set(ids);
+  const box = (await db.getKV('outbox', [])).filter(o => !set.has(o.id));
+  for (const id of set) box.push({ id, at: now });
+  await db.setKV('outbox', box);
+});
 export async function queue(it) {
   if (!me || DEMO) return;
-  const box = (await db.getKV('outbox', [])).filter(o => o.id !== it.id);
-  box.push({ id: it.id, at: Date.now() });
-  await db.setKV('outbox', box);
+  await addToBox([it.id]);
   flush();
 }
 /** אחרי שחזור מגיבוי: כל המשימות נכנסות לתור ועולות לענן */
 export async function queueMany(items) {
   if (!me || DEMO || !items?.length) return;
-  const ids = new Set(items.map(x => x.id)), now = Date.now();
-  const box = (await db.getKV('outbox', [])).filter(o => !ids.has(o.id));
-  for (const id of ids) box.push({ id, at: now });
-  await db.setKV('outbox', box);
+  await addToBox(items.map(x => x.id));
   flush();
+}
+/** 🩹 תיקון חד־פעמי: משימות שלי שנשמרו בטלפון אבל לא הגיעו לענן (בגלל הבאג של התור) — נשלחות עכשיו */
+async function repairMissing() {
+  const flag = 'syncFix1:' + me.id;
+  if (await db.getKV(flag, false)) return;
+  const c = await client(), ids = new Set();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await c.from('zman_tasks').select('id').eq('created_by', me.id).range(from, from + 999);
+    if (error) throw error;
+    data.forEach(r => ids.add(r.id)); if (data.length < 1000) break;
+  }
+  const miss = (await db.all('items')).filter(it => (!it.by || it.by === me.id) && it.status !== 'deleted' && !ids.has(it.id));
+  if (miss.length) { console.info('sync repair', miss.length); await addToBox(miss.map(x => x.id)); await flush(); }
+  await db.setKV(flag, true);
 }
 const rowOf = it => {
   const data = { ...it }; LOCAL_ONLY.forEach(k => delete data[k]);
@@ -349,8 +367,10 @@ export async function flush() {
           await db.setKV('outboxParked', parked.slice(-200));
         }
       }
-      box = (await db.getKV('outbox', [])).filter(o => !batch.some(b => b.id === o.id && b.at === o.at));
-      await db.setKV('outbox', box);
+      box = await locked(async () => {
+        const left = (await db.getKV('outbox', [])).filter(o => !batch.some(b => b.id === o.id && b.at === o.at));
+        await db.setKV('outbox', left); return left;
+      });
     }
     cb.onStatus?.('ok');
   } catch (e) { console.warn('sync flush', e); fail('sync', e); cb.onStatus?.('wait'); }
@@ -415,6 +435,7 @@ export async function busy() {
 
 async function refresh() {
   await flush(); const n = await pull().catch(() => 0);
+  repairMissing().catch(e => console.warn('sync repair', e));
   const b = await busy(); if (b) cb.onBusy?.(b);
   const r = await loadRes(); if (r) cb.onRes?.(r);
   if (n || b?.length) cb.onRemote?.();
