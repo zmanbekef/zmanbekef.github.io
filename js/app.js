@@ -3340,21 +3340,30 @@ $h('#clearChatBtn').onclick = async e => {
 let installEvt = null;
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// 📦 דפדפן מוטמע בתוך אפליקציה אחרת (וואטסאפ, פייסבוק, אפליקציית סינון…): משם אי אפשר להתקין, צריך Chrome. (כמו בכסף בכיף)
+const inWebView = () => { const ua = navigator.userAgent; return !isIOS() && /android/i.test(ua) && (/; wv\)/.test(ua) || (/Version\/\d/.test(ua) && /Chrome/.test(ua)) || /FBAN|FBAV|Instagram|Line\/|Moi\b|WhatsApp|Telegram/i.test(ua)); };
+const appLink = () => 'https://zmanbekef.github.io/' + location.search; // שומר גם קוד הצטרפות (?join=)
+const chromeIntent = () => `intent://zmanbekef.github.io/${location.search}#Intent;scheme=https;package=com.android.chrome;end`;
+const openInChromeCard = () => `<div class="card" style="margin-bottom:10px;border-color:rgba(250,204,21,.5)"><p class="note"><b>📦 נפתחתם מתוך אפליקציה אחרת</b> (וואטסאפ, אפליקציית סינון וכדומה), ומשם אי אפשר להתקין. פותחים פעם אחת ב-<b>Chrome</b>:</p></div>
+    <a class="btn pri" href="${chromeIntent()}" style="margin-bottom:8px;text-decoration:none;display:flex;align-items:center;justify-content:center">🌐 לפתוח ב-Chrome</a>
+    <button class="btn" id="instCopy" style="margin-bottom:10px">📋 להעתיק את הקישור</button>
+    <p class="note">לא נפתח? מעתיקים את הקישור, פותחים את Chrome, מדביקים למעלה ונכנסים. ושם: ⋮ ← "התקנת אפליקציה".</p>`;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#installBtn').hidden = false; drawInstallBanner(); });
 addEventListener('appinstalled', () => { installEvt = null; drawInstallBanner(); toast('🎉 האפליקציה הותקנה על המסך'); confetti(); });
 function openInstallSheet() {
   if (installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; drawInstallBanner(); }); return; }
   sheet(`<h3>📲 התקנה על המסך</h3><p class="note" style="margin-bottom:12px">ככה "זמן בכיף" יופיע עם אייקון במסך הבית, כמו וואטסאפ — ייפתח במסך מלא, יעבוד גם בלי אינטרנט, ויוכל לשלוח התראות</p>
-    ${isIOS() ? `<div class="card"><p class="note"><b>🍏 באייפון (Safari):</b><br>1. כפתור השיתוף <b>⬆️</b> בתחתית המסך<br>2. <b>"הוסף למסך הבית"</b><br>3. <b>"הוסף"</b> — וזהו!</p></div>`
+    ${inWebView() ? openInChromeCard() : isIOS() ? `<div class="card"><p class="note"><b>🍏 באייפון (Safari):</b><br>1. כפתור השיתוף <b>⬆️</b> בתחתית המסך<br>2. <b>"הוסף למסך הבית"</b><br>3. <b>"הוסף"</b> — וזהו!</p></div>`
       : `<div class="card" style="margin-bottom:10px"><p class="note"><b>🤖 באנדרואיד:</b><br>1. פותחים את הקישור ב-<b>Chrome</b><br>2. <b>⋮</b> (שלוש הנקודות למעלה)<br>3. גוללים למטה ← <b>"התקנת אפליקציה"</b><br>4. מאשרים — וזהו!</p></div>
          <div class="card"><p class="note"><b>💻 במחשב (Chrome / Edge):</b> סמל ההתקנה בשורת הכתובת, או ⋮ ← "התקנה".</p></div>`}`);
+  $h('#instCopy').onclick = async e => { try { await navigator.clipboard.writeText(appLink()); e.target.textContent = '✅ הועתק. עכשיו פותחים Chrome ומדביקים'; } catch { e.target.textContent = appLink(); } };
 }
 function drawInstallBanner() {
   const el = $('#installBanner'); if (!el) return;
   if (db.BDIKA) { el.innerHTML = ''; el.hidden = true; return; } // 📱 עמדת בדיקה: בלי באנר התקנה
   let hidden = false; try { hidden = localStorage.getItem('zman-install-hide') === '1'; } catch { /* */ }
   if (isStandalone() || hidden || !location.protocol.startsWith('https')) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="inst"><div class="em">📲</div><p><b>להתקין כאפליקציה?</b><br>אייקון במסך הבית + התראות</p>
+  el.innerHTML = `<div class="inst"><div class="em">📲</div><p><b>להתקין כאפליקציה?</b><br>${inWebView() ? 'נפתחתם מתוך אפליקציה אחרת. צריך Chrome, נסביר' : 'אייקון במסך הבית + התראות'}</p>
     <button class="act pri" id="instGo">התקנה</button><button class="chip" id="instX" aria-label="סגירה">✕</button></div>`;
   $('#instGo').onclick = openInstallSheet;
   $('#instX').onclick = () => { try { localStorage.setItem('zman-install-hide', '1'); } catch { /* */ } drawInstallBanner(); };
