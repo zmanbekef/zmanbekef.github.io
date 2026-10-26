@@ -1,5 +1,5 @@
 // מאפשר לאפליקציה להיפתח גם בלי אינטרנט
-const CACHE = 'zman-20261025203033';
+const CACHE = 'zman-20261026132150';
 const FILES = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/db.js', 'js/parse.js', 'js/hebdate.js', 'js/sync.js', 'js/conflicts.js', 'js/zmanim.js', 'js/help.js', 'js/lock.js', 'js/track.js', 'js/smart.js', 'js/shop.js', 'js/demo.js', 'js/whats-new.js', 'js/review.js', 'guide/', 'vendor/supabase.js', 'vendor/qrcode.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png'];
 
@@ -16,7 +16,11 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return; // ענן, חגים, גופנים — ישר לרשת
   e.respondWith(caches.open(CACHE).then(async c => {
     const hit = await c.match(e.request, { ignoreSearch: e.request.mode === 'navigate' });
-    const net = fetch(e.request, { cache: 'no-cache' }).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; });
+    // קוד האפליקציה (index, js, css) מתחלף רק כיחידה אחת, כשמותקנת גרסה חדשה של הקובץ הזה.
+    // רענון ברקע של קובץ בודד יצר טעינה "חצי-מעודכנת" (index ישן + app.js חדש) שקרסה. (כמו בכסף בכיף)
+    const path = new URL(e.request.url).pathname;
+    const code = /(^|\/)(index\.html)?$|\.(js|css|webmanifest)$/.test(path) && !path.includes('/vendor/');
+    const net = fetch(e.request, { cache: 'no-cache' }).then(r => { if (r.ok && !(code && hit)) c.put(e.request, r.clone()); return r; });
     if (hit) { e.waitUntil(net.catch(() => {})); return hit; }
     return net.catch(() => c.match('index.html'));
   }));
