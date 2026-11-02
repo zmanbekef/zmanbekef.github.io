@@ -3600,7 +3600,7 @@ async function showGate() {
   const g = $('#gate'), body = $('#gateBody');
   if (!step) { g.classList.remove('on'); renderAll(); renderFamily(); renderMe(); return true; }
   g.classList.add('on');
-  const err = m => { body.querySelector('.err').textContent = m; };
+  const err = m => { const el = body.querySelector('.err'); if (el) { el.className = 'err'; el.textContent = m; } };
   const busy = (b, on) => { b.disabled = on; b.style.opacity = on ? .6 : 1; };
 
   if (step === 'auth') {
@@ -3625,11 +3625,19 @@ async function showGate() {
       if (p.length < 6) return err('הסיסמה צריכה להיות לפחות 6 תווים');
       busy(b, true);
       try { await fn(e, p); fresh = true; await sync.connected(true); await afterGate(); }
-      catch (x) { err(x.message); busy(b, false); }
+      catch (x) {
+        busy(b, false);
+        if (x.code !== 'exists') return err(x.message);
+        // 👋 המייל כבר רשום (גם דרך אפליקציה אחרת שלנו): הסבר ידידותי, לא אדום, וממשיכים לכניסה
+        const el = body.querySelector('.err'); el.className = 'err info';
+        el.innerHTML = '👋 <b>המייל הזה כבר רשום</b>, גם אם נרשמתם דרך אפליקציה אחרת שלנו (כסף בכיף, לומדים בכיף, זוכרים בכיף). נכנסים עם אותה סיסמה. לא זוכרים? 🔑 "שכחתי סיסמה" למטה.';
+        const pw = $('#gPass'); pw.value = ''; pw.placeholder = 'הסיסמה שלכם'; pw.focus();
+        $('#gForgot').classList.add('pulse');
+      }
     };
     $('#gIn').onclick = e => go(sync.signIn, e.target);
     $('#gUp').onclick = e => go(sync.signUp, e.target);
-    body.querySelectorAll('input').forEach(i => i.oninput = () => err(''));
+    body.querySelectorAll('input').forEach(i => i.oninput = () => { const el = body.querySelector('.err'); if (!el.classList.contains('info')) err(''); });
     return false;
   }
   if (step === 'profile') {

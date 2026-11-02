@@ -163,6 +163,9 @@ nav .badge{top:0;left:6px}
 .gate-box input:focus{border-color:#7C3AED;box-shadow:0 0 0 3px rgba(124,58,237,.3)}
 .gate-box .btn{margin-top:0}
 .gate-box .err{color:#FB7185;font-size:13px;min-height:18px;text-align:center}
+.gate-box .err.info{color:#F3E8FF;background:rgba(236,72,153,.14);border:1px solid rgba(236,72,153,.4);border-radius:14px;padding:10px 12px;font-size:14px;line-height:1.5;text-align:right;margin:4px 0}
+.link.pulse{color:#F9A8D4;font-weight:700;animation:lnkPulse 1.2s ease-in-out 4}
+@keyframes lnkPulse{50%{opacity:.45}}
 .gate-box .or{text-align:center;color:var(--muted);font-size:12px}
 .link{background:none;border:none;color:var(--muted);text-decoration:underline;font-size:13px;cursor:pointer;margin-top:4px}
 .chip.on{background:var(--g2);border-color:transparent}
