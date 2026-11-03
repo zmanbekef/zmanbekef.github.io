@@ -18,8 +18,11 @@ function deviceName() {
   const br = /SamsungBrowser/.test(ua) ? 'Samsung' : /CriOS|Chrome/.test(ua) ? 'Chrome' : /FxiOS|Firefox/.test(ua) ? 'Firefox' : /Safari/.test(ua) ? 'Safari' : '';
   return os + (br ? ' · ' + br : '');
 }
+// הגרסה = שם המטמון של האפליקציה. בזמן עדכון או סגירה הרשימה יכולה להיות ריקה, אז זוכרים את האחרונה שנקראה
+let lastVersion = '';
 async function version() {
-  try { return (await caches.keys()).find(k => k.startsWith(APP + '-')) || ''; } catch { return ''; }
+  try { const v = (await caches.keys()).find(k => k.startsWith(APP + '-')); if (v) { lastVersion = v; ls.set('app-version', v); } } catch { /* */ }
+  return lastVersion || ls.get('app-version') || '';
 }
 const pingBody = async () => ({ p_app: APP, p_device_id: dev, p_standalone: standalone(), p_device: deviceName(), p_version: await version() });
 // בלי משתמש (רק המפתח הציבורי של האפליקציה)
@@ -70,8 +73,9 @@ function report(message, source) {
   if (!message || /ResizeObserver|^Script error\.?$/.test(message) || seen.has(message)) return;
   seen.add(message);
   let q = []; try { q = JSON.parse(ls.get('app-err-queue') || '[]'); } catch { /* */ }
-  q.push({ message, source: String(source || '').slice(0, 200) });
+  q.push({ message, source: String(source || '').slice(0, 200), version: lastVersion || ls.get('app-version') || '' });
   ls.set('app-err-queue', JSON.stringify(q.slice(-20)));
+  version(); // מרעננים ברקע לפעם הבאה
   sendErrors();
 }
 let sending = false;
@@ -81,7 +85,7 @@ async function sendErrors() {
   if (!q.length) return;
   sending = true; ls.set('app-err-queue', '[]');
   const v = await version(), d = deviceName();
-  for (const e of q) { try { await anon('track_error', { p_app: APP, p_device_id: dev, p_message: e.message, p_source: e.source, p_device: d, p_version: v }); } catch { /* */ } }
+  for (const e of q) { try { await anon('track_error', { p_app: APP, p_device_id: dev, p_message: e.message, p_source: e.source, p_device: d, p_version: e.version || v }); } catch { /* */ } }
   sending = false;
   // תקלה שנוספה בזמן השליחה — נשלחת מיד אחרי (לא הולכת לאיבוד)
   try { if (JSON.parse(ls.get('app-err-queue') || '[]').length) setTimeout(sendErrors, 500); } catch { /* */ }

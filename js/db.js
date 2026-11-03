@@ -9,7 +9,7 @@ let dbp;
 
 function open() {
   if (dbp) return dbp;
-  dbp = new Promise((res, rej) => {
+  const p = dbp = new Promise((res, rej) => {
     const r = indexedDB.open(DB_NAME, 1);
     r.onupgradeneeded = () => {
       const db = r.result;
@@ -18,10 +18,16 @@ function open() {
       db.createObjectStore('log', { keyPath: 'id' });     // יומן פעולות (בשביל רצפים ודוחות בהמשך)
       db.createObjectStore('kv');
     };
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
+    r.onsuccess = () => {
+      const db = r.result;
+      // 🔌 הדפדפן סגר את החיבור (ברקע, עדכון, לחץ זיכרון): שוכחים אותו, והפעולה הבאה פותחת חדש. (כמו בכסף בכיף)
+      db.onclose = () => { if (dbp === p) dbp = null; };
+      db.onversionchange = () => { db.close(); if (dbp === p) dbp = null; };
+      res(db);
+    };
+    r.onerror = () => { if (dbp === p) dbp = null; rej(r.error); };
   });
-  return dbp;
+  return p;
 }
 
 // 📱 בעמדת הבדיקה האפליקציה רצה בתוך מסגרת של אתר אחר, ושם הדפדפן יכול לחסום אחסון.
@@ -38,7 +44,13 @@ const memStore = name => {
 };
 async function store(name, mode) {
   if (BDIKA) return memStore(name);
-  return (await open()).transaction(name, mode).objectStore(name);
+  // אם החיבור נסגר בינתיים ("connection is closing"): פותחים מחדש ומנסים עוד פעם אחת
+  try { return (await open()).transaction(name, mode).objectStore(name); }
+  catch (e) {
+    if (e?.name !== 'InvalidStateError' && !/closing|closed/i.test(e?.message || '')) throw e;
+    dbp = null;
+    return (await open()).transaction(name, mode).objectStore(name);
+  }
 }
 const done = req => 'onsuccess' in req ? new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); }) : Promise.resolve(req.result);
 
